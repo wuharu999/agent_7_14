@@ -98,11 +98,40 @@ def initialize_database() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS authoring_sessions (
+                session_id TEXT PRIMARY KEY,
+                created_by INTEGER NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                team TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS authoring_articles (
+                article_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                created_by INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                team TEXT NOT NULL,
+                markdown TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft',
+                source_path TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES authoring_sessions(session_id) ON DELETE CASCADE,
+                FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
             CREATE INDEX IF NOT EXISTS idx_sources_upload ON upload_sources(upload_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
             CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
             CREATE INDEX IF NOT EXISTS idx_audit_created ON file_audit_log(created_at);
+            CREATE INDEX IF NOT EXISTS idx_authoring_sessions_user ON authoring_sessions(created_by, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_authoring_articles_session ON authoring_articles(session_id, updated_at);
             """
         )
         # Migrate databases created by the earlier prototype.
@@ -501,3 +530,93 @@ def list_dispatchable_uploads() -> list[dict[str, Any]]:
             statuses,
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Claude authoring sessions and reviewed articles
+# ---------------------------------------------------------------------------
+
+def create_authoring_session(*, session_id: str, created_by: int, team: str) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "INSERT INTO authoring_sessions "
+            "(session_id, created_by, team, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, created_by, team, now, now),
+        )
+
+
+def get_authoring_session(session_id: str, user_id: int | None = None) -> dict[str, Any] | None:
+    query = "SELECT * FROM authoring_sessions WHERE session_id = ?"
+    values: list[Any] = [session_id]
+    if user_id is not None:
+        query += " AND created_by = ?"
+        values.append(user_id)
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(query, values).fetchone()
+    return dict(row) if row else None
+
+
+def update_authoring_session(session_id: str, **fields: Any) -> None:
+    allowed = {"title", "team", "status"}
+    updates = {key: value for key, value in fields.items() if key in allowed}
+    if not updates:
+        return
+    updates["updated_at"] = utc_now()
+    assignments = ", ".join(f"{key} = ?" for key in updates)
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            f"UPDATE authoring_sessions SET {assignments} WHERE session_id = ?",
+            [*updates.values(), session_id],
+        )
+
+
+def create_authoring_article(
+    *, article_id: str, session_id: str, created_by: int, title: str, team: str, markdown: str
+) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "INSERT INTO authoring_articles "
+            "(article_id, session_id, created_by, title, team, markdown, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (article_id, session_id, created_by, title, team, markdown, now, now),
+        )
+
+
+def get_authoring_article(article_id: str, user_id: int | None = None) -> dict[str, Any] | None:
+    query = "SELECT * FROM authoring_articles WHERE article_id = ?"
+    values: list[Any] = [article_id]
+    if user_id is not None:
+        query += " AND created_by = ?"
+        values.append(user_id)
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(query, values).fetchone()
+    return dict(row) if row else None
+
+
+def get_latest_authoring_article(
+    session_id: str, user_id: int
+) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM authoring_articles "
+            "WHERE session_id = ? AND created_by = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (session_id, user_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_authoring_article(article_id: str, **fields: Any) -> None:
+    allowed = {"title", "team", "markdown", "status", "source_path", "error"}
+    updates = {key: value for key, value in fields.items() if key in allowed}
+    if not updates:
+        return
+    updates["updated_at"] = utc_now()
+    assignments = ", ".join(f"{key} = ?" for key in updates)
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            f"UPDATE authoring_articles SET {assignments} WHERE article_id = ?",
+            [*updates.values(), article_id],
+        )

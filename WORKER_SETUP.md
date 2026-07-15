@@ -6,9 +6,19 @@ The key new settings are:
 
 ```env
 TRASH_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash
+AUTHORING_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-worker/authoring
 FILE_OPERATION_WORKERS=1
 FILE_MANAGER_MAX_ENTRIES=10000
+AUTHORING_WORKERS=2
+AUTHORING_QUEUE_MAX=8
+AUTHORING_LOCK_STRIPES=64
+AUTHORING_MAX_CONTEXT_BYTES=768000
 LLM_WIKI_RESCAN_AFTER_PUBLISH=false
 ```
 
 Keep LLM Wiki open with Source Watch and Auto Ingest enabled.
+
+Different authoring sessions can run concurrently, while commands for the same
+session are serialized to preserve message order. Each authoring worker starts at
+most one Claude subprocess, so increase `AUTHORING_WORKERS` only after checking
+Worker memory, Claude account limits, and observed latency.

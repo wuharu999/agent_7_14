@@ -34,6 +34,7 @@ Add these settings if they are not already present:
 
 ```env
 FILE_COMMAND_TIMEOUT=60
+AUTHORING_COMMAND_TIMEOUT=270
 SESSION_COOKIE_NAME=agent1_session
 SESSION_HOURS=8
 COOKIE_SECURE=false
@@ -106,9 +107,15 @@ Add or verify:
 BASE_DIR=/home/eason/Documents/agent_7_14/agent1/agent
 STAGING_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-worker/staging
 TRASH_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash
+AUTHORING_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-worker/authoring
 
 FILE_OPERATION_WORKERS=1
 FILE_MANAGER_MAX_ENTRIES=10000
+AUTHORING_WORKERS=2
+AUTHORING_QUEUE_MAX=8
+AUTHORING_LOCK_STRIPES=64
+AUTHORING_MAX_TURNS=100
+AUTHORING_MAX_CONTEXT_BYTES=768000
 
 LLM_WIKI_QUEUE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
 LLM_WIKI_CACHE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json

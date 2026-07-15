@@ -10,3 +10,11 @@ python3 scripts/create_user.py --username admin --role admin
 ```
 
 The database migration is automatic at application startup.
+
+Keep the ECS authoring timeout longer than the Worker Claude timeout:
+
+```env
+WORKER_TIMEOUT=240
+FILE_COMMAND_TIMEOUT=60
+AUTHORING_COMMAND_TIMEOUT=270
+```

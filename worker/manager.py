@@ -11,8 +11,13 @@ from typing import Any
 import websockets
 
 from worker.claude_runner import GAP_MARKER, run_claude
+from worker.authoring import AuthoringError, chat as authoring_chat, create_session as create_authoring_session
+from worker.authoring import generate_article as generate_authoring_article, get_session as get_authoring_session
 from worker.conversation_store import ConversationStore
 from worker.config import (
+    AUTHORING_LOCK_STRIPES,
+    AUTHORING_QUEUE_MAX,
+    AUTHORING_WORKERS,
     DOWNLOAD_WORKERS,
     FILE_OPERATION_WORKERS,
     LLM_WIKI_RESCAN_AFTER_PUBLISH,
@@ -32,7 +37,12 @@ from worker.file_manager import (
 from worker.knowledge import has_wiki_content, log_unanswered
 from worker.llm_wiki_monitor import monitor_source, request_rescan
 from worker.models import DownloadJob, FileOperationJob, QuestionJob
-from worker.publisher import collect_supported_sources, prepare_single_file, publish_directory
+from worker.publisher import (
+    collect_supported_sources,
+    prepare_single_file,
+    publish_authoring_article,
+    publish_directory,
+)
 from worker.zip_extractor import extract_zip_safely
 
 log = logging.getLogger("worker.manager")
@@ -46,11 +56,18 @@ class WorkerManager:
         self.conversations = ConversationStore()
         self.download_queue: asyncio.Queue[DownloadJob] = asyncio.Queue(maxsize=50)
         self.file_operation_queue: asyncio.Queue[FileOperationJob] = asyncio.Queue(maxsize=50)
+        self.authoring_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+            maxsize=AUTHORING_QUEUE_MAX
+        )
+        self.authoring_locks = tuple(
+            asyncio.Lock() for _ in range(AUTHORING_LOCK_STRIPES)
+        )
         self.outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
         self.websocket = None
         self.connected = asyncio.Event()
         self.active_download_ids: set[str] = set()
         self.active_command_ids: set[str] = set()
+        self.active_authoring_ids: set[str] = set()
         self.monitor_tasks: set[asyncio.Task[None]] = set()
 
     async def run(self) -> None:
@@ -76,6 +93,13 @@ class WorkerManager:
                 name=f"file-operation-{index + 1}",
             )
             for index in range(FILE_OPERATION_WORKERS)
+        )
+        tasks.extend(
+            asyncio.create_task(
+                self.authoring_worker(index + 1),
+                name=f"authoring-{index + 1}",
+            )
+            for index in range(AUTHORING_WORKERS)
         )
         await asyncio.gather(*tasks)
 
@@ -182,6 +206,25 @@ class WorkerManager:
                     payload=data,
                 )
             )
+            return
+
+        if message_type.startswith("authoring_"):
+            command_id = str(data.get("id") or "")
+            if not command_id or command_id in self.active_authoring_ids:
+                return
+            self.active_authoring_ids.add(command_id)
+            try:
+                self.authoring_queue.put_nowait(data)
+            except asyncio.QueueFull:
+                self.active_authoring_ids.discard(command_id)
+                await self.emit(
+                    {
+                        "type": "authoring_result",
+                        "id": command_id,
+                        "status": "failed",
+                        "error": "Authoring queue is full; try again shortly",
+                    }
+                )
 
     @staticmethod
     def _question_lane(conversation_id: str) -> int:
@@ -239,6 +282,94 @@ class WorkerManager:
                 )
             finally:
                 queue.task_done()
+
+    def _authoring_lock(self, data: dict[str, Any]) -> asyncio.Lock:
+        identity = str(
+            data.get("session_id") or data.get("article_id") or data.get("id") or ""
+        )
+        digest = hashlib.blake2s(
+            identity.encode("utf-8", errors="replace"),
+            digest_size=4,
+        ).digest()
+        return self.authoring_locks[
+            int.from_bytes(digest, "big") % len(self.authoring_locks)
+        ]
+
+    async def authoring_worker(self, worker_number: int) -> None:
+        while True:
+            data = await self.authoring_queue.get()
+            command_id = str(data.get("id") or "")
+            try:
+                async with self._authoring_lock(data):
+                    log.info(
+                        "Authoring worker %d handling %s (%s)",
+                        worker_number,
+                        command_id,
+                        data.get("type"),
+                    )
+                    await self.authoring_command(data)
+            finally:
+                self.active_authoring_ids.discard(command_id)
+                self.authoring_queue.task_done()
+
+    async def authoring_command(self, data: dict[str, Any]) -> None:
+        command_id = str(data.get("id") or "")
+        message_type = str(data.get("type") or "")
+        try:
+            session_id = str(data.get("session_id") or "")
+            if message_type == "authoring_create":
+                result = await asyncio.to_thread(
+                    create_authoring_session, session_id, str(data.get("team") or "")
+                )
+            elif message_type == "authoring_history":
+                result = await asyncio.to_thread(get_authoring_session, session_id)
+            elif message_type == "authoring_chat":
+                _session, answer = await authoring_chat(
+                    session_id, str(data.get("message") or "")
+                )
+                result = {"answer": answer}
+            elif message_type == "authoring_generate":
+                result = {"markdown": await generate_authoring_article(session_id)}
+            elif message_type == "authoring_publish":
+                article_id = str(data.get("article_id") or "")
+                published_at_ms = int(time.time() * 1000)
+                source_path = await asyncio.to_thread(
+                    publish_authoring_article,
+                    article_id,
+                    str(data.get("team") or ""),
+                    str(data.get("title") or "article"),
+                    str(data.get("markdown") or ""),
+                )
+                result = {"source_path": source_path, "article_id": article_id}
+
+                async def emit_authoring(event: dict[str, Any]) -> None:
+                    await self.emit({
+                        "type": "authoring_progress",
+                        "article_id": article_id,
+                        "source_identity": event.get("source_identity"),
+                        "source_status": event.get("source_status"),
+                        "error": event.get("error"),
+                    })
+
+                task = asyncio.create_task(
+                    monitor_source(
+                        upload_id=article_id,
+                        source_identity=source_path,
+                        published_at_ms=published_at_ms,
+                        emit=emit_authoring,
+                    ),
+                    name=f"llm-wiki-authoring:{article_id}",
+                )
+                self.monitor_tasks.add(task)
+                task.add_done_callback(self.monitor_tasks.discard)
+            else:
+                return
+            await self.emit({"type": "authoring_result", "id": command_id, "status": "ok", **(result or {})})
+        except (AuthoringError, FileExistsError, ValueError) as exc:
+            await self.emit({"type": "authoring_result", "id": command_id, "status": "failed", "error": str(exc)})
+        except Exception as exc:
+            log.exception("Authoring command failed")
+            await self.emit({"type": "authoring_result", "id": command_id, "status": "failed", "error": "Worker authoring operation failed"})
 
     async def file_operation_worker(self, worker_number: int) -> None:
         while True:

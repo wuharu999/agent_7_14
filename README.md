@@ -68,3 +68,7 @@ Read [FINAL_SETUP.md](FINAL_SETUP.md) for full first-run and upgrade instruction
 The public question page keeps a random conversation ID in the browser. Requests from that conversation are routed to the same QA lane and include a bounded recent history, so follow-up questions retain context without dedicating a permanent Claude process to one user. Selectable answer languages are Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
 
 The Worker invokes Claude with the read-only tools `Read`, `Glob`, and `Grep` pre-approved. The bundled service prompt and `CLAUDE.md` explicitly prohibit asking the website user for file-read permission.
+
+Editors and admins can also use the Claude documentation author on `/upload`. The authoring conversation is persisted by the Worker, can generate a Markdown article for review, and publishes only after an explicit confirmation. Claude remains read-only; the Worker performs the final atomic publication into `raw/sources/` for LLM Wiki Source Watch.
+
+Authoring uses a bounded, configurable Worker pool. Separate sessions may run concurrently, while each session is serialized so turns cannot overwrite one another. Claude prompts are streamed through stdin with a bounded recent-history context; Python multiprocessing is intentionally unnecessary because Claude already runs as an external subprocess. The upload page polls the stored article status and displays LLM Wiki completion or the original ingestion error.

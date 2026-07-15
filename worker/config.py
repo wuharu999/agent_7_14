@@ -11,6 +11,13 @@ load_dotenv(PROJECT_ROOT / "worker" / ".env")
 
 SERVER_URL = os.environ.get("SERVER_URL", "ws://127.0.0.1:8000/ws/client")
 WORKER_SHARED_SECRET = os.environ.get("WORKER_SHARED_SECRET", "")
+ALLOWED_TEAMS = tuple(
+    team.strip()
+    for team in os.environ.get(
+        "ALLOWED_TEAMS", "tian_gong,walker_s2,walker_c1"
+    ).split(",")
+    if team.strip()
+)
 BASE_DIR = Path(os.environ.get("BASE_DIR", str(PROJECT_ROOT / "agent1"))).expanduser().resolve()
 RAW_SOURCES_DIR = BASE_DIR / "raw" / "sources"
 WIKI_DIR = BASE_DIR / "wiki"
@@ -21,10 +28,16 @@ STAGING_DIR = Path(
 TRASH_DIR = Path(
     os.environ.get("TRASH_DIR", str(BASE_DIR / ".agent1-trash"))
 ).expanduser().resolve()
+AUTHORING_DIR = Path(
+    os.environ.get("AUTHORING_DIR", str(BASE_DIR / ".agent1-worker" / "authoring"))
+).expanduser().resolve()
 
 QA_WORKERS = int(os.environ.get("QA_WORKERS", "3"))
 DOWNLOAD_WORKERS = int(os.environ.get("DOWNLOAD_WORKERS", "2"))
 FILE_OPERATION_WORKERS = int(os.environ.get("FILE_OPERATION_WORKERS", "1"))
+AUTHORING_WORKERS = max(1, int(os.environ.get("AUTHORING_WORKERS", "2")))
+AUTHORING_QUEUE_MAX = max(1, int(os.environ.get("AUTHORING_QUEUE_MAX", "8")))
+AUTHORING_LOCK_STRIPES = max(1, int(os.environ.get("AUTHORING_LOCK_STRIPES", "64")))
 FILE_MANAGER_MAX_ENTRIES = int(os.environ.get("FILE_MANAGER_MAX_ENTRIES", "10000"))
 CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "240"))
 CLAUDE_ALLOWED_TOOLS = tuple(
@@ -35,6 +48,10 @@ CLAUDE_ALLOWED_TOOLS = tuple(
 CLAUDE_EXTRA_ARGS = os.environ.get("CLAUDE_EXTRA_ARGS", "").strip()
 CONVERSATION_MAX_TURNS = int(os.environ.get("CONVERSATION_MAX_TURNS", "6"))
 CONVERSATION_MAX_SESSIONS = int(os.environ.get("CONVERSATION_MAX_SESSIONS", "1000"))
+AUTHORING_MAX_TURNS = int(os.environ.get("AUTHORING_MAX_TURNS", "100"))
+AUTHORING_MAX_MESSAGE_BYTES = int(os.environ.get("AUTHORING_MAX_MESSAGE_BYTES", str(50 * 1024)))
+AUTHORING_MAX_ARTICLE_BYTES = int(os.environ.get("AUTHORING_MAX_ARTICLE_BYTES", str(500 * 1024)))
+AUTHORING_MAX_CONTEXT_BYTES = int(os.environ.get("AUTHORING_MAX_CONTEXT_BYTES", str(750 * 1024)))
 DOWNLOAD_TIMEOUT = int(os.environ.get("DOWNLOAD_TIMEOUT", "1800"))
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024**3)))
 MAX_ZIP_FILES = int(os.environ.get("MAX_ZIP_FILES", "20000"))
@@ -74,3 +91,4 @@ def ensure_directories() -> None:
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
     RAW_SOURCES_DIR.mkdir(parents=True, exist_ok=True)
     WIKI_DIR.mkdir(parents=True, exist_ok=True)
+    AUTHORING_DIR.mkdir(parents=True, exist_ok=True)

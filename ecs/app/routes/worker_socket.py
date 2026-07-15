@@ -10,6 +10,7 @@ from ecs.app.database import (
     register_sources,
     update_upload,
     upsert_source,
+    update_authoring_article,
 )
 from ecs.app.gateway import gateway
 from ecs.app.routes.uploads import dispatch_upload
@@ -42,6 +43,19 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
 
             elif message_type in {"source_tree_result", "delete_source_result"}:
                 gateway.resolve_command(str(data.get("id") or ""), data)
+
+            elif message_type == "authoring_result":
+                gateway.resolve_command(str(data.get("id") or ""), data)
+
+            elif message_type == "authoring_progress":
+                article_id = str(data.get("article_id") or data.get("upload_id") or "")
+                if article_id:
+                    status = str(data.get("source_status") or "waiting")
+                    update_authoring_article(
+                        article_id,
+                        status=status,
+                        error=data.get("error"),
+                    )
 
             elif message_type == "job_progress":
                 upload_id = str(data.get("upload_id") or "")
