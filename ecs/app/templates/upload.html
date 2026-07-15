@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Upload knowledge sources</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:14px;align-items:center}.card{background:white;border:1px solid #dbe2ee;border-radius:14px;padding:24px;box-shadow:0 8px 30px #1f293711}label{display:block;font-weight:700;margin:14px 0 6px}select,input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:9px}button{margin-top:18px;padding:11px 20px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}pre{white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:9px}a{color:#2563eb}</style>
+</head>
+<body>
+<div class="top"><div><h1>Upload documentation</h1><p>Signed in as <strong>__USERNAME__</strong></p></div><a href="/manage">Source manager</a></div>
+<p>The ECS accepts the file, then the private Worker downloads, extracts, publishes, and watches LLM Wiki ingestion.</p>
+<div class="card"><form id="form"><input type="hidden" name="csrf_token" value="__CSRF_TOKEN__"><label for="team">Team</label><select id="team" name="team"></select><label for="file">File</label><input id="file" name="file" type="file" required><button>Upload</button></form><pre id="result">Choose a file.</pre></div>
+<p><a href="/manage">Manage sources</a> · <a href="/">Back to questions</a></p>
+<script>
+const teams=__ALLOWED_TEAMS__;const team=document.getElementById('team');for(const value of teams){const option=document.createElement('option');option.value=value;option.textContent=value;team.appendChild(option)}
+document.getElementById('form').onsubmit=async(e)=>{e.preventDefault();const result=document.getElementById('result');result.textContent='Uploading to ECS…';const body=new FormData(e.target);try{const response=await fetch('/upload',{method:'POST',body});const data=await response.json();if(!response.ok){result.textContent=data.error||data.detail||'Upload failed';return}result.textContent='Accepted. Opening status page…';location.href=data.status_page}catch(error){result.textContent=String(error)}};
+</script>
+</body></html>

@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from typing import Any
+
+from fastapi import WebSocket
+
+from ecs.app.config import FILE_COMMAND_TIMEOUT, WORKER_TIMEOUT
+
+log = logging.getLogger("ecs.gateway")
+
+
+class WorkerGateway:
+    def __init__(self) -> None:
+        self.websocket: WebSocket | None = None
+        self.outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
+        self.pending_answers: dict[str, asyncio.Future[str]] = {}
+        self.pending_commands: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self.sender_task: asyncio.Task[None] | None = None
+        self._connection_lock = asyncio.Lock()
+
+    @property
+    def online(self) -> bool:
+        return self.websocket is not None
+
+    async def attach(self, websocket: WebSocket) -> None:
+        async with self._connection_lock:
+            if self.websocket is not None and self.websocket is not websocket:
+                try:
+                    await self.websocket.close(code=1012)
+                except Exception:
+                    pass
+            self.websocket = websocket
+            if self.sender_task and not self.sender_task.done():
+                self.sender_task.cancel()
+            self.sender_task = asyncio.create_task(self._sender_loop(websocket))
+        log.info("Worker WebSocket attached")
+
+    async def detach(self, websocket: WebSocket) -> None:
+        async with self._connection_lock:
+            if self.websocket is not websocket:
+                return
+            self.websocket = None
+            if self.sender_task and not self.sender_task.done():
+                self.sender_task.cancel()
+            self.sender_task = None
+        error = ConnectionError("Worker disconnected")
+        for qid, future in list(self.pending_answers.items()):
+            if not future.done():
+                future.set_exception(error)
+            self.pending_answers.pop(qid, None)
+        for command_id, future in list(self.pending_commands.items()):
+            if not future.done():
+                future.set_exception(error)
+            self.pending_commands.pop(command_id, None)
+        log.warning("Worker WebSocket detached")
+
+    async def _sender_loop(self, websocket: WebSocket) -> None:
+        while True:
+            message = await self.outgoing.get()
+            sent = False
+            try:
+                await websocket.send_json(message)
+                sent = True
+            finally:
+                self.outgoing.task_done()
+                if not sent:
+                    await self.outgoing.put(message)
+
+    async def send(self, message: dict[str, Any]) -> None:
+        if not self.online:
+            raise ConnectionError("Worker is not connected")
+        await self.outgoing.put(message)
+
+    async def ask(
+        self,
+        question: str,
+        *,
+        conversation_id: str,
+        language: str,
+        timeout: int | None = None,
+    ) -> str:
+        if not self.online:
+            raise ConnectionError("Worker is not connected")
+        qid = f"q-{uuid.uuid4().hex[:12]}"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[str] = loop.create_future()
+        self.pending_answers[qid] = future
+        try:
+            await self.send(
+                {
+                    "type": "question",
+                    "id": qid,
+                    "text": question,
+                    "conversation_id": conversation_id,
+                    "language": language,
+                }
+            )
+            return await asyncio.wait_for(future, timeout=timeout or WORKER_TIMEOUT)
+        finally:
+            self.pending_answers.pop(qid, None)
+
+    async def command(
+        self,
+        message_type: str,
+        *,
+        timeout: int | None = None,
+        **payload: Any,
+    ) -> dict[str, Any]:
+        if not self.online:
+            raise ConnectionError("Worker is not connected")
+        command_id = f"cmd-{uuid.uuid4().hex[:16]}"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        self.pending_commands[command_id] = future
+        try:
+            await self.send({"type": message_type, "id": command_id, **payload})
+            return await asyncio.wait_for(
+                future,
+                timeout=timeout or FILE_COMMAND_TIMEOUT,
+            )
+        finally:
+            self.pending_commands.pop(command_id, None)
+
+    def resolve_answer(self, qid: str, answer: str) -> None:
+        future = self.pending_answers.get(qid)
+        if future is not None and not future.done():
+            future.set_result(answer)
+
+    def resolve_command(self, command_id: str, result: dict[str, Any]) -> None:
+        future = self.pending_commands.get(command_id)
+        if future is not None and not future.done():
+            future.set_result(result)
+
+
+gateway = WorkerGateway()

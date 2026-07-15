@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent1 Knowledge Base</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 18px;background:#f5f7fb;color:#172033}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:22px;box-shadow:0 8px 30px #1f293711}textarea{width:100%;min-height:140px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;box-sizing:border-box;font:inherit}.controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-top:12px}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:700;color:#475569}select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;font:inherit;min-width:210px}button{padding:10px 18px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#64748b}button:disabled{opacity:.55;cursor:not-allowed}pre{white-space:pre-wrap;background:#f8fafc;padding:14px;border-radius:9px;min-height:90px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.badge{padding:5px 10px;border-radius:99px;font-size:13px}.on{background:#dcfce7;color:#166534}.off{background:#fee2e2;color:#991b1b}.hint{font-size:13px;color:#64748b;margin:10px 0 0}a{color:#2563eb}</style>
+</head>
+<body>
+<div class="row"><div><h1>Agent1 Knowledge Base</h1><p>Ask questions against the local wiki.</p></div><span id="health" class="badge">Checking Worker…</span></div>
+<div class="card">
+<textarea id="question" placeholder="Enter a question"></textarea>
+<div class="controls">
+  <div class="field">
+    <label for="language">Answer language</label>
+    <select id="language">
+      <option value="zh-CN">简体中文</option>
+      <option value="zh-TW">繁體中文</option>
+      <option value="ko">한국어</option>
+      <option value="ja">日本語</option>
+      <option value="en">English</option>
+      <option value="pt">Português</option>
+      <option value="ru">Русский</option>
+      <option value="es">Español</option>
+    </select>
+  </div>
+  <button id="ask">Ask</button>
+  <button id="newConversation" class="secondary" type="button">New conversation</button>
+</div>
+<p class="hint">Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.</p>
+<pre id="answer">The answer will appear here.</pre>
+</div>
+<p><a href="/login">Sign in</a> · <a href="/manage">Manage sources</a> · <a href="/upload">Upload documentation</a></p>
+<script>
+const health=document.getElementById('health');
+const askButton=document.getElementById('ask');
+const newConversationButton=document.getElementById('newConversation');
+const question=document.getElementById('question');
+const answer=document.getElementById('answer');
+const language=document.getElementById('language');
+const conversationKey='agent1_conversation_id';
+const languageKey='agent1_answer_language';
+function newConversationId(){return 'web:'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));}
+function getConversationId(){let id=localStorage.getItem(conversationKey);if(!id){id=newConversationId();localStorage.setItem(conversationKey,id)}return id;}
+language.value=localStorage.getItem(languageKey)||'zh-CN';
+language.addEventListener('change',()=>localStorage.setItem(languageKey,language.value));
+async function checkHealth(){try{const r=await fetch('/health');const d=await r.json();health.textContent=d.worker_online?'Worker online':'Worker offline';health.className='badge '+(d.worker_online?'on':'off')}catch{health.textContent='Health check failed';health.className='badge off'}}
+checkHealth();setInterval(checkHealth,5000);
+async function submitQuestion(){const q=question.value.trim();if(!q)return;askButton.disabled=true;newConversationButton.disabled=true;answer.textContent='Waiting for Worker…';try{const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,language:language.value,conversation_id:getConversationId()})});const d=await r.json();if(d.conversation_id)localStorage.setItem(conversationKey,d.conversation_id);answer.textContent=d.answer||d.error||'No response'}catch(e){answer.textContent=String(e)}finally{askButton.disabled=false;newConversationButton.disabled=false}}
+askButton.onclick=submitQuestion;
+question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter')submitQuestion()});
+newConversationButton.onclick=()=>{localStorage.setItem(conversationKey,newConversationId());question.value='';answer.textContent='New conversation started.';question.focus()};
+</script>
+</body></html>

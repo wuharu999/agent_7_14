@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
+
+from ecs.app.auth import require_user
+from ecs.app.database import get_upload, list_uploads
+from ecs.app.gateway import gateway
+
+router = APIRouter()
+
+
+@router.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "worker_online": gateway.online,
+        "pending_questions": len(gateway.pending_answers),
+        "pending_commands": len(gateway.pending_commands),
+    }
+
+
+@router.get("/api/uploads")
+async def uploads_api(request: Request, limit: int = Query(50, ge=1, le=200)):
+    require_user(request)
+    return {"uploads": list_uploads(limit)}
+
+
+@router.get("/api/uploads/{upload_id}")
+async def upload_status_api(upload_id: str, request: Request):
+    require_user(request)
+    upload = get_upload(upload_id)
+    if upload is None:
+        return JSONResponse({"error": "upload not found"}, status_code=404)
+    upload["worker_online"] = gateway.online
+    return upload

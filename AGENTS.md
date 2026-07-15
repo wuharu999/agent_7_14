@@ -1,0 +1,804 @@
+# AGENTS.md
+
+## Purpose
+
+This repository is a two-machine knowledge-base upload and QA system.
+
+Codex should continue development, testing, and deployment from the current project state without replacing the architecture or deleting live data.
+
+The production topology is:
+
+```text
+Browser / WeCom
+    -> existing Alibaba ECS FastAPI server
+    -> one authenticated persistent WebSocket
+    -> Worker Manager on a new cloud computer
+    -> local LLM Wiki project
+    -> Claude CLI for QA
+```
+
+The ECS is the public-facing gateway. The Worker computer owns the real knowledge-base files and runs LLM Wiki and Claude CLI.
+
+---
+
+## Deployment targets
+
+### Existing ECS server
+
+```text
+Public IP: 47.239.12.206
+Project root: /root/agent_7_14
+HTTP test port: 8000
+ECS environment: /root/agent_7_14/ecs/.env
+ECS data: /root/agent_7_14/ecs-data
+SQLite database: /root/agent_7_14/ecs-data/agent_jobs.db
+Expected tmux session: agent-7-14-ecs
+```
+
+### New Worker computer
+
+Do not hard-code the username. Resolve it from `$HOME`.
+
+```text
+Project root: $HOME/Documents/agent_7_14
+Worker environment: $HOME/Documents/agent_7_14/worker/.env
+LLM Wiki project: $HOME/Documents/agent_7_14/agent1/agent
+Expected tmux session: agent-7-14-worker
+```
+
+### Old Worker computer
+
+The old Worker must remain stopped after cutover. The ECS currently supports one active Worker connection. Never run the old and new Workers simultaneously.
+
+---
+
+## Current product requirements
+
+The latest intended product includes all of the following.
+
+### Public QA page
+
+- Public route: `/`
+- Accept a user question.
+- Maintain a browser conversation ID in `localStorage`.
+- Route the same conversation consistently to the same QA lane.
+- Preserve recent conversation history in Worker memory.
+- Provide a `New conversation` action.
+- Provide these answer-language choices:
+  - Simplified Chinese
+  - Traditional Chinese
+  - Korean
+  - Japanese
+  - English
+  - Portuguese
+  - Russian
+  - Spanish
+- Send the selected language with each question.
+- Claude must answer in the selected language.
+- Claude must not expose internal retrieval steps or ask website users for permission to read files.
+
+### Authentication
+
+- `/login` and `/logout` exist.
+- QA remains public.
+- Upload and source modification require authentication.
+- Roles:
+  - `viewer`: list files and view status only
+  - `editor`: list, upload, and remove
+  - `admin`: editor permissions plus account administration through CLI
+- Passwords must be stored as salted slow hashes, never plaintext.
+- Sessions must use HttpOnly cookies.
+- State-changing browser requests must be protected by CSRF validation.
+
+### Upload and ingestion
+
+- Authenticated route: `/upload`
+- Browser uploads to ECS first.
+- ECS stores the upload and sends a download command to the Worker over WebSocket.
+- Worker downloads into staging, safely extracts ZIP files when necessary, and atomically publishes completed sources under:
+
+```text
+agent1/agent/raw/sources/<team>/<upload_id>/
+```
+
+- Allowed teams currently are:
+
+```text
+tian_gong
+walker_s2
+walker_c1
+```
+
+- Never publish a partially downloaded or partially extracted source directory.
+- Enforce ZIP traversal, symlink, file-count, per-file-size, and total-extracted-size limits.
+
+### Source manager
+
+- Authenticated route: `/manage`
+- List folders and files under `raw/sources/`.
+- Only use relative paths from `RAW_SOURCES_DIR`.
+- Reject absolute paths and `..` traversal.
+- Never permit operations outside `raw/sources/`.
+- File/folder removal is a soft delete into `.agent1-trash/`.
+- Do not permanently erase sources in the first production version.
+- Block deletion when the relevant LLM Wiki source is actively `processing`.
+- Serialize file-management operations with one file-operation consumer.
+- Record login, upload, and remove operations in the audit log.
+
+### Upload status synchronization
+
+The web status must distinguish:
+
+1. `This upload`
+2. `All current LLM Wiki work`
+
+The status page must accurately display:
+
+```text
+queued
+processing
+retrying
+completed
+failed
+deleted
+```
+
+For each source, expose when available:
+
+- relative source path
+- retry count and maximum retry count
+- latest LLM Wiki error
+- number of matching active queue entries
+- generated wiki files from the completion cache
+
+Do not classify every `pending` item as simply queued. A task with an error and `retryCount > 0` is retrying unless it has exhausted its allowed retries.
+
+When multiple queue entries match the same source, inspect all of them. Do not use only the first match. Use a precedence similar to:
+
+```text
+completed cache receipt
+-> processing
+-> retrying
+-> queued
+-> permanently failed
+-> waiting
+```
+
+The global queue view must include work from older uploads, manually added sources, and automatic retries.
+
+### LLM Wiki integration
+
+The live LLM Wiki project path is:
+
+```text
+$HOME/Documents/agent_7_14/agent1/agent
+```
+
+Required operating mode:
+
+```text
+Source Watch: ON
+Auto Ingest: ON
+```
+
+The Worker must keep this disabled:
+
+```env
+LLM_WIKI_RESCAN_AFTER_PUBLISH=false
+```
+
+Reason: Source Watch plus Worker-triggered `/sources/rescan` can enqueue duplicate ingestion work.
+
+The Worker may monitor:
+
+```text
+.llm-wiki/ingest-queue.json
+.llm-wiki/ingest-cache.json
+```
+
+LLM Wiki ingestion is serial. Several visible Activity items usually represent one processing item plus pending/retrying/failed items, not several parallel ingestion workers.
+
+The web must surface LLM Wiki errors such as DeepSeek network failures without rewriting or hiding them.
+
+### Claude QA
+
+Normal QA must allow only read-only tools:
+
+```text
+Read
+Glob
+Grep
+```
+
+The normal Worker configuration is:
+
+```env
+CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
+CLAUDE_EXTRA_ARGS=--model haiku
+CONVERSATION_MAX_TURNS=6
+CONVERSATION_MAX_SESSIONS=1000
+```
+
+The Worker starts a new Claude CLI subprocess for each question. Conversation continuity is currently implemented by injecting recent history, not by keeping one interactive Claude process alive.
+
+Do not let Claude use shell, edit, or write tools for ordinary QA.
+
+Claude output requirements:
+
+- Read `CLAUDE.md` and relevant wiki files silently.
+- Return only the user-facing answer.
+- Do not mention tool permissions.
+- Do not show chain of thought.
+- Do not explain internal retrieval.
+- Mark insufficient knowledge according to the repository's existing knowledge-gap convention.
+
+### WeCom
+
+The existing WeCom integration remains on the ECS.
+
+The following values belong only in `ecs/.env`:
+
+```env
+WXWORK_TOKEN=
+WXWORK_AESKEY=
+WXWORK_CORPID=
+WXWORK_AGENTID=
+WXWORK_CORPSECRET=
+```
+
+Never place WeCom secrets in Worker configuration, browser code, tests, logs, screenshots, Git history, or documentation examples containing real values.
+
+The callback route is:
+
+```text
+/wecom/callback
+```
+
+Use the same WeCom user ID as the conversation key so follow-up messages from the same person share recent history.
+
+---
+
+## Architecture boundaries
+
+### ECS responsibilities
+
+- Public HTTP pages and APIs
+- Login, sessions, roles, and CSRF
+- SQLite persistence
+- Temporary upload storage
+- Upload/status pages
+- Worker command dispatch over WebSocket
+- Audit logging
+- WeCom callbacks and replies
+
+### Worker responsibilities
+
+- Maintain the outbound WebSocket connection to ECS
+- QA queues and QA lane routing
+- Start Claude CLI subprocesses
+- Download uploaded files
+- Safe ZIP extraction
+- Atomic source publication
+- File-tree listing and soft deletion
+- LLM Wiki queue/cache monitoring
+- Send detailed progress updates to ECS
+
+### LLM Wiki responsibilities
+
+- Watch `raw/sources/`
+- Queue ingestion
+- Retry failed ingestion work
+- Generate `wiki/`
+- Persist queue/cache state
+
+Do not move the live source files to ECS. Do not expose the Worker or LLM Wiki API publicly.
+
+---
+
+## Required environment configuration
+
+### ECS: `ecs/.env`
+
+Expected keys include:
+
+```env
+APP_NAME=Agent1 Knowledge Base
+PUBLIC_BASE_URL=http://47.239.12.206:8000
+DATA_ROOT=/root/agent_7_14/ecs-data
+DATABASE_PATH=/root/agent_7_14/ecs-data/agent_jobs.db
+ALLOWED_TEAMS=tian_gong,walker_s2,walker_c1
+WORKER_SHARED_SECRET=<same random value as Worker>
+WORKER_TIMEOUT=240
+FILE_COMMAND_TIMEOUT=60
+SESSION_COOKIE_NAME=agent1_session
+SESSION_HOURS=8
+COOKIE_SECURE=false
+COOKIE_SAMESITE=lax
+WXWORK_TOKEN=<existing value>
+WXWORK_AESKEY=<existing value>
+WXWORK_CORPID=<existing value>
+WXWORK_AGENTID=<existing value>
+WXWORK_CORPSECRET=<existing value>
+```
+
+Use `COOKIE_SECURE=false` only during plain-HTTP testing. Change it to `true` after HTTPS deployment.
+
+### Worker: `worker/.env`
+
+Resolve paths from the real `$HOME` on the new Worker computer.
+
+```env
+SERVER_URL=ws://47.239.12.206:8000/ws/client
+WORKER_SHARED_SECRET=<exact same value as ECS>
+BASE_DIR=$HOME/Documents/agent_7_14/agent1/agent
+STAGING_DIR=$HOME/Documents/agent_7_14/agent1/agent/.agent1-worker/staging
+TRASH_DIR=$HOME/Documents/agent_7_14/agent1/agent/.agent1-trash
+QA_WORKERS=3
+DOWNLOAD_WORKERS=2
+FILE_OPERATION_WORKERS=1
+FILE_MANAGER_MAX_ENTRIES=10000
+CLAUDE_TIMEOUT=240
+DOWNLOAD_TIMEOUT=1800
+LLM_WIKI_QUEUE_FILE=$HOME/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
+LLM_WIKI_CACHE_FILE=$HOME/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
+LLM_WIKI_POLL_SECONDS=2
+LLM_WIKI_MONITOR_TIMEOUT=7200
+LLM_WIKI_RESCAN_AFTER_PUBLISH=false
+LLM_WIKI_API_URL=http://127.0.0.1:19828/api/v1
+LLM_WIKI_API_TOKEN=
+LLM_WIKI_PROJECT_ID=
+CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
+CLAUDE_EXTRA_ARGS=--model haiku
+CONVERSATION_MAX_TURNS=6
+CONVERSATION_MAX_SESSIONS=1000
+```
+
+Do not literally save `$HOME` in the file unless the current configuration loader expands environment variables. Prefer writing the fully resolved absolute path.
+
+---
+
+## Secret handling
+
+Generate the shared Worker secret with:
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
+
+Store the exact same value in ECS and Worker `.env` files.
+
+Never print secrets during normal diagnostics. When verifying configuration, print only whether a value exists and whether the ECS and Worker values match through a safe out-of-band process.
+
+Apply:
+
+```bash
+chmod 600 ecs/.env
+chmod 600 worker/.env
+```
+
+Never commit `.env`, SQLite data, uploaded source files, LLM provider keys, WeCom values, session tokens, or Claude credentials.
+
+---
+
+## Repository hygiene
+
+Before editing, inspect the actual repository. The user's earlier archives may not contain every latest feature even when the intended product requirements above do.
+
+First run:
+
+```bash
+find . -maxdepth 4 -type f | sort
+rg -n "conversation_id|language|retry_count|global.*wiki|LLM_WIKI_RESCAN_AFTER_PUBLISH|source_tree|delete_source|create_user|CLAUDE_EXTRA_ARGS" .
+```
+
+Confirm which features are implemented before changing code.
+
+Do not include these in release ZIP files:
+
+```text
+.venv-ecs/
+.venv-worker/
+__pycache__/
+*.pyc
+ecs/.env
+worker/.env
+ecs-data/
+agent1/agent/raw/
+agent1/agent/wiki/
+agent1/agent/.llm-wiki/
+agent1/agent/.agent1-trash/
+```
+
+A release may include an empty LLM Wiki skeleton and safe `.env.example` files, but never live data or secrets.
+
+---
+
+## Coding rules
+
+- Use Python type hints for new public functions.
+- Prefer `pathlib.Path` for filesystem operations.
+- Use structured logging; do not use `print` in server/Worker runtime code.
+- Do not block the asyncio event loop with network or filesystem-heavy operations.
+- Use `asyncio.to_thread` for blocking ZIP/file work when appropriate.
+- Use `asyncio.create_subprocess_exec` for Claude.
+- Bound all queues.
+- Add timeouts for external network calls and subprocesses.
+- Preserve cancellation behavior.
+- Do not swallow errors. Return useful user-facing status and log technical detail.
+- Avoid broad `except Exception` unless the boundary logs the full exception and converts it into an explicit result.
+- Keep WebSocket message schemas backward-compatible where practical.
+- Include a correlation ID in every request/response pair.
+- Never trust paths, team names, filenames, upload IDs, or WebSocket payloads.
+- Do not follow symlinks in file-management operations.
+- Do not use shell commands constructed from user data.
+- Keep database migrations additive and idempotent.
+- Preserve existing user accounts and status data during upgrades.
+
+---
+
+## WebSocket protocol expectations
+
+Typical ECS-to-Worker messages:
+
+```json
+{"type": "question", "id": "q-...", "conversation_id": "...", "language": "en", "text": "..."}
+```
+
+```json
+{"type": "download_file", "id": "dl-...", "upload_id": "...", "team": "walker_s2", "filename": "...", "url": "..."}
+```
+
+```json
+{"type": "list_sources", "id": "files-..."}
+```
+
+```json
+{"type": "delete_source", "id": "delete-...", "path": "walker_s2/upload-id/file.md"}
+```
+
+Typical Worker-to-ECS messages:
+
+```json
+{"type": "answer", "id": "q-...", "text": "..."}
+```
+
+```json
+{"type": "upload_progress", "upload_id": "...", "status": "processing", "source_path": "..."}
+```
+
+```json
+{"type": "llm_wiki_snapshot", "generated_at": "...", "counts": {}, "tasks": []}
+```
+
+```json
+{"type": "source_tree_result", "id": "files-...", "status": "ok", "tree": []}
+```
+
+```json
+{"type": "delete_source_result", "id": "delete-...", "status": "ok", "path": "...", "trash_path": "..."}
+```
+
+When extending schemas, ignore unknown fields for compatibility.
+
+---
+
+## Known operational problems
+
+### DeepSeek ingestion failures
+
+LLM Wiki has shown errors such as:
+
+```text
+Generation failed: error sending request for url (https://api.deepseek.com/chat/completions)
+Analysis failed: error sending request for url ...
+```
+
+These are LLM Wiki/provider/network problems, not upload-transfer failures. The website must surface the real error and retry state. Do not mark such a source as completed.
+
+Check on the Worker computer:
+
+```bash
+curl -I https://api.deepseek.com
+getent hosts api.deepseek.com
+env | grep -i proxy
+```
+
+Do not automatically assume the API key is wrong; distinguish DNS, proxy, TLS, connection reset, rate limit, authentication, and provider response errors.
+
+### Duplicate ingestion
+
+Do not combine automatic LLM Wiki Source Watch with Worker-triggered automatic rescan. Keep:
+
+```env
+LLM_WIKI_RESCAN_AFTER_PUBLISH=false
+```
+
+### Stale status
+
+The Worker must send a status update when any of these change, even if the broad state string does not:
+
+- retry count
+- error text
+- matching task count
+- generated files
+- completion receipt
+- queue timestamp
+
+### Claude latency
+
+The intended fast default is:
+
+```env
+CLAUDE_EXTRA_ARGS=--model haiku
+```
+
+Do not invent a `Claude Flash` model. Haiku is the intended low-latency choice.
+
+---
+
+## Development workflow for Codex
+
+For every task:
+
+1. Inspect the relevant files and current implementation.
+2. State the exact bug or required behavior in code terms.
+3. Make the smallest coherent change.
+4. Add or update tests.
+5. Run compilation and targeted tests.
+6. Run a compatibility check against an existing SQLite database.
+7. Update documentation when configuration or deployment changes.
+8. Produce a release ZIP without secrets or runtime data.
+9. Provide an exact upgrade path preserving `.env`, databases, virtual environments, and the live LLM Wiki project.
+
+Do not rewrite the entire project unless explicitly directed.
+
+---
+
+## Local validation commands
+
+From repository root:
+
+```bash
+python3 -m compileall -q ecs worker scripts
+```
+
+Install test/runtime dependencies in isolated environments:
+
+```bash
+python3 -m venv .venv-ecs
+source .venv-ecs/bin/activate
+python3 -m pip install -r ecs/requirements.txt
+```
+
+```bash
+python3 -m venv .venv-worker
+source .venv-worker/bin/activate
+python3 -m pip install -r worker/requirements.txt
+```
+
+Start ECS:
+
+```bash
+./scripts/run_ecs.sh
+```
+
+Check:
+
+```bash
+curl -s http://127.0.0.1:8000/health | python3 -m json.tool
+```
+
+Start Worker in a separate terminal after safe test configuration:
+
+```bash
+./scripts/run_worker.sh
+```
+
+Do not point development tests at the live ECS or live Worker unless the user explicitly approves.
+
+---
+
+## Required test coverage
+
+### Authentication
+
+- valid login
+- invalid login
+- inactive user
+- session expiration
+- logout
+- role enforcement
+- CSRF failure
+- upload protected
+- delete protected
+
+### Filesystem security
+
+- absolute path rejected
+- `../` traversal rejected
+- encoded traversal rejected
+- symlink escape rejected
+- deletion of root rejected
+- processing source deletion rejected
+- soft-delete preserves file under trash
+- duplicate delete handled safely
+
+### Upload pipeline
+
+- normal file
+- Chinese filename
+- zero-byte file policy
+- large-file limit
+- ZIP extraction
+- ZIP traversal
+- ZIP symlink
+- ZIP bomb limits
+- partial download cleanup
+- atomic publish
+- Worker reconnect during upload
+
+### Status monitor
+
+- queued
+- processing
+- retrying
+- permanently failed
+- completed and removed from active queue
+- generated files from cache
+- duplicate queue entries
+- error changes without state changes
+- global snapshot versus current upload
+- malformed/missing queue files
+- Worker restart
+
+### QA
+
+- same conversation retains context
+- new conversation resets context
+- same conversation maps to one QA lane
+- separate conversations can run concurrently
+- eight languages transmitted and honored
+- Claude command includes read-only tools
+- Claude command includes configured model
+- no permission-request text in normal answer
+- timeout and nonzero exit handling
+
+### Migration
+
+- old database opens
+- additive columns/tables created once
+- existing users remain
+- existing uploads remain
+- rerunning initialization is safe
+
+---
+
+## Deployment rules
+
+### Before every ECS deployment
+
+Back up:
+
+```text
+ecs/.env
+ecs-data/
+current code
+```
+
+When copying new code, preserve:
+
+```text
+ecs/.env
+.venv-ecs/
+ecs-data/
+```
+
+### Before every Worker deployment
+
+Back up:
+
+```text
+worker/.env
+agent1/agent/CLAUDE.md
+live LLM Wiki project or at least raw/, wiki/, and .llm-wiki/
+```
+
+When copying new code, preserve:
+
+```text
+worker/.env
+.venv-worker/
+agent1/agent/
+```
+
+Only copy the updated `CLAUDE.md` into the live LLM Wiki project when the QA instructions changed.
+
+### Startup order
+
+1. Start ECS.
+2. Open LLM Wiki on the correct project.
+3. Confirm Source Watch and Auto Ingest are on.
+4. Start exactly one Worker.
+5. Confirm `/health` reports `worker_online: true`.
+6. Run a small upload test.
+7. Run a QA language/context test.
+8. Run a soft-delete test.
+9. Test WeCom last.
+
+---
+
+## Production hardening still required
+
+The current public-IP port-8000 setup is suitable for controlled testing, not final production.
+
+Before broad production use:
+
+- configure a domain
+- add Nginx or another reverse proxy
+- enable HTTPS
+- set `COOKIE_SECURE=true`
+- change Worker URL from `ws://` to `wss://`
+- restrict or close public port 8000
+- permit only ports 80/443 externally
+- add login rate limiting
+- add upload rate/size controls at the reverse proxy
+- add database backup rotation
+- add log rotation
+- add service supervision or systemd after tmux-based testing is stable
+- define trash retention and restore operations
+- define user administration UI or documented CLI workflow
+
+Do not perform this hardening in the same change as functional bug fixes unless explicitly requested.
+
+---
+
+## Definition of done for the current deployment
+
+The deployment is complete only when all are true:
+
+```text
+Existing ECS runs the latest code.
+Existing ecs/.env and SQLite data are preserved.
+Existing WeCom values are preserved.
+A new Worker secret is identical on ECS and Worker.
+The old Worker is stopped.
+The new Worker is connected.
+Claude CLI is installed, authenticated, and uses Haiku.
+LLM Wiki opens the migrated project on the new computer.
+Source Watch and Auto Ingest are enabled.
+Automatic Worker rescan is disabled.
+/health reports worker_online=true.
+/login works with an existing or newly created admin account.
+/manage reflects raw/sources accurately.
+/upload sends files to the new Worker.
+The upload page shows current-upload and global LLM Wiki status separately.
+Retry count and actual DeepSeek errors are visible.
+Soft deletion moves sources to .agent1-trash.
+QA supports all eight languages.
+Same-browser follow-up questions retain recent context.
+Claude does not ask the website user for file-read permission.
+WeCom receives a valid answer through the existing ECS callback.
+```
+
+---
+
+## First action for the next Codex session
+
+Do not immediately modify code.
+
+Run this first:
+
+```bash
+pwd
+find . -maxdepth 4 -type f | sort
+rg -n "conversation_id|language|retry_count|max_retries|llm_wiki_snapshot|source_tree|delete_source|create_user|CLAUDE_EXTRA_ARGS|LLM_WIKI_RESCAN_AFTER_PUBLISH" .
+```
+
+Then compare the repository's actual implementation against this AGENTS.md and report:
+
+1. which required features are present,
+2. which are missing,
+3. which appear partially implemented,
+4. which database migrations exist,
+5. which deployment files need updating,
+6. the smallest safe plan to finish and deploy on the existing ECS plus the new Worker computer.

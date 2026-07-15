@@ -1,0 +1,256 @@
+# Final setup and upgrade guide
+
+## 1. Security warning before deployment
+
+The login system protects application permissions, but passwords sent over plain `http://` can still be observed in transit. For temporary testing on port 8000:
+
+- restrict the Alibaba security group to trusted IP addresses;
+- keep `COOKIE_SECURE=false`;
+- do not treat the plain-HTTP deployment as production-ready.
+
+For production, place Uvicorn behind HTTPS and set:
+
+```env
+COOKIE_SECURE=true
+```
+
+## 2. ECS upgrade
+
+Back up the current configuration and database before replacing code:
+
+```bash
+cd /root/agent_7_14
+cp ecs/.env /root/agent_7_14-ecs.env.backup
+cp -a ecs-data /root/agent_7_14-ecs-data.backup
+```
+
+Extract the new package. Restore your `.env` because release ZIPs intentionally do not contain secrets:
+
+```bash
+cp /root/agent_7_14-ecs.env.backup /root/agent_7_14/ecs/.env
+```
+
+Add these settings if they are not already present:
+
+```env
+FILE_COMMAND_TIMEOUT=60
+SESSION_COOKIE_NAME=agent1_session
+SESSION_HOURS=8
+COOKIE_SECURE=false
+COOKIE_SAMESITE=lax
+```
+
+Install/update dependencies:
+
+```bash
+cd /root/agent_7_14
+chmod +x scripts/*.sh scripts/create_user.py
+./scripts/bootstrap_ecs.sh
+```
+
+The database migration runs automatically at ECS startup and adds the new authentication/audit tables without deleting old upload records.
+
+Create the first administrator:
+
+```bash
+cd /root/agent_7_14
+source .venv-ecs/bin/activate
+python3 scripts/create_user.py --username admin --role admin
+```
+
+The command asks for the password without displaying it. Passwords must be at least 10 characters and are stored using salted `scrypt`, not plaintext.
+
+Create more accounts when needed:
+
+```bash
+python3 scripts/create_user.py --username reviewer --role viewer
+python3 scripts/create_user.py --username uploader --role editor
+```
+
+Running the command again for an existing username updates its password and role.
+
+Start ECS:
+
+```bash
+tmux new -s agent-7-14-ecs
+cd /root/agent_7_14
+./scripts/run_ecs.sh
+```
+
+Detach with `Ctrl+B`, then `D`.
+
+Verify:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+## 3. Worker upgrade
+
+Back up the existing Worker environment before replacing code:
+
+```bash
+cd ~/Documents/agent_7_14
+cp worker/.env ~/agent_7_14-worker.env.backup
+```
+
+Restore it after extracting the new release:
+
+```bash
+cp ~/agent_7_14-worker.env.backup ~/Documents/agent_7_14/worker/.env
+```
+
+Add or verify:
+
+```env
+BASE_DIR=/home/eason/Documents/agent_7_14/agent1/agent
+STAGING_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-worker/staging
+TRASH_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash
+
+FILE_OPERATION_WORKERS=1
+FILE_MANAGER_MAX_ENTRIES=10000
+
+LLM_WIKI_QUEUE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
+LLM_WIKI_CACHE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
+LLM_WIKI_RESCAN_AFTER_PUBLISH=false
+```
+
+The ECS and Worker `WORKER_SHARED_SECRET` values must still match exactly.
+
+Install/update dependencies:
+
+```bash
+cd ~/Documents/agent_7_14
+chmod +x scripts/*.sh
+./scripts/bootstrap_worker.sh
+```
+
+Open LLM Wiki and select exactly:
+
+```text
+/home/eason/Documents/agent_7_14/agent1/agent
+```
+
+Enable:
+
+```text
+Source Watch: ON
+Auto Ingest: ON
+```
+
+The LLM Wiki local API may remain enabled, but the Worker does not need an API token when `LLM_WIKI_RESCAN_AFTER_PUBLISH=false`.
+
+Start the Worker:
+
+```bash
+tmux new -s agent-7-14-worker
+cd ~/Documents/agent_7_14
+./scripts/run_worker.sh
+```
+
+Detach with `Ctrl+B`, then `D`.
+
+## 4. Browser test
+
+From any computer allowed by the ECS security group:
+
+```text
+http://47.239.12.206:8000/login
+```
+
+Sign in with the account created by `create_user.py`.
+
+Test in this order:
+
+1. Open `/manage`; confirm the current `raw/sources` directory tree appears.
+2. Open `/upload`; upload a small Markdown file.
+3. Follow the upload status page until LLM Wiki reports completion.
+4. Return to `/manage`; confirm the new team/upload folder and file appear.
+5. Remove the file. Confirm it disappears from `raw/sources` and appears under `.agent1-trash` on the Worker.
+
+Worker verification:
+
+```bash
+find /home/eason/Documents/agent_7_14/agent1/agent/raw/sources -type f -print
+find /home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash -type f -print
+```
+
+## 5. Permissions
+
+| Route/action | Public | Viewer | Editor | Admin |
+|---|---:|---:|---:|---:|
+| Ask questions | Yes | Yes | Yes | Yes |
+| Health | Yes | Yes | Yes | Yes |
+| List sources | No | Yes | Yes | Yes |
+| View upload status | No | Yes | Yes | Yes |
+| Upload | No | No | Yes | Yes |
+| Remove file/folder | No | No | Yes | Yes |
+
+## 6. Removal behavior
+
+The browser sends a relative path such as:
+
+```text
+tian_gong/7f3c.../manual.pdf
+```
+
+The Worker validates it against `BASE_DIR/raw/sources`, blocks path traversal and active ingestion, then moves it to:
+
+```text
+BASE_DIR/.agent1-trash/<timestamp>/tian_gong/7f3c.../manual.pdf
+```
+
+LLM Wiki Source Watch observes that the source disappeared from `raw/sources` and applies its source-removal lifecycle.
+
+## 7. Troubleshooting
+
+### `/manage` says Worker offline
+
+```bash
+curl http://47.239.12.206:8000/health
+```
+
+Confirm `worker_online` is true and inspect the Worker tmux session.
+
+### Removal returns 409
+
+The source or a file inside the selected folder is currently `processing` in LLM Wiki. Wait until ingestion finishes, refresh, and remove again.
+
+### Login loops back to `/login`
+
+Check the ECS clock and `SESSION_HOURS`. If using plain HTTP, `COOKIE_SECURE` must be false. After HTTPS is installed, change it to true.
+
+### The same source ingests twice
+
+Confirm:
+
+```env
+LLM_WIKI_RESCAN_AFTER_PUBLISH=false
+```
+
+and do not manually call `/sources/rescan` while Source Watch + Auto Ingest are active.
+
+### Source manager exceeds the entry limit
+
+Increase carefully:
+
+```env
+FILE_MANAGER_MAX_ENTRIES=20000
+```
+
+then restart the Worker.
+
+## QA conversation/language upgrade
+
+No new Python package is required. The new Worker settings are optional because defaults are built in:
+
+```env
+CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
+CLAUDE_EXTRA_ARGS=
+CONVERSATION_MAX_TURNS=6
+CONVERSATION_MAX_SESSIONS=1000
+```
+
+After copying this version over the existing code, restart both ECS and Worker so the new `/ask` protocol is loaded. Existing browsers automatically receive a conversation ID on their next question. Use **New conversation** on the question page to intentionally clear context.
+
+The same browser conversation is routed to the same QA worker lane, but Claude still runs as a short-lived subprocess for each request. Context continuity is supplied by the Worker's bounded recent-turn history. That history is in memory and resets when the Worker process restarts.

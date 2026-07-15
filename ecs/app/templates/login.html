@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent1 login</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:480px;margin:70px auto;padding:0 18px;background:#f5f7fb;color:#172033}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:26px;box-shadow:0 8px 30px #1f293711}label{display:block;font-weight:700;margin:14px 0 6px}input{width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd5e1;border-radius:9px}button{width:100%;margin-top:20px;padding:11px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}.error{color:#b91c1c;min-height:22px}a{color:#2563eb}</style>
+</head>
+<body>
+<h1>Agent1 sign in</h1>
+<p>Login is required to upload, inspect, or remove knowledge sources.</p>
+<div class="card">
+<p class="error">__LOGIN_ERROR__</p>
+<form method="post" action="/login">
+<input type="hidden" name="next_url" value="__NEXT_URL__">
+<label for="username">Username</label><input id="username" name="username" autocomplete="username" required autofocus>
+<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+<button type="submit">Sign in</button>
+</form>
+</div>
+<p><a href="/">Back to public question page</a></p>
+</body></html>
