@@ -4,15 +4,113 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Upload knowledge sources</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:14px;align-items:center}.card{background:white;border:1px solid #dbe2ee;border-radius:14px;padding:24px;box-shadow:0 8px 30px #1f293711}label{display:block;font-weight:700;margin:14px 0 6px}select,input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:9px}button{margin-top:18px;padding:11px 20px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}pre{white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:9px}a{color:#2563eb}</style>
+body{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:14px;align-items:center}.card{background:white;border:1px solid #dbe2ee;border-radius:14px;padding:24px;box-shadow:0 8px 30px #1f293711}label{display:block;font-weight:700;margin:14px 0 6px}select,input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:9px}button{margin-top:18px;padding:11px 20px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:wait}pre{white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:9px}a{color:#2563eb}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.upload-progress{margin-top:18px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8fbff}.progress-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.progress-heading strong:last-child{color:#2563eb}.progress-track{height:14px;margin:12px 0 8px;background:#e2e8f0;border-radius:99px;overflow:hidden;position:relative}.progress-fill{height:100%;width:0;background:linear-gradient(90deg,#2563eb,#60a5fa,#2563eb);background-size:200% 100%;transition:width .25s ease}.upload-progress.active .progress-fill{animation:shimmer 1.5s linear infinite}.progress-meta{display:flex;justify-content:space-between;gap:12px;color:#64748b;font-size:13px}.upload-progress.success{border-color:#86efac;background:#f0fdf4}.upload-progress.success .progress-heading strong:last-child{color:#166534}.upload-progress.success .progress-fill{background:#22c55e}.upload-progress.error{border-color:#fecaca;background:#fff7f7}.upload-progress.error .progress-heading strong:last-child{color:#b91c1c}.upload-progress.error .progress-fill{background:#ef4444}@keyframes shimmer{to{background-position:-200% 0}}@media (prefers-reduced-motion:reduce){.upload-progress.active .progress-fill{animation:none}.progress-fill{transition:none}}</style>
 </head>
 <body>
-<div class="top"><div><h1>Upload documentation</h1><p>Signed in as <strong>__USERNAME__</strong></p></div><a href="/manage">Source manager</a></div>
-<p>The ECS accepts the file, then the private Worker downloads, extracts, publishes, and watches LLM Wiki ingestion.</p>
-<div class="card"><form id="form"><input type="hidden" name="csrf_token" value="__CSRF_TOKEN__"><label for="team">Team</label><select id="team" name="team"></select><label for="file">File</label><input id="file" name="file" type="file" required><button>Upload</button></form><pre id="result">Choose a file.</pre></div>
-<p><a href="/manage">Manage sources</a> · <a href="/">Back to questions</a></p>
+<div class="top"><div><h1 data-i18n="title">Upload documentation</h1><p><span data-i18n="signedIn">Signed in as</span> <strong>__USERNAME__</strong></p></div><div><label for="ui-language" class="sr-only">Interface language</label><select id="ui-language" aria-label="Interface language"><option value="en">English</option><option value="zh-CN">简体中文</option></select> <a href="/manage" data-i18n="sourceManager">Source manager</a></div></div>
+<p data-i18n="description">The ECS accepts the file, then the private Worker downloads, extracts, publishes, and watches LLM Wiki ingestion.</p>
+<div class="card">
+	<form id="form">
+		<input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+		<label for="team" data-i18n="team">Team</label>
+		<select id="team" name="team"></select>
+		<label for="file" data-i18n="file">File</label>
+		<input id="file" name="file" type="file" required>
+		<button id="upload-button" data-i18n="upload">Upload</button>
+	</form>
+
+		<div id="progress-wrap" class="upload-progress" style="display:none" aria-live="polite">
+			<div class="progress-heading">
+				<strong id="progress-title" data-i18n="uploading">Uploading</strong>
+				<span id="percent">0%</span>
+			</div>
+			<div id="progress" class="progress-track" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+				<div id="bar" class="progress-fill"></div>
+			</div>
+			<div class="progress-meta"><span id="progress-file" data-i18n="noFile">No file selected</span><span id="status" data-i18n="preparing">Preparing upload...</span></div>
+		</div>
+
+	<pre id="result" data-i18n="chooseFile">Choose a file.</pre>
+</div>
+<p><a href="/manage" data-i18n="manageSources">Manage sources</a> · <a href="/" data-i18n="backQuestions">Back to questions</a></p>
 <script>
 const teams=__ALLOWED_TEAMS__;const team=document.getElementById('team');for(const value of teams){const option=document.createElement('option');option.value=value;option.textContent=value;team.appendChild(option)}
-document.getElementById('form').onsubmit=async(e)=>{e.preventDefault();const result=document.getElementById('result');result.textContent='Uploading to ECS…';const body=new FormData(e.target);try{const response=await fetch('/upload',{method:'POST',body});const data=await response.json();if(!response.ok){result.textContent=data.error||data.detail||'Upload failed';return}result.textContent='Accepted. Opening status page…';location.href=data.status_page}catch(error){result.textContent=String(error)}};
+const translations={en:{title:'Upload documentation',signedIn:'Signed in as',sourceManager:'Source manager',description:'The ECS accepts the file, then the private Worker downloads, extracts, publishes, and watches LLM Wiki ingestion.',team:'Team',file:'File',upload:'Upload',uploading:'Uploading',noFile:'No file selected',preparing:'Preparing upload...',chooseFile:'Choose a file.',manageSources:'Manage sources',backQuestions:'Back to questions',starting:'Starting upload...',transfer:'Your file is being transferred securely. Please keep this page open.',uploadingTo:'Uploading to ECS…',accepted:'Upload accepted',redirecting:'Accepted. Redirecting to status page…',failed:'Upload failed',network:'Network error',cancelled:'Upload cancelled',cancelHelp:'The upload was cancelled. You can try again.'},'zh-CN':{title:'上传文档',signedIn:'当前登录用户：',sourceManager:'源文件管理',description:'ECS 接收文件后，私有 Worker 会下载、解压、发布文件，并监控 LLM Wiki 的处理进度。',team:'团队',file:'文件',upload:'上传',uploading:'正在上传',noFile:'尚未选择文件',preparing:'准备上传……',chooseFile:'请选择一个文件。',manageSources:'管理源文件',backQuestions:'返回问答页面',starting:'正在开始上传……',transfer:'文件正在安全传输，请保持此页面打开。',uploadingTo:'正在上传到 ECS……',accepted:'上传已接收',redirecting:'已接收，正在打开详细状态……',failed:'上传失败',network:'网络错误',cancelled:'上传已取消',cancelHelp:'上传已取消，可以重试。'}};
+const uiLanguage=document.getElementById('ui-language');function tr(key){return(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key}function applyLanguage(){document.documentElement.lang=uiLanguage.value;document.querySelectorAll('[data-i18n]').forEach(element=>element.textContent=tr(element.dataset.i18n));uiLanguage.setAttribute('aria-label',uiLanguage.value==='zh-CN'?'界面语言':'Interface language')}uiLanguage.value=localStorage.getItem('agent1_ui_language')||'en';applyLanguage();uiLanguage.onchange=()=>{localStorage.setItem('agent1_ui_language',uiLanguage.value);applyLanguage()};
+document.getElementById('form').onsubmit=(e)=>{
+	e.preventDefault();
+	const result=document.getElementById('result');
+	const uploadButton=document.getElementById('upload-button');
+	const progressWrap=document.getElementById('progress-wrap');
+	const progressTitle=document.getElementById('progress-title');
+	const progressFile=document.getElementById('progress-file');
+	const bar=document.getElementById('bar');
+	const percent=document.getElementById('percent');
+	const status=document.getElementById('status');
+	const progressbar=document.querySelector('[role="progressbar"]');
+	const file=e.target.querySelector('input[type="file"]').files[0];
+	if(!file)return;
+
+	progressWrap.style.display='block';
+	progressWrap.className='upload-progress active';
+	progressTitle.textContent=tr('uploadingTo');
+	progressFile.textContent=file.name+' · '+(file.size/1024/1024).toFixed(file.size>=1024*1024?1:2)+' MB';
+	bar.style.width='0%';
+	percent.textContent='0%';
+	status.textContent=tr('starting');
+	result.textContent=tr('transfer');
+	progressbar.setAttribute('aria-valuenow','0');
+	uploadButton.disabled=true;
+	uploadButton.textContent='Uploading…';
+
+	const xhr=new XMLHttpRequest();
+	xhr.open('POST','/upload');
+	const form=new FormData(e.target);
+
+	xhr.upload.onprogress=(ev)=>{
+		if(ev.lengthComputable){
+			const p=Math.round((ev.loaded/ev.total)*100);
+				bar.style.width=p+'%';
+				percent.textContent=p+'%';
+				progressbar.setAttribute('aria-valuenow',String(p));
+				status.textContent=tr('uploadingTo')+' ('+Math.round(ev.loaded/1024)+' KB of '+Math.round(ev.total/1024)+' KB)';
+			} else {
+				status.textContent=tr('uploadingTo');
+		}
+	};
+
+	xhr.onreadystatechange=()=>{
+		if(xhr.readyState===XMLHttpRequest.DONE){
+			try{
+				const data=JSON.parse(xhr.responseText || '{}');
+				if(xhr.status>=200 && xhr.status<300){
+					progressWrap.className='upload-progress success';
+					progressTitle.textContent=tr('accepted');
+					bar.style.width='100%';
+					percent.textContent='100%';
+					status.textContent=tr('redirecting');
+					location.href=data.status_page;
+				} else {
+					progressWrap.className='upload-progress error';
+					progressTitle.textContent=tr('failed');
+					result.textContent=data.error||data.detail||('Upload failed (status '+xhr.status+')');
+					status.textContent=tr('failed');
+					uploadButton.disabled=false;uploadButton.textContent=tr('upload');
+				}
+			}catch(err){
+				progressWrap.className='upload-progress error';
+				progressTitle.textContent=tr('failed');
+				result.textContent='Unexpected response from server';
+				status.textContent=tr('failed');
+				uploadButton.disabled=false;uploadButton.textContent=tr('upload');
+			}
+		}
+	};
+
+	xhr.onerror=()=>{progressWrap.className='upload-progress error';progressTitle.textContent=tr('failed');result.textContent=tr('network');status.textContent=tr('network');uploadButton.disabled=false;uploadButton.textContent=tr('upload')};
+	xhr.onabort=()=>{progressWrap.className='upload-progress error';progressTitle.textContent=tr('cancelled');result.textContent=tr('cancelHelp');status.textContent=tr('cancelled');uploadButton.disabled=false;uploadButton.textContent=tr('upload')};
+	xhr.send(form);
+};
+
 </script>
 </body></html>
