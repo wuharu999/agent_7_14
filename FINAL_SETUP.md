@@ -116,6 +116,12 @@ AUTHORING_QUEUE_MAX=8
 AUTHORING_LOCK_STRIPES=64
 AUTHORING_MAX_TURNS=100
 AUTHORING_MAX_CONTEXT_BYTES=768000
+PROMPT_GUARD_ENABLED=true
+PROMPT_GUARD_TIMEOUT=20
+PROMPT_GUARD_CONCURRENCY=2
+PROMPT_SCAN_MAX_FILE_BYTES=2097152
+PROMPT_SCAN_MAX_TOTAL_BYTES=10485760
+PROMPT_SCAN_MAX_WARNINGS=1000
 
 LLM_WIKI_QUEUE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
 LLM_WIKI_CACHE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
@@ -170,8 +176,10 @@ Sign in with the account created by `create_user.py`.
 Test in this order:
 
 1. Open `/manage`; confirm the current `raw/sources` directory tree appears.
-2. Open `/upload`; upload a small Markdown file.
-3. Follow the upload status page until LLM Wiki reports completion.
+2. Open `/upload`; select two small supported files for one team and confirm
+   both appear in the inline queue with separate detail links.
+3. Confirm both detail pages reach the expected LLM Wiki completion or show
+   the original processing error.
 4. Return to `/manage`; confirm the new team/upload folder and file appear.
 5. Remove the file. Confirm it disappears from `raw/sources` and appears under `.agent1-trash` on the Worker.
 
@@ -253,10 +261,15 @@ No new Python package is required. The new Worker settings are optional because 
 
 ```env
 CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
-CLAUDE_EXTRA_ARGS=
+CLAUDE_EXTRA_ARGS=--model haiku
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
+
+`CLAUDE_ALLOWED_TOOLS` is retained for configuration compatibility, but the
+service launcher now enforces `Read`, `Glob`, and `Grep` in code. Only a model
+selection is accepted in `CLAUDE_EXTRA_ARGS`; permission, tool, MCP, plugin, and
+session flags are rejected.
 
 After copying this version over the existing code, restart both ECS and Worker so the new `/ask` protocol is loaded. Existing browsers automatically receive a conversation ID on their next question. Use **New conversation** on the question page to intentionally clear context.
 

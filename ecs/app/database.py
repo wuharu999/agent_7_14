@@ -68,6 +68,7 @@ def initialize_database() -> None:
                 percent INTEGER,
                 error TEXT,
                 published_at_ms INTEGER,
+                security_scan_complete INTEGER NOT NULL DEFAULT 0,
                 created_by INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -82,6 +83,16 @@ def initialize_database() -> None:
                 error TEXT,
                 files_written TEXT NOT NULL DEFAULT '[]',
                 updated_at TEXT NOT NULL,
+                UNIQUE(upload_id, source_identity),
+                FOREIGN KEY(upload_id) REFERENCES uploads(upload_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS upload_security_warnings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                upload_id TEXT NOT NULL,
+                source_identity TEXT NOT NULL,
+                categories TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
                 UNIQUE(upload_id, source_identity),
                 FOREIGN KEY(upload_id) REFERENCES uploads(upload_id) ON DELETE CASCADE
             );
@@ -127,6 +138,8 @@ def initialize_database() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
             CREATE INDEX IF NOT EXISTS idx_sources_upload ON upload_sources(upload_id);
+            CREATE INDEX IF NOT EXISTS idx_security_warnings_upload
+                ON upload_security_warnings(upload_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
             CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
             CREATE INDEX IF NOT EXISTS idx_audit_created ON file_audit_log(created_at);
@@ -137,6 +150,11 @@ def initialize_database() -> None:
         # Migrate databases created by the earlier prototype.
         if "created_by" not in _columns(connection, "uploads"):
             connection.execute("ALTER TABLE uploads ADD COLUMN created_by INTEGER")
+        if "security_scan_complete" not in _columns(connection, "uploads"):
+            connection.execute(
+                "ALTER TABLE uploads ADD COLUMN security_scan_complete "
+                "INTEGER NOT NULL DEFAULT 1"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +307,9 @@ def create_upload(
             """
             INSERT INTO uploads (
                 upload_id, task_id, team, filename, size_bytes, ecs_path,
-                status, stage, message, created_by, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, stage, message, security_scan_complete, created_by,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 upload_id,
@@ -317,6 +336,7 @@ def update_upload(upload_id: str, **fields: Any) -> None:
         "percent",
         "error",
         "published_at_ms",
+        "security_scan_complete",
     }
     updates = {key: value for key, value in fields.items() if key in allowed}
     if not updates:
@@ -361,6 +381,39 @@ def upsert_source(
             ),
         )
     refresh_upload_aggregate(upload_id)
+
+
+def replace_upload_security_warnings(
+    upload_id: str,
+    warnings: list[dict[str, Any]],
+    *,
+    complete: bool,
+) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "DELETE FROM upload_security_warnings WHERE upload_id = ?",
+            (upload_id,),
+        )
+        connection.executemany(
+            "INSERT INTO upload_security_warnings "
+            "(upload_id, source_identity, categories, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            [
+                (
+                    upload_id,
+                    str(warning["source_identity"]),
+                    json.dumps(warning["categories"], ensure_ascii=False),
+                    now,
+                )
+                for warning in warnings
+            ],
+        )
+        connection.execute(
+            "UPDATE uploads SET security_scan_complete = ?, updated_at = ? "
+            "WHERE upload_id = ?",
+            (1 if complete else 0, now, upload_id),
+        )
 
 
 def mark_sources_deleted(source_path: str) -> None:
@@ -478,6 +531,12 @@ def get_upload(upload_id: str) -> dict[str, Any] | None:
             "FROM upload_sources WHERE upload_id = ? ORDER BY source_identity",
             (upload_id,),
         ).fetchall()
+        warning_rows = connection.execute(
+            "SELECT source_identity, categories, created_at "
+            "FROM upload_security_warnings WHERE upload_id = ? "
+            "ORDER BY source_identity",
+            (upload_id,),
+        ).fetchall()
 
     data = dict(upload)
     sources: list[dict[str, Any]] = []
@@ -502,6 +561,17 @@ def get_upload(upload_id: str) -> dict[str, Any] | None:
 
     data["sources"] = sources
     data["progress"] = {"total": len(sources), **counts}
+    security_warnings: list[dict[str, Any]] = []
+    for row in warning_rows:
+        warning = dict(row)
+        try:
+            categories = json.loads(warning.get("categories") or "[]")
+        except json.JSONDecodeError:
+            categories = ["scan_incomplete_metadata"]
+        warning["categories"] = categories if isinstance(categories, list) else []
+        security_warnings.append(warning)
+    data["security_warnings"] = security_warnings
+    data["security_scan_complete"] = bool(data.get("security_scan_complete"))
     return data
 
 

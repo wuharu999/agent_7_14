@@ -6,6 +6,7 @@ import json
 import logging
 import shutil
 import time
+from pathlib import Path
 from typing import Any
 
 import websockets
@@ -42,7 +43,9 @@ from worker.publisher import (
     prepare_single_file,
     publish_authoring_article,
     publish_directory,
+    safe_segment,
 )
+from worker.prompt_security import guard_user_input, refusal_text, scan_text_sources
 from worker.zip_extractor import extract_zip_safely
 
 log = logging.getLogger("worker.manager")
@@ -249,6 +252,17 @@ class WorkerManager:
                     job.conversation_id,
                     job.language,
                 )
+                guard_decision = await guard_user_input(job.question)
+                if guard_decision.blocked:
+                    await self.emit(
+                        {
+                            "type": "answer",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "text": refusal_text(job.language),
+                        }
+                    )
+                    continue
                 has_content = await asyncio.to_thread(has_wiki_content, job.question)
                 if not has_content:
                     await asyncio.to_thread(log_unanswered, job.question)
@@ -257,6 +271,7 @@ class WorkerManager:
                     job.question,
                     language=job.language,
                     history=history,
+                    guard_decision=guard_decision,
                 )
                 if answer.startswith(GAP_MARKER):
                     await asyncio.to_thread(log_unanswered, job.question)
@@ -487,14 +502,23 @@ class WorkerManager:
         if not job.upload_id or not job.download_url:
             raise ValueError("download task is missing upload_id or download_url")
 
-        final_directory = RAW_SOURCES_DIR / job.team / job.upload_id
+        safe_team = safe_segment(job.team, "default")
+        safe_upload_id = safe_segment(job.upload_id, "upload")
+        final_directory = RAW_SOURCES_DIR / safe_team / safe_upload_id
         published_at_ms = job.published_at_ms
         if final_directory.exists():
+            existing_sources = collect_supported_sources(final_directory)
             identities = [
                 path.relative_to(RAW_SOURCES_DIR).as_posix()
-                for path in collect_supported_sources(final_directory)
+                for path in existing_sources
             ]
             if identities:
+                await self.scan_and_report_sources(
+                    job.upload_id,
+                    existing_sources,
+                    final_directory,
+                    f"{safe_team}/{safe_upload_id}",
+                )
                 await self.publish_and_monitor(job.upload_id, identities, published_at_ms)
                 return
 
@@ -553,6 +577,13 @@ class WorkerManager:
         if not supported:
             raise ValueError("No LLM Wiki-supported source files found after preparation")
 
+        await self.scan_and_report_sources(
+            job.upload_id,
+            supported,
+            publish_dir,
+            f"{safe_team}/{safe_upload_id}",
+        )
+
         await self.emit(
             {
                 "type": "job_progress",
@@ -572,6 +603,30 @@ class WorkerManager:
         published_at_ms = int(time.time() * 1000)
         await self.publish_and_monitor(job.upload_id, identities, published_at_ms)
         await asyncio.to_thread(shutil.rmtree, job_root, True)
+
+    async def scan_and_report_sources(
+        self,
+        upload_id: str,
+        paths: list[Path],
+        root: Path,
+        identity_prefix: str,
+    ) -> None:
+        scan = await asyncio.to_thread(scan_text_sources, paths, root)
+        warnings = [
+            {
+                "source_identity": f"{identity_prefix}/{warning['source_identity']}",
+                "categories": warning["categories"],
+            }
+            for warning in scan.warnings
+        ]
+        await self.emit(
+            {
+                "type": "upload_security_warnings",
+                "upload_id": upload_id,
+                "warnings": warnings,
+                "security_scan_complete": scan.complete,
+            }
+        )
 
     async def publish_and_monitor(
         self,

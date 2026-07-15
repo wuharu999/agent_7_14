@@ -5,7 +5,7 @@ Agent1 is a public ECS gateway plus a private Worker for a robot-documentation k
 ## Included
 
 - Public question page and WeCom callback.
-- Authenticated upload page.
+- Authenticated multi-file upload page with per-file pipeline status.
 - Authenticated source-tree manager.
 - Viewer, editor and admin roles.
 - Soft deletion into `.agent1-trash/` rather than permanent erasure.
@@ -16,6 +16,9 @@ Agent1 is a public ECS gateway plus a private Worker for a robot-documentation k
 - Safe ZIP extraction.
 - Existing LLM Wiki GUI used for Source Watch, Auto Ingest and wiki writing.
 - Browser-visible ingestion status through LLM Wiki queue/cache monitoring.
+- Prompt/command-injection hardening for browser QA, WeCom, authoring, and
+  retrieved source content.
+- Non-blocking text-source security warnings on upload status pages.
 
 ## Pages
 
@@ -32,6 +35,19 @@ Agent1 is a public ECS gateway plus a private Worker for a robot-documentation k
 - `viewer`: inspect source folders and files
 - `editor`: inspect, upload and remove sources
 - `admin`: same file permissions as editor; intended for system administrators
+
+## Upload batches
+
+Editors and admins can select up to 20 supported files for one team on
+`/upload`. The browser sends at most two files concurrently, and each file is
+still an independent upload with its own ID, atomic source folder, security
+scan, error handling, and LLM Wiki status link. A failed file does not stop the
+rest of the selection.
+
+Supported documents are PDF, DOCX, PPTX, and XLSX. Supported text/data files
+are Markdown, TXT, CSV, JSON, HTML, XML, and YAML. ZIP archives may contain
+supported sources and should be used when related files need to remain one
+source bundle.
 
 Users are created from the ECS command line:
 
@@ -67,7 +83,18 @@ Read [FINAL_SETUP.md](FINAL_SETUP.md) for full first-run and upgrade instruction
 
 The public question page keeps a random conversation ID in the browser. Requests from that conversation are routed to the same QA lane and include a bounded recent history, so follow-up questions retain context without dedicating a permanent Claude process to one user. Selectable answer languages are Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
 
-The Worker invokes Claude with the read-only tools `Read`, `Glob`, and `Grep` pre-approved. The bundled service prompt and `CLAUDE.md` explicitly prohibit asking the website user for file-read permission.
+The Worker invokes every Claude path through the same safe-mode subprocess
+launcher. User content is sent through stdin; slash commands, session
+persistence, plugins, and MCP servers are disabled; and only `Read`, `Glob`, and
+`Grep` are exposed. The bundled service prompt and `CLAUDE.md` treat retrieved
+documents as untrusted evidence and prohibit asking website users for file-read
+permission.
+
+Direct policy-override, secret-extraction, and tool-escalation attempts receive
+a generic localized refusal and are not retained in conversation storage or
+security logs. Text-based uploads are scanned before atomic publication. The
+status page shows relative filenames and warning categories only; suspicious
+documents continue into the normal LLM Wiki pipeline.
 
 Editors and admins can also use the Claude documentation author on `/upload`. The authoring conversation is persisted by the Worker, can generate a Markdown article for review, and publishes only after an explicit confirmation. Claude remains read-only; the Worker performs the final atomic publication into `raw/sources/` for LLM Wiki Source Watch.
 

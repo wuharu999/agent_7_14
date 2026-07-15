@@ -6,6 +6,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 
+from shared.source_types import SUPPORTED_SOURCE_SUFFIXES
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / "worker" / ".env")
 
@@ -52,6 +54,22 @@ AUTHORING_MAX_TURNS = int(os.environ.get("AUTHORING_MAX_TURNS", "100"))
 AUTHORING_MAX_MESSAGE_BYTES = int(os.environ.get("AUTHORING_MAX_MESSAGE_BYTES", str(50 * 1024)))
 AUTHORING_MAX_ARTICLE_BYTES = int(os.environ.get("AUTHORING_MAX_ARTICLE_BYTES", str(500 * 1024)))
 AUTHORING_MAX_CONTEXT_BYTES = int(os.environ.get("AUTHORING_MAX_CONTEXT_BYTES", str(750 * 1024)))
+PROMPT_GUARD_ENABLED = os.environ.get("PROMPT_GUARD_ENABLED", "true").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+PROMPT_GUARD_TIMEOUT = max(1, int(os.environ.get("PROMPT_GUARD_TIMEOUT", "20")))
+PROMPT_GUARD_CONCURRENCY = max(
+    1, int(os.environ.get("PROMPT_GUARD_CONCURRENCY", "2"))
+)
+PROMPT_SCAN_MAX_FILE_BYTES = max(1, int(
+    os.environ.get("PROMPT_SCAN_MAX_FILE_BYTES", str(2 * 1024**2))
+))
+PROMPT_SCAN_MAX_TOTAL_BYTES = max(PROMPT_SCAN_MAX_FILE_BYTES, int(
+    os.environ.get("PROMPT_SCAN_MAX_TOTAL_BYTES", str(10 * 1024**2))
+))
+PROMPT_SCAN_MAX_WARNINGS = max(
+    1, int(os.environ.get("PROMPT_SCAN_MAX_WARNINGS", "1000"))
+)
 DOWNLOAD_TIMEOUT = int(os.environ.get("DOWNLOAD_TIMEOUT", "1800"))
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024**3)))
 MAX_ZIP_FILES = int(os.environ.get("MAX_ZIP_FILES", "20000"))
@@ -72,12 +90,6 @@ LLM_WIKI_PROJECT_ID = os.environ.get("LLM_WIKI_PROJECT_ID", "")
 LLM_WIKI_RESCAN_AFTER_PUBLISH = os.environ.get(
     "LLM_WIKI_RESCAN_AFTER_PUBLISH", "false"
 ).strip().lower() in {"1", "true", "yes", "on"}
-
-SUPPORTED_SOURCE_SUFFIXES = {
-    ".pdf", ".docx", ".pptx", ".xlsx", ".md", ".markdown", ".txt",
-    ".csv", ".json", ".html", ".htm", ".xml", ".yaml", ".yml",
-}
-
 
 def websocket_url() -> str:
     parts = urlsplit(SERVER_URL)

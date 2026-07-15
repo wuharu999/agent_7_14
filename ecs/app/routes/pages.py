@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ecs.app.auth import current_session, safe_next_url
 from ecs.app.config import ALLOWED_TEAMS
+from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, UPLOAD_ACCEPT
 
 router = APIRouter()
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "templates"
@@ -55,6 +56,11 @@ async def upload_page(request: Request):
         return HTMLResponse("Upload permission required", status_code=403)
     page = _template("upload.html")
     page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
+    page = page.replace("__UPLOAD_ACCEPT__", html.escape(UPLOAD_ACCEPT, quote=True))
+    page = page.replace(
+        "__SUPPORTED_UPLOAD_SUFFIXES__",
+        json.dumps(sorted(SUPPORTED_UPLOAD_SUFFIXES)),
+    )
     page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
     page = page.replace("__USERNAME__", html.escape(str(session["username"])))
     return HTMLResponse(page)

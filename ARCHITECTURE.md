@@ -7,7 +7,7 @@ Public browser / WeCom
 Alibaba ECS — FastAPI
 ├── public QA and health
 ├── login/session/role checks
-├── authenticated upload and source manager
+├── authenticated multi-file upload queue and source manager
 ├── authenticated Claude documentation authoring on `/upload`
 ├── SQLite users, sessions, uploads and audit log
 └── one persistent Worker WebSocket
@@ -40,5 +40,19 @@ Existing LLM Wiki GUI
 - Authoring sessions are persisted under the Worker runtime directory; Claude receives only read-only tools.
 - Generated articles remain drafts until an editor/admin explicitly publishes reviewed Markdown into `raw/sources/`.
 - A bounded authoring queue runs separate sessions concurrently and serializes commands for the same session.
+- Public QA, WeCom QA, and authoring use one safe-mode Claude launcher with
+  stdin-delivered untrusted content, no session persistence, an empty strict MCP
+  configuration, and code-enforced read-only tools.
+- High-confidence prompt attacks are refused locally. Only ambiguous suspicious
+  messages enter the bounded zero-tool classifier; classifier failure closes
+  that request without affecting ordinary traffic.
+- Text sources are scanned before publication. The ECS stores only relative
+  filenames and warning categories, never excerpts; findings do not block
+  publication or change LLM Wiki status.
+- The upload page accepts up to 20 files for one team and schedules no more
+  than two browser transfers at once. Each transfer uses the existing single-file
+  endpoint, upload record, Worker job, staging directory, and status lifecycle.
+- ECS and Worker validation share one supported-source suffix definition. ZIP
+  extraction keeps its traversal, symlink, count, and size protections.
 - File removal is soft deletion and is serialized through one queue.
 - Wiki writing remains owned by LLM Wiki.

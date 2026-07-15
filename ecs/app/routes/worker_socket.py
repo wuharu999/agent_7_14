@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from ecs.app.config import WORKER_SHARED_SECRET
 from ecs.app.database import (
     list_dispatchable_uploads,
+    replace_upload_security_warnings,
     register_sources,
     update_upload,
     upsert_source,
@@ -14,6 +16,7 @@ from ecs.app.database import (
 )
 from ecs.app.gateway import gateway
 from ecs.app.routes.uploads import dispatch_upload
+from ecs.app.security_warnings import validated_security_warnings
 
 router = APIRouter()
 log = logging.getLogger("ecs.worker_socket")
@@ -55,6 +58,16 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                         article_id,
                         status=status,
                         error=data.get("error"),
+                    )
+
+            elif message_type == "upload_security_warnings":
+                upload_id = str(data.get("upload_id") or "")
+                if upload_id:
+                    await asyncio.to_thread(
+                        replace_upload_security_warnings,
+                        upload_id,
+                        validated_security_warnings(data.get("warnings")),
+                        complete=data.get("security_scan_complete") is True,
                     )
 
             elif message_type == "job_progress":

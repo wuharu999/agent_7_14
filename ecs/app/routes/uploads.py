@@ -14,6 +14,7 @@ from ecs.app.auth import require_roles, verify_csrf
 from ecs.app.config import ALLOWED_TEAMS, PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET
 from ecs.app.database import create_upload, get_upload, update_upload, write_audit
 from ecs.app.gateway import gateway
+from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, is_supported_upload
 
 router = APIRouter()
 
@@ -21,7 +22,13 @@ router = APIRouter()
 def safe_filename(name: str) -> str:
     value = (name or "uploaded_file").strip().replace("/", "_").replace("\\", "_")
     value = re.sub(r"[^a-zA-Z0-9._\-\u4e00-\u9fff]+", "_", value)
-    return value[:180] or "uploaded_file"
+    if not value:
+        return "uploaded_file"
+    suffix = Path(value).suffix
+    if not suffix or len(value) <= 180:
+        return value[:180]
+    stem = value[: -len(suffix)] or "uploaded_file"
+    return f"{stem[: 180 - len(suffix)]}{suffix}"
 
 
 def safe_segment(value: str) -> str:
@@ -95,9 +102,20 @@ async def upload_file(
             status_code=400,
         )
 
+    original_filename = file.filename or "uploaded_file"
+    if not is_supported_upload(original_filename):
+        await file.close()
+        return JSONResponse(
+            {
+                "error": "unsupported file type",
+                "allowed_extensions": sorted(SUPPORTED_UPLOAD_SUFFIXES),
+            },
+            status_code=400,
+        )
+
     upload_id = uuid.uuid4().hex[:16]
     task_id = f"dl-{uuid.uuid4().hex[:16]}"
-    filename = safe_filename(file.filename or "uploaded_file")
+    filename = safe_filename(original_filename)
     target_dir = UPLOAD_ROOT / upload_id
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / filename
