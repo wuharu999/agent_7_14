@@ -79,6 +79,7 @@ class WorkerGateway:
         self,
         question: str,
         *,
+        team: str,
         conversation_id: str,
         language: str,
         timeout: int | None = None,
@@ -94,6 +95,7 @@ class WorkerGateway:
                 {
                     "type": "question",
                     "id": qid,
+                    "team": team,
                     "text": question,
                     "conversation_id": conversation_id,
                     "language": language,

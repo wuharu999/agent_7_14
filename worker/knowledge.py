@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 
-from worker.config import UNANSWERED_FILE, WIKI_DIR
+from worker.config import get_team_config
 
 STOP_WORDS = {
     "的", "了", "是", "在", "什么", "怎么", "如何", "为", "吗", "呢", "吧", "啊",
@@ -20,11 +20,16 @@ def _keywords(text: str) -> list[str]:
     return [token for token in tokens if len(token) > 1 and token not in STOP_WORDS]
 
 
-def has_wiki_content(question: str) -> bool:
+def has_wiki_content(team: str, question: str) -> bool:
     keywords = _keywords(question)
     if not keywords:
         return True
-    for path in WIKI_DIR.rglob("*.md"):
+    
+    tc = get_team_config(team)
+    if not tc.wiki_dir.exists():
+        return False
+        
+    for path in tc.wiki_dir.rglob("*.md"):
         if path.name in {"log.md", "unanswered.md"}:
             continue
         if any(keyword in path.stem.lower() for keyword in keywords):
@@ -38,17 +43,20 @@ def has_wiki_content(question: str) -> bool:
     return False
 
 
-def log_unanswered(question: str) -> None:
-    UNANSWERED_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if UNANSWERED_FILE.exists():
-        existing = UNANSWERED_FILE.read_text(encoding="utf-8", errors="ignore")
+def log_unanswered(team: str, question: str) -> None:
+    tc = get_team_config(team)
+    unanswered_file = tc.wiki_dir / "unanswered.md"
+    
+    unanswered_file.parent.mkdir(parents=True, exist_ok=True)
+    if unanswered_file.exists():
+        existing = unanswered_file.read_text(encoding="utf-8", errors="ignore")
         if question in existing:
             return
     else:
-        UNANSWERED_FILE.write_text(
+        unanswered_file.write_text(
             "# 未命中问题收集\n\n> 以下问题在知识库中没有足够资料。\n\n## 问题列表\n\n",
             encoding="utf-8",
         )
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    with UNANSWERED_FILE.open("a", encoding="utf-8") as handle:
+    with unanswered_file.open("a", encoding="utf-8") as handle:
         handle.write(f"- [{now}] {question}\n")

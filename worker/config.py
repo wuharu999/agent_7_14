@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -20,19 +22,48 @@ ALLOWED_TEAMS = tuple(
     ).split(",")
     if team.strip()
 )
-BASE_DIR = Path(os.environ.get("BASE_DIR", str(PROJECT_ROOT / "agent1"))).expanduser().resolve()
-RAW_SOURCES_DIR = BASE_DIR / "raw" / "sources"
-WIKI_DIR = BASE_DIR / "wiki"
-UNANSWERED_FILE = WIKI_DIR / "unanswered.md"
+WORKER_ROOT_DIR = Path(os.environ.get("BASE_DIR", str(PROJECT_ROOT / "agent1"))).expanduser().resolve()
 STAGING_DIR = Path(
-    os.environ.get("STAGING_DIR", str(BASE_DIR / ".agent1-worker" / "staging"))
+    os.environ.get("STAGING_DIR", str(WORKER_ROOT_DIR / ".agent1-worker" / "staging"))
 ).expanduser().resolve()
 TRASH_DIR = Path(
-    os.environ.get("TRASH_DIR", str(BASE_DIR / ".agent1-trash"))
+    os.environ.get("TRASH_DIR", str(WORKER_ROOT_DIR / ".agent1-trash"))
 ).expanduser().resolve()
 AUTHORING_DIR = Path(
-    os.environ.get("AUTHORING_DIR", str(BASE_DIR / ".agent1-worker" / "authoring"))
+    os.environ.get("AUTHORING_DIR", str(WORKER_ROOT_DIR / ".agent1-worker" / "authoring"))
 ).expanduser().resolve()
+
+@dataclass
+class TeamConfig:
+    team_name: str
+    base_dir: Path
+    raw_sources_dir: Path
+    wiki_dir: Path
+    llm_wiki_queue_file: Path
+    llm_wiki_cache_file: Path
+    llm_wiki_api_url: str
+
+def get_team_config(team: str) -> TeamConfig:
+    teams_json_path = PROJECT_ROOT / "worker" / "teams.json"
+    port = 19828 # default fallback
+    if teams_json_path.is_file():
+        try:
+            teams_data = json.loads(teams_json_path.read_text())
+            if team in teams_data and "port" in teams_data[team]:
+                port = teams_data[team]["port"]
+        except Exception:
+            pass
+
+    team_base = WORKER_ROOT_DIR / team
+    return TeamConfig(
+        team_name=team,
+        base_dir=team_base,
+        raw_sources_dir=team_base / "raw" / "sources",
+        wiki_dir=team_base / "wiki",
+        llm_wiki_queue_file=team_base / ".llm-wiki" / "ingest-queue.json",
+        llm_wiki_cache_file=team_base / ".llm-wiki" / "ingest-cache.json",
+        llm_wiki_api_url=f"http://127.0.0.1:{port}/api/v1"
+    )
 
 QA_WORKERS = int(os.environ.get("QA_WORKERS", "3"))
 DOWNLOAD_WORKERS = int(os.environ.get("DOWNLOAD_WORKERS", "2"))
@@ -76,15 +107,8 @@ MAX_ZIP_FILES = int(os.environ.get("MAX_ZIP_FILES", "20000"))
 MAX_ZIP_EXTRACTED_BYTES = int(os.environ.get("MAX_ZIP_EXTRACTED_BYTES", str(10 * 1024**3)))
 MAX_ZIP_SINGLE_FILE_BYTES = int(os.environ.get("MAX_ZIP_SINGLE_FILE_BYTES", str(2 * 1024**3)))
 
-LLM_WIKI_QUEUE_FILE = Path(
-    os.environ.get("LLM_WIKI_QUEUE_FILE", str(BASE_DIR / ".llm-wiki" / "ingest-queue.json"))
-).expanduser().resolve()
-LLM_WIKI_CACHE_FILE = Path(
-    os.environ.get("LLM_WIKI_CACHE_FILE", str(BASE_DIR / ".llm-wiki" / "ingest-cache.json"))
-).expanduser().resolve()
 LLM_WIKI_POLL_SECONDS = float(os.environ.get("LLM_WIKI_POLL_SECONDS", "2"))
 LLM_WIKI_MONITOR_TIMEOUT = int(os.environ.get("LLM_WIKI_MONITOR_TIMEOUT", "7200"))
-LLM_WIKI_API_URL = os.environ.get("LLM_WIKI_API_URL", "http://127.0.0.1:19828/api/v1").rstrip("/")
 LLM_WIKI_API_TOKEN = os.environ.get("LLM_WIKI_API_TOKEN", "")
 LLM_WIKI_PROJECT_ID = os.environ.get("LLM_WIKI_PROJECT_ID", "")
 LLM_WIKI_RESCAN_AFTER_PUBLISH = os.environ.get(
@@ -101,6 +125,10 @@ def websocket_url() -> str:
 def ensure_directories() -> None:
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
-    RAW_SOURCES_DIR.mkdir(parents=True, exist_ok=True)
-    WIKI_DIR.mkdir(parents=True, exist_ok=True)
     AUTHORING_DIR.mkdir(parents=True, exist_ok=True)
+    
+    for team in ALLOWED_TEAMS:
+        tc = get_team_config(team)
+        tc.raw_sources_dir.mkdir(parents=True, exist_ok=True)
+        tc.wiki_dir.mkdir(parents=True, exist_ok=True)
+        tc.llm_wiki_queue_file.parent.mkdir(parents=True, exist_ok=True)

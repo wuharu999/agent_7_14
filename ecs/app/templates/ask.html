@@ -12,6 +12,10 @@ body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0
 <textarea id="question" placeholder="Enter a question"></textarea>
 <div class="controls">
   <div class="field">
+    <label for="team">Team (Knowledge Base)</label>
+    <select id="team"></select>
+  </div>
+  <div class="field">
     <label for="language">Answer language</label>
     <select id="language">
       <option value="zh-CN">简体中文</option>
@@ -38,15 +42,29 @@ const newConversationButton=document.getElementById('newConversation');
 const question=document.getElementById('question');
 const answer=document.getElementById('answer');
 const language=document.getElementById('language');
+const team=document.getElementById('team');
 const conversationKey='agent1_conversation_id';
 const languageKey='agent1_answer_language';
+const teamKey='agent1_team';
+
+const allowedTeams=__ALLOWED_TEAMS__;
+allowedTeams.forEach(t=>{const op=document.createElement('option');op.value=t;op.textContent=t;team.appendChild(op)});
+
 function newConversationId(){return 'web:'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));}
 function getConversationId(){let id=localStorage.getItem(conversationKey);if(!id){id=newConversationId();localStorage.setItem(conversationKey,id)}return id;}
 language.value=localStorage.getItem(languageKey)||'zh-CN';
 language.addEventListener('change',()=>localStorage.setItem(languageKey,language.value));
+
+if(localStorage.getItem(teamKey) && allowedTeams.includes(localStorage.getItem(teamKey))){
+  team.value=localStorage.getItem(teamKey);
+}else if(allowedTeams.length>0){
+  team.value=allowedTeams[0];
+}
+team.addEventListener('change',()=>localStorage.setItem(teamKey,team.value));
+
 async function checkHealth(){try{const r=await fetch('/health');const d=await r.json();health.textContent=d.worker_online?'Worker online':'Worker offline';health.className='badge '+(d.worker_online?'on':'off')}catch{health.textContent='Health check failed';health.className='badge off'}}
 checkHealth();setInterval(checkHealth,5000);
-async function submitQuestion(){const q=question.value.trim();if(!q)return;askButton.disabled=true;newConversationButton.disabled=true;answer.textContent='Waiting for Worker…';try{const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,language:language.value,conversation_id:getConversationId()})});const d=await r.json();if(d.conversation_id)localStorage.setItem(conversationKey,d.conversation_id);answer.textContent=d.answer||d.error||'No response'}catch(e){answer.textContent=String(e)}finally{askButton.disabled=false;newConversationButton.disabled=false}}
+async function submitQuestion(){const q=question.value.trim();if(!q)return;askButton.disabled=true;newConversationButton.disabled=true;answer.textContent='Waiting for Worker…';try{const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,language:language.value,team:team.value,conversation_id:getConversationId()})});const d=await r.json();if(d.conversation_id)localStorage.setItem(conversationKey,d.conversation_id);answer.textContent=d.answer||d.error||'No response'}catch(e){answer.textContent=String(e)}finally{askButton.disabled=false;newConversationButton.disabled=false}}
 askButton.onclick=submitQuestion;
 question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter')submitQuestion()});
 newConversationButton.onclick=()=>{localStorage.setItem(conversationKey,newConversationId());question.value='';answer.textContent='New conversation started.';question.focus()};

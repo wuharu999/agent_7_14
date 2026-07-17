@@ -7,7 +7,7 @@ import shlex
 from collections.abc import Sequence
 from typing import Any
 
-from worker.config import BASE_DIR, CLAUDE_EXTRA_ARGS, CLAUDE_TIMEOUT
+from worker.config import CLAUDE_EXTRA_ARGS, CLAUDE_TIMEOUT, get_team_config
 
 READ_ONLY_TOOLS = ("Read", "Glob", "Grep")
 READ_ONLY_ALLOW_RULES = (
@@ -135,6 +135,7 @@ def build_command(
 async def run_claude_process(
     user_prompt: str,
     *,
+    team: str,
     system_prompt: str,
     tools: Sequence[str] = READ_ONLY_TOOLS,
     timeout: int | None = None,
@@ -145,10 +146,11 @@ async def run_claude_process(
         tools=tools,
         json_schema=json_schema,
     )
+    tc = get_team_config(team)
     try:
         process = await asyncio.create_subprocess_exec(
             *command,
-            cwd=str(BASE_DIR),
+            cwd=str(tc.base_dir),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

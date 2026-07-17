@@ -10,13 +10,12 @@ from typing import Any
 import httpx
 
 from worker.config import (
-    LLM_WIKI_API_TOKEN,
-    LLM_WIKI_API_URL,
-    LLM_WIKI_CACHE_FILE,
+    ALLOWED_TEAMS,
     LLM_WIKI_MONITOR_TIMEOUT,
     LLM_WIKI_POLL_SECONDS,
     LLM_WIKI_PROJECT_ID,
-    LLM_WIKI_QUEUE_FILE,
+    LLM_WIKI_API_TOKEN,
+    get_team_config,
 )
 
 EventCallback = Callable[[dict[str, Any]], Awaitable[None]]
@@ -35,10 +34,11 @@ def _normalize(value: str) -> str:
     return value.replace("\\", "/").lstrip("./")
 
 
-async def request_rescan() -> None:
+async def request_rescan(team: str) -> None:
     if not LLM_WIKI_API_TOKEN or not LLM_WIKI_PROJECT_ID:
         return
-    url = f"{LLM_WIKI_API_URL}/projects/{LLM_WIKI_PROJECT_ID}/sources/rescan"
+    tc = get_team_config(team)
+    url = f"{tc.llm_wiki_api_url}/projects/{LLM_WIKI_PROJECT_ID}/sources/rescan"
     headers = {"Authorization": f"Bearer {LLM_WIKI_API_TOKEN}"}
     try:
         async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
@@ -51,24 +51,39 @@ async def request_rescan() -> None:
 
 async def monitor_source(
     *,
+    team: str,
     upload_id: str,
     source_identity: str,
     published_at_ms: int,
     emit: EventCallback,
 ) -> None:
     expected_queue_path = f"raw/sources/{_normalize(source_identity)}"
+    # With the new file_manager, source_identity might be something like "team/upload_id/file"
+    # But wait, source_identity passed here was generated in publisher: `f"{team}/{path.relative_to(tc.raw_sources_dir).as_posix()}"`
+    # However, inside LLM Wiki, the path it watches starts at the root of `raw/sources/`.
+    # Thus, LLM Wiki will see `raw/sources/upload_id/file`, NOT `raw/sources/team/upload_id/file`.
+    # Let's extract the path relative to raw_sources_dir.
+    prefix = f"{team}/"
+    if source_identity.startswith(prefix):
+        internal_identity = source_identity[len(prefix):]
+    else:
+        internal_identity = source_identity
+        
+    expected_queue_path = f"raw/sources/{_normalize(internal_identity)}"
     last_state = ()
     started = time.monotonic()
+    
+    tc = get_team_config(team)
 
     while True:
         queue_data, cache_data = await asyncio.gather(
-            asyncio.to_thread(_read_json, LLM_WIKI_QUEUE_FILE),
-            asyncio.to_thread(_read_json, LLM_WIKI_CACHE_FILE),
+            asyncio.to_thread(_read_json, tc.llm_wiki_queue_file),
+            asyncio.to_thread(_read_json, tc.llm_wiki_cache_file),
         )
         queue_tasks = queue_data if isinstance(queue_data, list) else []
         cache_entries = cache_data.get("entries", {}) if isinstance(cache_data, dict) else {}
 
-        cache_entry = cache_entries.get(source_identity)
+        cache_entry = cache_entries.get(internal_identity)
         if isinstance(cache_entry, dict) and int(cache_entry.get("timestamp", 0)) >= published_at_ms:
             state = "completed"
             event = {
@@ -84,7 +99,7 @@ async def monitor_source(
                 item
                 for item in queue_tasks
                 if _normalize(str(item.get("sourcePath") or ""))
-                in {expected_queue_path, _normalize(source_identity)}
+                in {expected_queue_path, _normalize(internal_identity)}
             ]
             
             active_queue_count = len(matching_tasks)
@@ -156,38 +171,54 @@ async def monitor_source(
 async def monitor_global_queue(emit: EventCallback) -> None:
     last_snapshot_str = ""
     while True:
-        queue_data, cache_data = await asyncio.gather(
-            asyncio.to_thread(_read_json, LLM_WIKI_QUEUE_FILE),
-            asyncio.to_thread(_read_json, LLM_WIKI_CACHE_FILE),
-        )
-        queue_tasks = queue_data if isinstance(queue_data, list) else []
-        
         counts = {
             "processing": 0,
             "retrying": 0,
             "queued": 0,
             "failed": 0,
-            "total": len(queue_tasks),
+            "total": 0,
         }
+        all_tasks = []
         
-        for task in queue_tasks:
-            status = task.get("status")
-            error = task.get("error")
-            retries = int(task.get("retryCount") or 0)
-            if status == "processing":
-                counts["processing"] += 1
-            elif error and retries > 0:
-                counts["retrying"] += 1
-            elif status == "pending":
-                counts["queued"] += 1
-            elif status == "failed":
-                counts["failed"] += 1
+        for team in ALLOWED_TEAMS:
+            tc = get_team_config(team)
+            if not tc.llm_wiki_queue_file.exists():
+                continue
+                
+            queue_data = await asyncio.to_thread(_read_json, tc.llm_wiki_queue_file)
+            queue_tasks = queue_data if isinstance(queue_data, list) else []
+            
+            counts["total"] += len(queue_tasks)
+            
+            for task in queue_tasks:
+                if isinstance(task, dict):
+                    # Add team context to sourcePath so UI knows which team it belongs to
+                    original_path = task.get("sourcePath", "")
+                    if original_path.startswith("raw/sources/"):
+                        task["sourcePath"] = f"raw/sources/{team}/{original_path[12:]}"
+                    elif original_path:
+                        task["sourcePath"] = f"{team}/{original_path}"
+                    task["team"] = team
+                
+                status = task.get("status")
+                error = task.get("error")
+                retries = int(task.get("retryCount") or 0)
+                if status == "processing":
+                    counts["processing"] += 1
+                elif error and retries > 0:
+                    counts["retrying"] += 1
+                elif status == "pending":
+                    counts["queued"] += 1
+                elif status == "failed":
+                    counts["failed"] += 1
+                    
+                all_tasks.append(task)
                 
         snapshot = {
             "type": "llm_wiki_snapshot",
             "generated_at": time.time(),
             "counts": counts,
-            "tasks": queue_tasks[:100]
+            "tasks": all_tasks[:100]
         }
         
         snapshot_str = json.dumps(counts, sort_keys=True)

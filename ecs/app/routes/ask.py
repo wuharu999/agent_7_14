@@ -25,6 +25,10 @@ async def ask(body: dict):
     if language not in SUPPORTED_LANGUAGES:
         return JSONResponse({"error": "Unsupported answer language"}, status_code=400)
 
+    team = str(body.get("team") or "").strip()
+    if not team:
+        return JSONResponse({"error": "Team cannot be empty"}, status_code=400)
+
     conversation_id = str(body.get("conversation_id") or "").strip()
     if not _CONVERSATION_ID.fullmatch(conversation_id):
         conversation_id = f"web:{uuid.uuid4().hex}"
@@ -32,6 +36,7 @@ async def ask(body: dict):
     try:
         answer = await gateway.ask(
             question,
+            team=team,
             conversation_id=conversation_id,
             language=language,
         )
@@ -39,6 +44,7 @@ async def ask(body: dict):
             "answer": answer,
             "conversation_id": conversation_id,
             "language": language,
+            "team": team,
         }
     except TimeoutError as exc:
         return JSONResponse({"error": str(exc)}, status_code=504)

@@ -26,7 +26,9 @@ def _login_redirect(next_url: str) -> RedirectResponse:
 
 @router.get("/", response_class=HTMLResponse)
 async def ask_page():
-    return HTMLResponse(_template("ask.html"))
+    page = _template("ask.html")
+    page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
+    return HTMLResponse(page)
 
 
 @router.get("/login", response_class=HTMLResponse)

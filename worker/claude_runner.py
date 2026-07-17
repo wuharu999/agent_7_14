@@ -72,6 +72,7 @@ def _history_text(history: Sequence[ConversationTurn]) -> str:
 async def run_claude(
     question: str,
     *,
+    team: str,
     language: str = "zh-CN",
     history: Sequence[ConversationTurn] = (),
     guard_decision: GuardDecision | None = None,
@@ -88,6 +89,7 @@ async def run_claude(
     try:
         return await run_claude_process(
             prompt,
+            team=team,
             system_prompt=SYSTEM_PROMPT,
             timeout=CLAUDE_TIMEOUT,
         )

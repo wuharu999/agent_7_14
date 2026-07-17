@@ -8,6 +8,7 @@ from typing import Any
 class QuestionJob:
     job_id: str
     question: str
+    team: str
     conversation_id: str
     language: str
 

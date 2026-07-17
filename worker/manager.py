@@ -23,9 +23,9 @@ from worker.config import (
     FILE_OPERATION_WORKERS,
     LLM_WIKI_RESCAN_AFTER_PUBLISH,
     QA_WORKERS,
-    RAW_SOURCES_DIR,
     STAGING_DIR,
     ensure_directories,
+    get_team_config,
     websocket_url,
 )
 from worker.downloader import download_file
@@ -165,9 +165,11 @@ class WorkerManager:
             job_id = str(data.get("id") or "")
             conversation_id = str(data.get("conversation_id") or job_id)[:128]
             language = str(data.get("language") or "zh-CN")
+            team = str(data.get("team") or "default")
             job = QuestionJob(
                 job_id=job_id,
                 question=str(data.get("text") or ""),
+                team=team,
                 conversation_id=conversation_id,
                 language=language,
             )
@@ -270,6 +272,7 @@ class WorkerManager:
                 history = self.conversations.history(job.conversation_id)
                 answer = await run_claude(
                     job.question,
+                    team=job.team,
                     language=job.language,
                     history=history,
                     guard_decision=guard_decision,
@@ -503,14 +506,15 @@ class WorkerManager:
         if not job.upload_id or not job.download_url:
             raise ValueError("download task is missing upload_id or download_url")
 
+        tc = get_team_config(job.team)
         safe_team = safe_segment(job.team, "default")
         safe_upload_id = safe_segment(job.upload_id, "upload")
-        final_directory = RAW_SOURCES_DIR / safe_team / safe_upload_id
+        final_directory = tc.raw_sources_dir / safe_upload_id
         published_at_ms = job.published_at_ms
         if final_directory.exists():
             existing_sources = collect_supported_sources(final_directory)
             identities = [
-                path.relative_to(RAW_SOURCES_DIR).as_posix()
+                f"{job.team}/{path.relative_to(tc.raw_sources_dir).as_posix()}"
                 for path in existing_sources
             ]
             if identities:

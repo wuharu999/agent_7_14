@@ -1,0 +1,11 @@
+{
+  "tian_gong": {
+    "port": 19828
+  },
+  "walker_s2": {
+    "port": 19829
+  },
+  "walker_c1": {
+    "port": 19830
+  }
+}
