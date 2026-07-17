@@ -96,9 +96,21 @@ async def run_claude(
     except ClaudePolicyViolation:
         return refusal_text(language)
     except ClaudeProcessError as exc:
+        import logging
+        log = logging.getLogger("worker.claude_runner")
+        
         detail = str(exc)
-        if "本地未找到" in detail:
-            return "[错误] 本地未找到 claude 命令，请执行 `which claude` 检查"
-        if "超时" in detail:
-            return f"[错误] Claude 调用超时 ({CLAUDE_TIMEOUT}s)"
-        return f"[错误] Claude 执行失败: {detail[:800]}"
+        log.error("Claude execution failed: %s", detail)
+        
+        # Return generic localized error message
+        generic_errors = {
+            "zh-CN": "[错误] 助手暂时无法响应，请稍后再试。",
+            "zh-TW": "[錯誤] 助手暫時無法回應，請稍後再試。",
+            "ko": "[오류] 어시스턴트가 일시적으로 응답할 수 없습니다. 나중에 다시 시도해 주세요.",
+            "ja": "[エラー] アシスタントは一時的に応答できません。後でもう一度お試しください。",
+            "en": "[Error] The assistant is temporarily unavailable. Please try again later.",
+            "pt": "[Erro] O assistente está temporariamente indisponível. Tente novamente mais tarde.",
+            "ru": "[Ошибка] Ассистент временно недоступен. Пожалуйста, повторите попытку позже.",
+            "es": "[Error] El asistente no está disponible temporalmente. Por favor, inténtelo de nuevo más tarde.",
+        }
+        return generic_errors.get(language, generic_errors["zh-CN"])

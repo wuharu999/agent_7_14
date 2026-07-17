@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 import uuid
 
-from fastapi import APIRouter
+import time
+from collections import defaultdict
+
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ecs.app.gateway import gateway
@@ -12,9 +15,36 @@ from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 router = APIRouter()
 _CONVERSATION_ID = re.compile(r"^[A-Za-z0-9:_-]{1,128}$")
 
+class RateLimiter:
+    def __init__(self):
+        self.history = defaultdict(list)
+
+    def is_allowed(self, client_id: str) -> tuple[bool, str]:
+        now = time.time()
+        # Clean up old entries
+        self.history[client_id] = [ts for ts in self.history[client_id] if now - ts < 3600]
+        timestamps = self.history[client_id]
+
+        # 50 per hour
+        if len(timestamps) >= 50:
+            return False, "Rate limit exceeded: 50 questions per hour."
+        
+        # 10 per minute
+        recent = [ts for ts in timestamps if now - ts < 60]
+        if len(recent) >= 10:
+            return False, "Rate limit exceeded: 10 questions per minute."
+        
+        self.history[client_id].append(now)
+        return True, ""
+
+limiter = RateLimiter()
 
 @router.post("/ask")
-async def ask(body: dict):
+async def ask(request: Request, body: dict):
+    client_ip = request.client.host if request.client else "unknown"
+    allowed, msg = limiter.is_allowed(client_ip)
+    if not allowed:
+        return JSONResponse({"error": msg}, status_code=429)
     question = str(body.get("question") or "").strip()
     if not question:
         return JSONResponse({"error": "Question cannot be empty"}, status_code=400)

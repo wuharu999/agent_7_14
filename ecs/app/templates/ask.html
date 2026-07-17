@@ -4,19 +4,23 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agent1 Knowledge Base</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 18px;background:#f5f7fb;color:#172033}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:22px;box-shadow:0 8px 30px #1f293711}textarea{width:100%;min-height:140px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;box-sizing:border-box;font:inherit}.controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-top:12px}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:700;color:#475569}select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;font:inherit;min-width:210px}button{padding:10px 18px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#64748b}button:disabled{opacity:.55;cursor:not-allowed}pre{white-space:pre-wrap;background:#f8fafc;padding:14px;border-radius:9px;min-height:90px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.badge{padding:5px 10px;border-radius:99px;font-size:13px}.on{background:#dcfce7;color:#166534}.off{background:#fee2e2;color:#991b1b}.hint{font-size:13px;color:#64748b;margin:10px 0 0}a{color:#2563eb}</style>
+body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 18px;background:#f5f7fb;color:#172033}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:22px;box-shadow:0 8px 30px #1f293711}textarea{width:100%;min-height:140px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;box-sizing:border-box;font:inherit}.controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-top:12px}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:700;color:#475569}select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;font:inherit;min-width:210px}button{padding:10px 18px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#64748b}button:disabled{opacity:.55;cursor:not-allowed}pre{white-space:pre-wrap;background:#f8fafc;padding:14px;border-radius:9px;min-height:90px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.badge{padding:5px 10px;border-radius:99px;font-size:13px}.on{background:#dcfce7;color:#166534}.off{background:#fee2e2;color:#991b1b}.hint{font-size:13px;color:#64748b;margin:10px 0 0}a{color:#2563eb}
+.spinner {display: inline-block;width: 20px;height: 20px;border: 3px solid rgba(37, 99, 235, 0.3);border-radius: 50%;border-top-color: #2563eb;animation: spin 1s ease-in-out infinite;vertical-align: middle;margin-right: 8px;}
+@keyframes spin {to { transform: rotate(360deg); }}
+.flex-center {display: flex; align-items: center;}
+</style>
 </head>
 <body>
-<div class="row"><div><h1>Agent1 Knowledge Base</h1><p>Ask questions against the local wiki.</p></div><span id="health" class="badge">Checking Worker…</span></div>
+<div class="row"><div><h1 data-i18n="title">Agent1 Knowledge Base</h1><p data-i18n="subtitle">Ask questions against the local wiki.</p></div><span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span></div>
 <div class="card">
 <textarea id="question" placeholder="Enter a question"></textarea>
 <div class="controls">
   <div class="field">
-    <label for="team">Team (Knowledge Base)</label>
+    <label for="team" data-i18n="teamLabel">Team (Knowledge Base)</label>
     <select id="team"></select>
   </div>
   <div class="field">
-    <label for="language">Answer language</label>
+    <label for="language" data-i18n="langLabel">Answer language</label>
     <select id="language">
       <option value="zh-CN">简体中文</option>
       <option value="zh-TW">繁體中文</option>
@@ -28,14 +32,25 @@ body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0
       <option value="es">Español</option>
     </select>
   </div>
-  <button id="ask">Ask</button>
-  <button id="newConversation" class="secondary" type="button">New conversation</button>
+  <button id="ask" data-i18n="askBtn">Ask</button>
+  <button id="newConversation" class="secondary" type="button" data-i18n="newConvBtn">New conversation</button>
 </div>
-<p class="hint">Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.</p>
-<pre id="answer">The answer will appear here.</pre>
+<p class="hint" data-i18n="hint">Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.</p>
+<pre id="answer" data-i18n="answerPlaceholder">The answer will appear here.</pre>
 </div>
-<p><a href="/login">Sign in</a> · <a href="/manage">Manage sources</a> · <a href="/upload">Upload documentation</a></p>
+<p><a href="/login" data-i18n="signIn">Sign in</a> · <a href="/manage" data-i18n="manageSources">Manage sources</a> · <a href="/upload" data-i18n="uploadDocs">Upload documentation</a></p>
 <script>
+const i18n = {
+  'zh-CN': { title: 'Agent1 知识库', subtitle: '向本地知识库提问。', placeholder: '输入您的问题', teamLabel: '团队 (知识库)', langLabel: '回答语言', askBtn: '提问', newConvBtn: '新对话', hint: '在此浏览器中的后续问题会保留近期的对话上下文。“新对话”会清除该上下文。', answerPlaceholder: '答案将显示在这里。', waiting: '等待 Worker 处理中...', healthChecking: '正在检查 Worker...', healthOnline: 'Worker 在线', healthOffline: 'Worker 离线', signIn: '登录', manageSources: '管理源文件', uploadDocs: '上传文档', newConvStarted: '已开始新对话。' },
+  'zh-TW': { title: 'Agent1 知識庫', subtitle: '向本地知識庫提問。', placeholder: '輸入您的問題', teamLabel: '團隊 (知識庫)', langLabel: '回答語言', askBtn: '提問', newConvBtn: '新對話', hint: '在此瀏覽器中的後續問題會保留近期的對話上下文。“新對話”會清除該上下文。', answerPlaceholder: '答案將顯示在這裡。', waiting: '等待 Worker 處理中...', healthChecking: '正在檢查 Worker...', healthOnline: 'Worker 在線', healthOffline: 'Worker 離線', signIn: '登入', manageSources: '管理來源', uploadDocs: '上傳文件', newConvStarted: '已開始新對話。' },
+  'ko': { title: 'Agent1 지식 베이스', subtitle: '로컬 위키에 질문하세요.', placeholder: '질문을 입력하세요', teamLabel: '팀 (지식 베이스)', langLabel: '답변 언어', askBtn: '질문하기', newConvBtn: '새 대화', hint: '이 브라우저에서 후속 질문은 최근 대화 컨텍스트를 유지합니다. “새 대화”를 누르면 초기화됩니다.', answerPlaceholder: '여기에 답변이 표시됩니다.', waiting: '워커 대기 중...', healthChecking: '워커 확인 중...', healthOnline: '워커 온라인', healthOffline: '워커 오프라인', signIn: '로그인', manageSources: '소스 관리', uploadDocs: '문서 업로드', newConvStarted: '새 대화가 시작되었습니다.' },
+  'ja': { title: 'Agent1 ナレッジベース', subtitle: 'ローカルのWikiに質問する', placeholder: '質問を入力してください', teamLabel: 'チーム (ナレッジベース)', langLabel: '回答の言語', askBtn: '質問する', newConvBtn: '新しい会話', hint: 'このブラウザでのフォローアップ質問は、最近の会話のコンテキストを保持します。「新しい会話」でリセットされます。', answerPlaceholder: 'ここに回答が表示されます。', waiting: 'ワーカーを待機中...', healthChecking: 'ワーカーを確認中...', healthOnline: 'ワーカーオンライン', healthOffline: 'ワーカーオフライン', signIn: 'サインイン', manageSources: 'ソースの管理', uploadDocs: 'ドキュメントのアップロード', newConvStarted: '新しい会話が開始されました。' },
+  'en': { title: 'Agent1 Knowledge Base', subtitle: 'Ask questions against the local wiki.', placeholder: 'Enter a question', teamLabel: 'Team (Knowledge Base)', langLabel: 'Answer language', askBtn: 'Ask', newConvBtn: 'New conversation', hint: 'Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.', answerPlaceholder: 'The answer will appear here.', waiting: 'Waiting for Worker...', healthChecking: 'Checking Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Sign in', manageSources: 'Manage sources', uploadDocs: 'Upload documentation', newConvStarted: 'New conversation started.' },
+  'pt': { title: 'Base de Conhecimento Agent1', subtitle: 'Faça perguntas à wiki local.', placeholder: 'Insira uma pergunta', teamLabel: 'Equipe (Base de Conhecimento)', langLabel: 'Idioma da resposta', askBtn: 'Perguntar', newConvBtn: 'Nova conversa', hint: 'Perguntas de acompanhamento neste navegador mantêm o contexto da conversa recente. “Nova conversa” limpa esse contexto.', answerPlaceholder: 'A resposta aparecerá aqui.', waiting: 'Aguardando o Worker...', healthChecking: 'Verificando o Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Entrar', manageSources: 'Gerenciar fontes', uploadDocs: 'Enviar documentação', newConvStarted: 'Nova conversa iniciada.' },
+  'ru': { title: 'База знаний Agent1', subtitle: 'Задайте вопросы локальной вики.', placeholder: 'Введите вопрос', teamLabel: 'Команда (База знаний)', langLabel: 'Язык ответа', askBtn: 'Спросить', newConvBtn: 'Новый диалог', hint: 'Последующие вопросы в этом браузере сохраняют контекст недавнего диалога. «Новый диалог» очищает этот контекст.', answerPlaceholder: 'Здесь появится ответ.', waiting: 'Ожидание Worker...', healthChecking: 'Проверка Worker...', healthOnline: 'Worker онлайн', healthOffline: 'Worker оффлайн', signIn: 'Войти', manageSources: 'Управление источниками', uploadDocs: 'Загрузить документацию', newConvStarted: 'Начат новый диалог.' },
+  'es': { title: 'Base de Conocimiento Agent1', subtitle: 'Haga preguntas a la wiki local.', placeholder: 'Introduzca una pregunta', teamLabel: 'Equipo (Base de Conocimiento)', langLabel: 'Idioma de la respuesta', askBtn: 'Preguntar', newConvBtn: 'Nueva conversación', hint: 'Las preguntas de seguimiento en este navegador mantienen el contexto reciente. “Nueva conversación” borra ese contexto.', answerPlaceholder: 'La respuesta aparecerá aquí.', waiting: 'Esperando al Worker...', healthChecking: 'Comprobando Worker...', healthOnline: 'Worker en línea', healthOffline: 'Worker desconectado', signIn: 'Iniciar sesión', manageSources: 'Administrar fuentes', uploadDocs: 'Subir documentación', newConvStarted: 'Nueva conversación iniciada.' }
+};
+
 const health=document.getElementById('health');
 const askButton=document.getElementById('ask');
 const newConversationButton=document.getElementById('newConversation');
@@ -47,13 +62,39 @@ const conversationKey='agent1_conversation_id';
 const languageKey='agent1_answer_language';
 const teamKey='agent1_team';
 
+let currentLang = 'zh-CN';
+let workerOnline = false;
+
+function translateUI() {
+  const t = i18n[currentLang] || i18n['en'];
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (t[key]) {
+      if (key === 'healthChecking' || key === 'healthOnline' || key === 'healthOffline') return; // Handled separately
+      if (el === answer && (answer.innerHTML.includes('class="spinner"') || answer.textContent === t.answerPlaceholder)) {
+         // Don't overwrite actual answer
+      } else {
+         el.textContent = t[key];
+      }
+    }
+  });
+  question.placeholder = t.placeholder;
+  updateHealthStatus();
+}
+
 const allowedTeams=__ALLOWED_TEAMS__;
 allowedTeams.forEach(t=>{const op=document.createElement('option');op.value=t;op.textContent=t;team.appendChild(op)});
 
 function newConversationId(){return 'web:'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));}
 function getConversationId(){let id=localStorage.getItem(conversationKey);if(!id){id=newConversationId();localStorage.setItem(conversationKey,id)}return id;}
 language.value=localStorage.getItem(languageKey)||'zh-CN';
-language.addEventListener('change',()=>localStorage.setItem(languageKey,language.value));
+currentLang = language.value;
+
+language.addEventListener('change',()=>{
+  currentLang = language.value;
+  localStorage.setItem(languageKey,currentLang);
+  translateUI();
+});
 
 if(localStorage.getItem(teamKey) && allowedTeams.includes(localStorage.getItem(teamKey))){
   team.value=localStorage.getItem(teamKey);
@@ -62,11 +103,58 @@ if(localStorage.getItem(teamKey) && allowedTeams.includes(localStorage.getItem(t
 }
 team.addEventListener('change',()=>localStorage.setItem(teamKey,team.value));
 
-async function checkHealth(){try{const r=await fetch('/health');const d=await r.json();health.textContent=d.worker_online?'Worker online':'Worker offline';health.className='badge '+(d.worker_online?'on':'off')}catch{health.textContent='Health check failed';health.className='badge off'}}
+function updateHealthStatus() {
+  const t = i18n[currentLang] || i18n['en'];
+  health.textContent = workerOnline ? t.healthOnline : t.healthOffline;
+  health.className = 'badge ' + (workerOnline ? 'on' : 'off');
+}
+
+async function checkHealth(){
+  try{
+    const r=await fetch('/health');
+    const d=await r.json();
+    workerOnline = !!d.worker_online;
+  }catch{
+    workerOnline = false;
+  }
+  updateHealthStatus();
+}
 checkHealth();setInterval(checkHealth,5000);
-async function submitQuestion(){const q=question.value.trim();if(!q)return;askButton.disabled=true;newConversationButton.disabled=true;answer.textContent='Waiting for Worker…';try{const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,language:language.value,team:team.value,conversation_id:getConversationId()})});const d=await r.json();if(d.conversation_id)localStorage.setItem(conversationKey,d.conversation_id);answer.textContent=d.answer||d.error||'No response'}catch(e){answer.textContent=String(e)}finally{askButton.disabled=false;newConversationButton.disabled=false}}
+
+async function submitQuestion(){
+  const q=question.value.trim();
+  if(!q)return;
+  askButton.disabled=true;
+  newConversationButton.disabled=true;
+  const t = i18n[currentLang] || i18n['en'];
+  answer.innerHTML = `<div class="flex-center"><div class="spinner"></div><span>${t.waiting}</span></div>`;
+  try{
+    const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,language:language.value,team:team.value,conversation_id:getConversationId()})});
+    const d=await r.json();
+    if(d.conversation_id) localStorage.setItem(conversationKey,d.conversation_id);
+    if(d.error) {
+      answer.textContent=d.error;
+    } else {
+      answer.textContent=d.answer||'No response';
+    }
+  }catch(e){
+    answer.textContent=String(e);
+  }finally{
+    askButton.disabled=false;
+    newConversationButton.disabled=false;
+  }
+}
 askButton.onclick=submitQuestion;
 question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter')submitQuestion()});
-newConversationButton.onclick=()=>{localStorage.setItem(conversationKey,newConversationId());question.value='';answer.textContent='New conversation started.';question.focus()};
+newConversationButton.onclick=()=>{
+  localStorage.setItem(conversationKey,newConversationId());
+  question.value='';
+  const t = i18n[currentLang] || i18n['en'];
+  answer.textContent=t.newConvStarted;
+  question.focus()
+};
+
+// Initial translation
+translateUI();
 </script>
 </body></html>
