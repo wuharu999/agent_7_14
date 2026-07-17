@@ -82,6 +82,9 @@ def initialize_database() -> None:
                 status TEXT NOT NULL,
                 error TEXT,
                 files_written TEXT NOT NULL DEFAULT '[]',
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                max_retries INTEGER NOT NULL DEFAULT 0,
+                active_queue_count INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL,
                 UNIQUE(upload_id, source_identity),
                 FOREIGN KEY(upload_id) REFERENCES uploads(upload_id) ON DELETE CASCADE
@@ -155,6 +158,12 @@ def initialize_database() -> None:
                 "ALTER TABLE uploads ADD COLUMN security_scan_complete "
                 "INTEGER NOT NULL DEFAULT 1"
             )
+        if "retry_count" not in _columns(connection, "upload_sources"):
+            connection.execute("ALTER TABLE upload_sources ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
+        if "max_retries" not in _columns(connection, "upload_sources"):
+            connection.execute("ALTER TABLE upload_sources ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 0")
+        if "active_queue_count" not in _columns(connection, "upload_sources"):
+            connection.execute("ALTER TABLE upload_sources ADD COLUMN active_queue_count INTEGER NOT NULL DEFAULT 0")
 
 
 # ---------------------------------------------------------------------------
@@ -358,17 +367,24 @@ def upsert_source(
     status: str,
     error: str | None = None,
     files_written: list[str] | None = None,
+    retry_count: int = 0,
+    max_retries: int = 0,
+    active_queue_count: int = 0,
 ) -> None:
     with _DB_LOCK, _connect() as connection:
         connection.execute(
             """
             INSERT INTO upload_sources (
-                upload_id, source_identity, status, error, files_written, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                upload_id, source_identity, status, error, files_written,
+                retry_count, max_retries, active_queue_count, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(upload_id, source_identity) DO UPDATE SET
                 status = excluded.status,
                 error = excluded.error,
                 files_written = excluded.files_written,
+                retry_count = excluded.retry_count,
+                max_retries = excluded.max_retries,
+                active_queue_count = excluded.active_queue_count,
                 updated_at = excluded.updated_at
             """,
             (
@@ -377,6 +393,9 @@ def upsert_source(
                 status,
                 error,
                 json.dumps(files_written or [], ensure_ascii=False),
+                retry_count,
+                max_retries,
+                active_queue_count,
                 utc_now(),
             ),
         )
@@ -527,7 +546,7 @@ def get_upload(upload_id: str) -> dict[str, Any] | None:
         if upload is None:
             return None
         source_rows = connection.execute(
-            "SELECT source_identity, status, error, files_written, updated_at "
+            "SELECT source_identity, status, error, files_written, retry_count, max_retries, active_queue_count, updated_at "
             "FROM upload_sources WHERE upload_id = ? ORDER BY source_identity",
             (upload_id,),
         ).fetchall()

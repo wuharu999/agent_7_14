@@ -60,6 +60,9 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                         error=data.get("error"),
                     )
 
+            elif message_type == "llm_wiki_snapshot":
+                gateway.latest_snapshot = data
+
             elif message_type == "upload_security_warnings":
                 upload_id = str(data.get("upload_id") or "")
                 if upload_id:
@@ -82,6 +85,9 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                         status=str(data.get("source_status") or "waiting"),
                         error=data.get("error"),
                         files_written=list(data.get("files_written") or []),
+                        retry_count=int(data.get("retry_count") or 0),
+                        max_retries=int(data.get("max_retries") or 0),
+                        active_queue_count=int(data.get("active_queue_count") or 0),
                     )
                 else:
                     update_upload(

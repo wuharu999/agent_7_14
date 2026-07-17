@@ -36,7 +36,7 @@ from worker.file_manager import (
     soft_delete_source,
 )
 from worker.knowledge import has_wiki_content, log_unanswered
-from worker.llm_wiki_monitor import monitor_source, request_rescan
+from worker.llm_wiki_monitor import monitor_source, request_rescan, monitor_global_queue
 from worker.models import DownloadJob, FileOperationJob, QuestionJob
 from worker.publisher import (
     collect_supported_sources,
@@ -78,6 +78,7 @@ class WorkerManager:
         tasks: list[asyncio.Task[Any]] = [
             asyncio.create_task(self.sender_loop(), name="sender"),
             asyncio.create_task(self.connection_loop(), name="connection"),
+            asyncio.create_task(monitor_global_queue(self.emit), name="monitor_global_queue"),
         ]
         tasks.extend(
             asyncio.create_task(

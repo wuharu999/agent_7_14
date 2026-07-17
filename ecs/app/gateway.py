@@ -20,6 +20,7 @@ class WorkerGateway:
         self.pending_commands: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self.sender_task: asyncio.Task[None] | None = None
         self._connection_lock = asyncio.Lock()
+        self.latest_snapshot: dict[str, Any] = {}
 
     @property
     def online(self) -> bool:

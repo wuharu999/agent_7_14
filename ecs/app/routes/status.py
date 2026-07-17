@@ -34,3 +34,9 @@ async def upload_status_api(upload_id: str, request: Request):
         return JSONResponse({"error": "upload not found"}, status_code=404)
     upload["worker_online"] = gateway.online
     return upload
+
+
+@router.get("/api/status/llm_wiki")
+async def llm_wiki_status_api(request: Request):
+    require_user(request)
+    return gateway.latest_snapshot
