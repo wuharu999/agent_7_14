@@ -11,8 +11,11 @@ Agent1 is a public ECS gateway plus a private Worker for a robot-documentation k
 - Soft deletion into `.agent1-trash/` rather than permanent erasure.
 - CSRF-protected file-changing requests.
 - SQLite users, sessions, uploads, source status and audit logs.
+- Strict isolation of files and QA sessions across multiple knowledge base teams.
 - Three concurrent Claude QA subprocess slots by default.
 - Two concurrent downloads by default.
+- QA rate limiting (10 requests/min, 50 requests/hour per IP).
+- Complete UI language synchronization and translation for public QA.
 - Safe ZIP extraction.
 - Existing LLM Wiki GUI used for Source Watch, Auto Ingest and wiki writing.
 - Browser-visible ingestion status through LLM Wiki queue/cache monitoring.
@@ -69,7 +72,8 @@ The Worker rejects absolute paths, `..` traversal, symlinks, removal of the `raw
 
 ## LLM Wiki
 
-Keep LLM Wiki open on the exact project configured as `BASE_DIR`, with Source Watch and Auto Ingest enabled.
+With the multi-LLM team architecture, each team has its own isolated LLM Wiki project directory. For example, `agent1/<team_name>`.
+Keep LLM Wiki open on the exact project directory configured for the team in `worker/teams.json` with Source Watch and Auto Ingest enabled.
 
 `LLM_WIKI_RESCAN_AFTER_PUBLISH=false` is the default. This avoids triggering ingestion twice through both Source Watch and `/sources/rescan`.
 

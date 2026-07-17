@@ -42,7 +42,8 @@ Do not hard-code the username. Resolve it from `$HOME`.
 ```text
 Project root: $HOME/Documents/agent_7_14
 Worker environment: $HOME/Documents/agent_7_14/worker/.env
-LLM Wiki project: $HOME/Documents/agent_7_14/agent1/agent
+Teams configuration: $HOME/Documents/agent_7_14/worker/teams.json
+LLM Wiki projects: $HOME/Documents/agent_7_14/agent1/<team>
 Expected tmux session: agent-7-14-worker
 ```
 
@@ -74,8 +75,11 @@ The latest intended product includes all of the following.
   - Russian
   - Spanish
 - Send the selected language with each question.
+- The UI language syncs automatically to the selected answer language.
 - Claude must answer in the selected language.
 - Claude must not expose internal retrieval steps or ask website users for permission to read files.
+- Rate limiting applies on the QA page (10 req/min, 50 req/hour per IP).
+- Internal Claude errors (e.g. timeout, missing executable) are logged internally and a generic translated message is shown to users.
 
 ### Authentication
 
@@ -98,7 +102,7 @@ The latest intended product includes all of the following.
 - Worker downloads into staging, safely extracts ZIP files when necessary, and atomically publishes completed sources under:
 
 ```text
-agent1/agent/raw/sources/<team>/<upload_id>/
+agent1/<team>/raw/sources/<upload_id>/
 ```
 
 - Allowed teams currently are:
