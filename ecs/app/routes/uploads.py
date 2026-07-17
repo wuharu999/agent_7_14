@@ -10,7 +10,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, File, Form, Header, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from ecs.app.auth import require_roles, verify_csrf
+from ecs.app.auth import require_roles, verify_csrf, check_team_access
 from ecs.app.config import ALLOWED_TEAMS, PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET
 from ecs.app.database import create_upload, get_upload, update_upload, write_audit
 from ecs.app.gateway import gateway
@@ -98,8 +98,11 @@ async def upload_file(
 
     if team not in ALLOWED_TEAMS:
         return JSONResponse(
-            {"error": "invalid team", "allowed_teams": list(ALLOWED_TEAMS)},
-            status_code=400,
+            {"error": f"Team must be one of {', '.join(ALLOWED_TEAMS)}"}, status_code=400
+        )
+    if not check_team_access(session, team):
+        return JSONResponse(
+            {"error": f"You do not have permission to manage the team '{team}'"}, status_code=403
         )
 
     original_filename = file.filename or "uploaded_file"

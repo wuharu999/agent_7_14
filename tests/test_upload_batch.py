@@ -114,7 +114,7 @@ class UploadEndpointTests(unittest.TestCase):
         self.teams_patch.start()
         self.to_thread_patch.start()
         database.initialize_database()
-        self.editor_token, self.editor_csrf = self._create_session("editor", "editor")
+        self.editor_token, self.editor_csrf = self._create_session("editor", "editor", "tian_gong,walker_s2,walker_c1")
         self.viewer_token, self.viewer_csrf = self._create_session("viewer", "viewer")
 
     def tearDown(self) -> None:
@@ -125,12 +125,13 @@ class UploadEndpointTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     @staticmethod
-    def _create_session(username: str, role: str) -> tuple[str, str]:
+    def _create_session(username: str, role: str, teams: str = "") -> tuple[str, str]:
         user_id = database.create_user_record(
             username=username,
             password_hash="unused-in-route-test",
             password_salt="unused-in-route-test",
             role=role,
+            teams=teams,
         )
         return auth.create_login_session(user_id)
 

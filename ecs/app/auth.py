@@ -72,20 +72,21 @@ def normalize_username(username: str) -> str:
     return value
 
 
-def create_or_update_user(username: str, password: str, role: str) -> int:
+def create_or_update_user(username: str, password: str, role: str, teams: str = "") -> int:
     normalized = normalize_username(username)
     if role not in {"viewer", "editor", "admin"}:
         raise ValueError("Role must be viewer, editor or admin")
     password_hash, password_salt = hash_password(password)
     existing = get_user_by_username(normalized)
     if existing:
-        update_user_record(int(existing["id"]), password_hash, password_salt, role)
+        update_user_record(int(existing["id"]), password_hash, password_salt, role, teams)
         return int(existing["id"])
     return create_user_record(
         username=normalized,
         password_hash=password_hash,
         password_salt=password_salt,
         role=role,
+        teams=teams,
     )
 
 
@@ -186,3 +187,10 @@ def safe_next_url(value: str | None, default: str = "/manage") -> str:
     if parsed.scheme or parsed.netloc or not value.startswith("/") or value.startswith("//"):
         return default
     return value
+
+
+def check_team_access(session: dict[str, Any], team: str) -> bool:
+    if session.get("role") == "admin":
+        return True
+    user_teams = [t.strip() for t in str(session.get("teams", "")).split(",") if t.strip()]
+    return team in user_teams

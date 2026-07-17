@@ -6,7 +6,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ecs.app.auth import require_roles, verify_csrf
+from ecs.app.auth import require_roles, verify_csrf, check_team_access
 from ecs.app.database import mark_sources_deleted, write_audit
 from ecs.app.gateway import gateway
 
@@ -32,10 +32,18 @@ async def list_sources(request: Request):
             {"error": str(result.get("error") or "Unable to list sources")},
             status_code=500,
         )
+    
+    tree = result.get("tree") or {"root": "raw/sources", "children": []}
+    if session.get("role") != "admin":
+        tree["children"] = [
+            child for child in tree.get("children", [])
+            if check_team_access(session, child.get("name"))
+        ]
+
     return {
         "worker_online": gateway.online,
         "user": {"username": session["username"], "role": session["role"]},
-        "tree": result.get("tree") or {"root": "raw/sources", "children": []},
+        "tree": tree,
     }
 
 
@@ -48,6 +56,12 @@ async def delete_source(
     session = require_roles(request, {"editor", "admin"})
     verify_csrf(session, x_csrf_token)
     source_path = payload.path.strip()
+
+    parts = source_path.split("/")
+    if parts:
+        team = parts[0]
+        if not check_team_access(session, team):
+            return JSONResponse({"error": "You do not have permission to manage this team"}, status_code=403)
 
     try:
         result = await gateway.command("delete_source", path=source_path)

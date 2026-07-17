@@ -40,6 +40,7 @@ def initialize_database() -> None:
                 password_hash TEXT NOT NULL,
                 password_salt TEXT NOT NULL,
                 role TEXT NOT NULL CHECK(role IN ('viewer', 'editor', 'admin')),
+                teams TEXT NOT NULL DEFAULT '',
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -164,6 +165,8 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE upload_sources ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 0")
         if "active_queue_count" not in _columns(connection, "upload_sources"):
             connection.execute("ALTER TABLE upload_sources ADD COLUMN active_queue_count INTEGER NOT NULL DEFAULT 0")
+        if "teams" not in _columns(connection, "users"):
+            connection.execute("ALTER TABLE users ADD COLUMN teams TEXT NOT NULL DEFAULT ''")
 
 
 # ---------------------------------------------------------------------------
@@ -171,30 +174,30 @@ def initialize_database() -> None:
 # ---------------------------------------------------------------------------
 
 def create_user_record(
-    *, username: str, password_hash: str, password_salt: str, role: str
+    *, username: str, password_hash: str, password_salt: str, role: str, teams: str = ""
 ) -> int:
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
         cursor = connection.execute(
             """
             INSERT INTO users (
-                username, password_hash, password_salt, role,
+                username, password_hash, password_salt, role, teams,
                 is_active, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 1, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
             """,
-            (username, password_hash, password_salt, role, now, now),
+            (username, password_hash, password_salt, role, teams, now, now),
         )
         return int(cursor.lastrowid)
 
 
 def update_user_record(
-    user_id: int, password_hash: str, password_salt: str, role: str
+    user_id: int, password_hash: str, password_salt: str, role: str, teams: str = ""
 ) -> None:
     with _DB_LOCK, _connect() as connection:
         connection.execute(
-            "UPDATE users SET password_hash = ?, password_salt = ?, role = ?, "
+            "UPDATE users SET password_hash = ?, password_salt = ?, role = ?, teams = ?, "
             "is_active = 1, updated_at = ? WHERE id = ?",
-            (password_hash, password_salt, role, utc_now(), user_id),
+            (password_hash, password_salt, role, teams, utc_now(), user_id),
         )
 
 
@@ -215,7 +218,7 @@ def get_user_by_id(user_id: int) -> dict[str, Any] | None:
 def list_users() -> list[dict[str, Any]]:
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute(
-            "SELECT id, username, role, is_active, created_at, updated_at FROM users ORDER BY username"
+            "SELECT id, username, role, teams, is_active, created_at, updated_at FROM users ORDER BY username"
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -245,6 +248,7 @@ def get_session_with_user(token_hash: str) -> dict[str, Any] | None:
                 s.expires_at,
                 u.username,
                 u.role,
+                u.teams,
                 u.is_active
             FROM sessions s
             JOIN users u ON u.id = s.user_id
