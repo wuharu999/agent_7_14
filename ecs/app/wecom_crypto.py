@@ -9,12 +9,9 @@
 import base64
 import hashlib
 import struct
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 
-try:
-    from Cryptodome.Cipher import AES
-except ImportError:
-    from Crypto.Cipher import AES
+from Crypto.Cipher import AES  # nosec
 
 
 class WXBizMsgCrypt:
@@ -35,7 +32,7 @@ class WXBizMsgCrypt:
         """SHA1(token, timestamp, nonce, encrypt) 排序后签名。"""
         sort_list = sorted([self.token, timestamp, nonce, encrypt])
         raw = "".join(sort_list)
-        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()  # nosec
 
     # ── 解密 ────────────────────────────────────────
 

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import datetime
-import os
 import re
-from pathlib import Path
 
 from worker.config import get_team_config
 
