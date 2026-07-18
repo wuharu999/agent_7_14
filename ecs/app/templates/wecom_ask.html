@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Uchat Knowledge Base</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-primary: #f5f7fb;
+    --bg-secondary: #e2e8f0;
+    --bg-card: rgba(255, 255, 255, 0.7);
+    --border-glass: rgba(37, 99, 235, 0.15);
+    --accent-cyan: #2563eb;
+    --accent-indigo: #4f46e5;
+    --accent-glow: rgba(37, 99, 235, 0.25);
+    --text-primary: #172033;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --success: #34d399;
+    --danger: #f87171;
+    --warning: #fbbf24;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  html {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: linear-gradient(168deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, #0f172a 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Ambient glow orbs */
+  body::before,
+  body::after {
+    content: '';
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(100px);
+    opacity: 0.12;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::before {
+    width: 400px; height: 400px;
+    background: var(--accent-cyan);
+    top: -100px; left: -100px;
+    animation: orbFloat 12s ease-in-out infinite alternate;
+  }
+  body::after {
+    width: 350px; height: 350px;
+    background: var(--accent-indigo);
+    bottom: -80px; right: -80px;
+    animation: orbFloat 15s ease-in-out infinite alternate-reverse;
+  }
+
+  @keyframes orbFloat {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(40px, 30px) scale(1.15); }
+  }
+
+  /* ─── Main Container ─── */
+  .page-wrapper {
+    width: 100%;
+    max-width: 500px;
+    padding: 0 16px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ─── Top Bar ─── */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 0 12px;
+    flex-shrink: 0;
+  }
+  .top-bar-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .top-bar-title h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .top-bar-title p {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  /* Health badge */
+  .health-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid var(--border-glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: var(--transition);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .health-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--warning);
+    transition: background var(--transition);
+    flex-shrink: 0;
+  }
+  .health-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .health-dot.offline { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+  .health-dot.checking { background: var(--warning); animation: pulse-dot 1.2s ease-in-out infinite; }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* ─── Glass Card ─── */
+  .glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius);
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(56,189,248,0.2), transparent 50%, rgba(129,140,248,0.15));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+  .glass-card:hover::before { opacity: 1; }
+
+  /* ─── Selectors ─── */
+  .selectors-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .select-group { display: flex; flex-direction: column; gap: 5px; }
+  .select-group label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .select-group select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 10px 32px 10px 12px;
+    cursor: pointer;
+    transition: var(--transition);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 5.5l6.5 6 6.5-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 12px;
+    width: 100%;
+    outline: none;
+  }
+  .select-group select:focus {
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  /* ─── Chat Area ─── */
+  .chat-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  
+  .chat-history {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 0;
+  }
+
+  .chat-bubble {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .chat-bubble.user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .chat-bubble.bot {
+    align-self: flex-start;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.5);
+    color: var(--text-primary);
+    border-bottom-left-radius: 4px;
+  }
+  .chat-bubble.system {
+    align-self: center;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    box-shadow: none;
+    padding: 4px;
+  }
+
+  .typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 14px;
+  }
+  .dot {
+    width: 6px; height: 6px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+  }
+  .dot:nth-child(1) { animation-delay: -0.32s; }
+  .dot:nth-child(2) { animation-delay: -0.16s; }
+  
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+  }
+
+  /* ─── Textarea ─── */
+  .textarea-wrap {
+    position: relative;
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .textarea-wrap::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo));
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s ease;
+  }
+  .textarea-wrap:focus-within::after { transform: scaleX(1); }
+
+  #question {
+    width: 100%;
+    min-height: 80px;
+    max-height: 120px;
+    resize: vertical;
+    background: rgba(0,0,0,0.03);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    padding: 14px 16px;
+    outline: none;
+    transition: var(--transition);
+  }
+  #question::placeholder { color: var(--text-muted); }
+  #question:focus {
+    border-color: rgba(56,189,248,0.3);
+    background: rgba(0,0,0,0.05);
+  }
+
+  .hint-text {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  /* ─── Buttons ─── */
+  .btn-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+    outline: none;
+    white-space: nowrap;
+  }
+  .btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .btn:hover::after { opacity: 1; }
+  .btn:active { transform: scale(0.97); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(56,189,248,0.25);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 6px 28px rgba(56,189,248,0.35);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .btn-ghost {
+    background: rgba(0,0,0,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover {
+    border-color: var(--accent-cyan);
+    color: var(--text-primary);
+    background: rgba(56,189,248,0.06);
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+
+  /* ─── Fade-in animation ─── */
+  .fade-in { animation: fadeIn 0.5s ease both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in:nth-child(2) { animation-delay: 0.05s; }
+  .fade-in:nth-child(3) { animation-delay: 0.1s; }
+</style>
+</head>
+<body>
+
+<div class="page-wrapper">
+
+  <!-- ── Top Bar ── -->
+  <header class="top-bar fade-in">
+    <div class="top-bar-title">
+      <h1 data-i18n="title">Uchat Knowledge Base</h1>
+      <p data-i18n="subtitle">Ask questions against the local wiki.</p>
+    </div>
+    <div class="health-badge" id="healthBadge">
+      <span class="health-dot checking" id="healthDot"></span>
+      <span id="healthText" data-i18n="healthChecking">Checking Worker...</span>
+    </div>
+  </header>
+
+  <!-- ── Chat Area ── -->
+  <div class="chat-wrapper fade-in">
+    <div class="chat-history" id="chatHistory">
+      <!-- Chat bubbles -->
+    </div>
+  </div>
+
+  <!-- ── Input & Controls ── -->
+  <div class="glass-card fade-in">
+    <div class="selectors-row">
+      <div class="select-group">
+        <label data-i18n="teamLabel">Team (Knowledge Base)</label>
+        <select id="teamSelect"></select>
+      </div>
+      <div class="select-group">
+        <label data-i18n="langLabel">Answer language</label>
+        <select id="langSelect">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="ko">한국어</option>
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+          <option value="pt">Português</option>
+          <option value="ru">Русский</option>
+          <option value="es">Español</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="textarea-wrap">
+      <textarea id="question" data-i18n-attr="placeholder" data-i18n="placeholder" placeholder="Enter a question"></textarea>
+    </div>
+    
+    <div class="btn-row">
+      <button class="btn btn-primary" id="askBtn" onclick="doAsk()">
+        <span data-i18n="askBtn">Ask</span>
+      </button>
+      <button class="btn btn-ghost" id="newConvBtn" onclick="newConversation()">
+        <span data-i18n="newConvBtn">New conversation</span>
+      </button>
+    </div>
+    <p class="hint-text" data-i18n="hint">Follow-up questions in this browser keep recent conversation context. "New conversation" clears that context.</p>
+  </div>
+
+</div>
+
+<script>
+/* ─── i18n translations ─── */
+const i18n = {
+  'zh-CN': { title: '优必答 知识库', subtitle: '向本地知识库提问。', placeholder: '输入您的问题', teamLabel: '团队 (知识库)', langLabel: '回答语言', askBtn: '提问', newConvBtn: '新对话', hint: '在此浏览器中的后续问题会保留近期的对话上下文。“新对话”会清除该上下文。', waiting: '等待 Worker 处理中...', healthChecking: '正在检查 Worker...', healthOnline: 'Worker 在线', healthOffline: 'Worker 离线', signIn: '登录', manageSources: '管理源文件', uploadDocs: '上传文档', newConvStarted: '已开始新对话。',
+    'lang_zh-CN': '简体中文', 'lang_zh-TW': '繁体中文', 'lang_ko': '韩语', 'lang_ja': '日语', 'lang_en': '英语', 'lang_pt': '葡萄牙语', 'lang_ru': '俄语', 'lang_es': '西班牙语' },
+  'zh-TW': { title: '優必答 知識庫', subtitle: '向本地知識庫提問。', placeholder: '輸入您的問題', teamLabel: '團隊 (知識庫)', langLabel: '回答語言', askBtn: '提問', newConvBtn: '新對話', hint: '在此瀏覽器中的後續問題會保留近期的對話上下文。“新對話”會清除該上下文。', waiting: '等待 Worker 處理中...', healthChecking: '正在檢查 Worker...', healthOnline: 'Worker 在線', healthOffline: 'Worker 離線', signIn: '登入', manageSources: '管理來源', uploadDocs: '上傳文件', newConvStarted: '已開始新對話。',
+    'lang_zh-CN': '簡體中文', 'lang_zh-TW': '繁體中文', 'lang_ko': '韓語', 'lang_ja': '日語', 'lang_en': '英語', 'lang_pt': '葡萄牙語', 'lang_ru': '俄語', 'lang_es': '西班牙語' },
+  'ko': { title: 'Uchat 지식 베이스', subtitle: '로컬 위키에 질문하세요.', placeholder: '질문을 입력하세요', teamLabel: '팀 (지식 베이스)', langLabel: '답변 언어', askBtn: '질문하기', newConvBtn: '새 대화', hint: '이 브라우저에서 후속 질문은 최근 대화 컨텍스트를 유지합니다. “새 대화”를 누르면 초기화됩니다.', waiting: '워커 대기 중...', healthChecking: '워커 확인 중...', healthOnline: '워커 온라인', healthOffline: '워커 오프라인', signIn: '로그인', manageSources: '소스 관리', uploadDocs: '문서 업로드', newConvStarted: '새 대화가 시작되었습니다.',
+    'lang_zh-CN': '중국어 간체', 'lang_zh-TW': '중국어 번체', 'lang_ko': '한국어', 'lang_ja': '일본어', 'lang_en': '영어', 'lang_pt': '포르투갈어', 'lang_ru': '러시아어', 'lang_es': '스페인어' },
+  'ja': { title: 'Uchat ナレッジベース', subtitle: 'ローカルのWikiに質問する', placeholder: '質問を入力してください', teamLabel: 'チーム (ナレッジベース)', langLabel: '回答の言語', askBtn: '質問する', newConvBtn: '新しい会話', hint: 'このブラウザでのフォローアップ質問は、最近の会話のコンテキストを保持します。「新しい会話」でリセットされます。', waiting: 'ワーカーを待機中...', healthChecking: 'ワーカーを確認中...', healthOnline: 'ワーカーオンライン', healthOffline: 'ワーカーオフライン', signIn: 'サインイン', manageSources: 'ソースの管理', uploadDocs: 'ドキュメントのアップロード', newConvStarted: '新しい会話が開始されました。',
+    'lang_zh-CN': '簡体字中国語', 'lang_zh-TW': '繁体字中国語', 'lang_ko': '韓国語', 'lang_ja': '日本語', 'lang_en': '英語', 'lang_pt': 'ポルトガル語', 'lang_ru': 'ロシア語', 'lang_es': 'スペイン語' },
+  'en': { title: 'Uchat Knowledge Base', subtitle: 'Ask questions against the local wiki.', placeholder: 'Enter a question', teamLabel: 'Team (Knowledge Base)', langLabel: 'Answer language', askBtn: 'Ask', newConvBtn: 'New conversation', hint: 'Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.', waiting: 'Waiting for Worker...', healthChecking: 'Checking Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Sign in', manageSources: 'Manage sources', uploadDocs: 'Upload documentation', newConvStarted: 'New conversation started.',
+    'lang_zh-CN': 'Simplified Chinese', 'lang_zh-TW': 'Traditional Chinese', 'lang_ko': 'Korean', 'lang_ja': 'Japanese', 'lang_en': 'English', 'lang_pt': 'Portuguese', 'lang_ru': 'Russian', 'lang_es': 'Spanish' },
+  'pt': { title: 'Base de Conhecimento Uchat', subtitle: 'Faça perguntas à wiki local.', placeholder: 'Insira uma pergunta', teamLabel: 'Equipe (Base de Conhecimento)', langLabel: 'Idioma da resposta', askBtn: 'Perguntar', newConvBtn: 'Nova conversa', hint: 'Perguntas de acompanhamento neste navegador mantêm o contexto da conversa recente. “Nova conversa” limpa esse contexto.', waiting: 'Aguardando o Worker...', healthChecking: 'Verificando o Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Entrar', manageSources: 'Gerenciar fontes', uploadDocs: 'Enviar documentação', newConvStarted: 'Nova conversa iniciada.',
+    'lang_zh-CN': 'Chinês Simplificado', 'lang_zh-TW': 'Chinês Tradicional', 'lang_ko': 'Coreano', 'lang_ja': 'Japonês', 'lang_en': 'Inglês', 'lang_pt': 'Português', 'lang_ru': 'Russo', 'lang_es': 'Espanhol' },
+  'ru': { title: 'База знаний Uchat', subtitle: 'Задайте вопросы локальной вики.', placeholder: 'Введите вопрос', teamLabel: 'Команда (База знаний)', langLabel: 'Язык ответа', askBtn: 'Спросить', newConvBtn: 'Новый диалог', hint: 'Последующие вопросы в этом браузере сохраняют контекст недавнего диалога. «Новый диалог» очищает этот контекст.', waiting: 'Ожидание Worker...', healthChecking: 'Проверка Worker...', healthOnline: 'Worker онлайн', healthOffline: 'Worker оффлайн', signIn: 'Войти', manageSources: 'Управление источниками', uploadDocs: 'Загрузить документацию', newConvStarted: 'Начат новый диалог.',
+    'lang_zh-CN': 'Китайский (упрощенный)', 'lang_zh-TW': 'Китайский (традиционный)', 'lang_ko': 'Корейский', 'lang_ja': 'Японский', 'lang_en': 'Английский', 'lang_pt': 'Португальский', 'lang_ru': 'Русский', 'lang_es': 'Испанский' },
+  'es': { title: 'Base de Conocimiento Uchat', subtitle: 'Haga preguntas a la wiki local.', placeholder: 'Introduzca una pregunta', teamLabel: 'Equipo (Base de Conocimiento)', langLabel: 'Idioma de la respuesta', askBtn: 'Preguntar', newConvBtn: 'Nueva conversación', hint: 'Las preguntas de seguimiento en este navegador mantienen el contexto reciente. “Nueva conversación” borra ese contexto.', waiting: 'Esperando al Worker...', healthChecking: 'Comprobando Worker...', healthOnline: 'Worker en línea', healthOffline: 'Worker desconectado', signIn: 'Iniciar sesión', manageSources: 'Administrar fuentes', uploadDocs: 'Subir documentación', newConvStarted: 'Nueva conversación iniciada.',
+    'lang_zh-CN': 'Chino Simplificado', 'lang_zh-TW': 'Chino Tradicional', 'lang_ko': 'Coreano', 'lang_ja': 'Japonés', 'lang_en': 'Inglés', 'lang_pt': 'Portugués', 'lang_ru': 'Ruso', 'lang_es': 'Español' }
+};
+
+/* ─── DOM refs ─── */
+const teamSelect    = document.getElementById('teamSelect');
+const langSelect    = document.getElementById('langSelect');
+const questionEl    = document.getElementById('question');
+const chatHistory   = document.getElementById('chatHistory');
+const askBtn        = document.getElementById('askBtn');
+const newConvBtn    = document.getElementById('newConvBtn');
+const healthDot     = document.getElementById('healthDot');
+const healthText    = document.getElementById('healthText');
+
+const conversationKey = 'agent1_wecom_conversation_id';
+const languageKey     = 'agent1_wecom_answer_language';
+const teamKey         = 'agent1_wecom_team';
+const historyKey      = 'agent1_wecom_chat_history';
+
+let currentLang = 'zh-CN';
+let currentChat = [];
+
+/* ─── Populate teams ─── */
+const allowedTeams = __ALLOWED_TEAMS__;
+allowedTeams.forEach(function(t) {
+  const opt = document.createElement('option');
+  opt.value = t;
+  opt.textContent = t;
+  teamSelect.appendChild(opt);
+});
+
+/* ─── Restore selections ─── */
+const savedLang = localStorage.getItem(languageKey);
+if (savedLang) langSelect.value = savedLang;
+currentLang = langSelect.value;
+
+const savedTeam = localStorage.getItem(teamKey);
+if (savedTeam && allowedTeams.includes(savedTeam)) teamSelect.value = savedTeam;
+else if(allowedTeams.length > 0) teamSelect.value = allowedTeams[0];
+
+/* ─── Chat History ─── */
+function saveHistory() {
+  localStorage.setItem(historyKey, JSON.stringify(currentChat));
+}
+function loadHistory() {
+  const data = localStorage.getItem(historyKey);
+  if(data) {
+    try {
+      currentChat = JSON.parse(data);
+      renderChat();
+    } catch(e) { currentChat = []; }
+  }
+}
+function renderChat() {
+  chatHistory.innerHTML = '';
+  currentChat.forEach(msg => {
+    const d = document.createElement('div');
+    d.className = 'chat-bubble ' + msg.role;
+    d.textContent = msg.content;
+    chatHistory.appendChild(d);
+  });
+  scrollToBottom();
+}
+function addMessage(role, content) {
+  currentChat.push({role, content});
+  saveHistory();
+  const d = document.createElement('div');
+  d.className = 'chat-bubble ' + role;
+  d.textContent = content;
+  chatHistory.appendChild(d);
+  scrollToBottom();
+}
+function clearChat() {
+  currentChat = [];
+  saveHistory();
+  chatHistory.innerHTML = '';
+}
+function scrollToBottom() {
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+/* ─── Apply i18n ─── */
+function applyI18n() {
+  const t = i18n[currentLang] || i18n['en'];
+  document.title = t.title;
+  document.querySelectorAll('[data-i18n]').forEach(function(el) {
+    const key = el.getAttribute('data-i18n');
+    if (!t[key]) return;
+    if (key === 'healthChecking' || key === 'healthOnline' || key === 'healthOffline') return;
+    
+    if (el.hasAttribute('data-i18n-attr')) {
+      el.setAttribute(el.getAttribute('data-i18n-attr'), t[key]);
+    } else {
+      el.textContent = t[key];
+    }
+  });
+}
+applyI18n();
+loadHistory();
+
+/* ─── Persist on change ─── */
+langSelect.addEventListener('change', function() {
+  currentLang = langSelect.value;
+  localStorage.setItem(languageKey, currentLang);
+  applyI18n();
+  checkHealth();
+});
+teamSelect.addEventListener('change', function() {
+  localStorage.setItem(teamKey, teamSelect.value);
+});
+
+/* ─── Conversation ID ─── */
+function getConversationId() {
+  let cid = localStorage.getItem(conversationKey);
+  if (!cid) {
+    cid = 'wecom:'+(globalThis.crypto?.randomUUID?.() || Date.now().toString(36));
+    localStorage.setItem(conversationKey, cid);
+  }
+  return cid;
+}
+
+function newConversation() {
+  const cid = 'wecom:'+(globalThis.crypto?.randomUUID?.() || Date.now().toString(36));
+  localStorage.setItem(conversationKey, cid);
+  clearChat();
+  const t = i18n[currentLang] || i18n['en'];
+  addMessage('system', t.newConvStarted);
+  questionEl.focus();
+}
+
+/* ─── Health check ─── */
+function checkHealth() {
+  const t = i18n[currentLang] || i18n['en'];
+  fetch('/health', { method: 'GET' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.worker_online) {
+        healthDot.className = 'health-dot online';
+        healthText.textContent = t.healthOnline;
+      } else {
+        healthDot.className = 'health-dot offline';
+        healthText.textContent = t.healthOffline;
+      }
+    })
+    .catch(function() {
+      healthDot.className = 'health-dot offline';
+      healthText.textContent = t.healthOffline;
+    });
+}
+checkHealth();
+setInterval(checkHealth, 5000);
+
+/* ─── Ask ─── */
+function doAsk() {
+  const q = questionEl.value.trim();
+  if (!q) return;
+
+  const t = i18n[currentLang] || i18n['en'];
+  askBtn.disabled = true;
+  newConvBtn.disabled = true;
+  questionEl.value = '';
+  
+  addMessage('user', q);
+  
+  const loadingBubble = document.createElement('div');
+  loadingBubble.className = 'chat-bubble bot typing-indicator';
+  loadingBubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+  chatHistory.appendChild(loadingBubble);
+  scrollToBottom();
+
+  fetch('/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      question: q,
+      language: langSelect.value,
+      team: teamSelect.value,
+      conversation_id: getConversationId()
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if(data.conversation_id) localStorage.setItem(conversationKey, data.conversation_id);
+    loadingBubble.remove();
+    if(data.error) {
+      addMessage('bot', data.error);
+    } else {
+      addMessage('bot', data.answer || 'No response');
+    }
+  })
+  .catch(function(err) {
+    loadingBubble.remove();
+    addMessage('bot', 'Error: ' + err.message);
+  })
+  .finally(function() {
+    askBtn.disabled = false;
+    newConvBtn.disabled = false;
+  });
+}
+
+/* ─── Ctrl+Enter shortcut ─── */
+questionEl.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.key === 'Enter') {
+    e.preventDefault();
+    doAsk();
+  }
+});
+</script>
+</body>
+</html>

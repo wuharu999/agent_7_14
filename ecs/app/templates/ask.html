@@ -2,80 +2,188 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent1 Knowledge Base</title>
+<title>Uchat Knowledge Base</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 18px;background:#f5f7fb;color:#172033}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:22px;box-shadow:0 8px 30px #1f293711}textarea{width:100%;min-height:140px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;box-sizing:border-box;font:inherit}.controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-top:12px}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:700;color:#475569}select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;font:inherit;min-width:210px}button{padding:10px 18px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#64748b}button:disabled{opacity:.55;cursor:not-allowed}pre{white-space:pre-wrap;background:#f8fafc;padding:14px;border-radius:9px;min-height:90px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.badge{padding:5px 10px;border-radius:99px;font-size:13px}.on{background:#dcfce7;color:#166534}.off{background:#fee2e2;color:#991b1b}.hint{font-size:13px;color:#64748b;margin:10px 0 0}a{color:#2563eb}
-.spinner {display: inline-block;width: 20px;height: 20px;border: 3px solid rgba(37, 99, 235, 0.3);border-radius: 50%;border-top-color: #2563eb;animation: spin 1s ease-in-out infinite;vertical-align: middle;margin-right: 8px;}
-@keyframes spin {to { transform: rotate(360deg); }}
-.flex-center {display: flex; align-items: center;}
+body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#f5f7fb;color:#172033;display:flex;min-height:100vh;overflow-x:hidden}
+.layout{display:flex;width:100%;justify-content:center;align-items:center;min-height:100vh;}
+.chat-section{flex:1;max-width:800px;width:100%;padding:20px;display:flex;flex-direction:column;height:100vh;box-sizing:border-box;}
+.header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0;}
+.header-titles h1 {margin:0;font-size:24px;}
+.header-titles p {margin:4px 0 0;font-size:14px;color:#64748b;}
+.badge{padding:5px 10px;border-radius:99px;font-size:13px;white-space:nowrap;}
+.on{background:#dcfce7;color:#166534}
+.off{background:#fee2e2;color:#991b1b}
+
+.chat-card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;display:flex;flex-direction:column;flex:1;box-shadow:0 8px 30px #1f293711;overflow:hidden;margin-bottom:12px;}
+.chat-history{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;background:#f8fafc;}
+.chat-input-area{padding:16px;background:#fff;border-top:1px solid #e2e8f0;display:flex;flex-direction:column;gap:12px;}
+
+.bubble{max-width:85%;padding:12px 16px;border-radius:18px;font-size:15px;line-height:1.5;word-wrap:break-word;white-space:pre-wrap;}
+.bubble.user{align-self:flex-end;background:#2563eb;color:#fff;border-bottom-right-radius:4px;}
+.bubble.bot{align-self:flex-start;background:#fff;border:1px solid #cbd5e1;color:#1e293b;border-bottom-left-radius:4px;}
+.bubble.system{align-self:center;background:transparent;color:#64748b;font-size:13px;padding:4px 8px;border:none;}
+
+textarea{width:100%;min-height:60px;max-height:150px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;box-sizing:border-box;font:inherit;resize:vertical;}
+.controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;}
+.field{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;}
+.field label{font-size:13px;font-weight:700;color:#475569}
+select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;font:inherit;width:100%;}
+button{padding:10px 18px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;transition:transform 0.1s;white-space:nowrap;}
+button:hover{transform:translateY(-1px)}
+button.secondary{background:#64748b}
+button:disabled{opacity:.55;cursor:not-allowed}
+
+.footer-links{text-align:center;font-size:14px;}
+.footer-links a{color:#2563eb;text-decoration:none;margin:0 8px;}
+
+.typing-indicator {display:flex;align-items:center;gap:4px;padding:8px 12px;}
+.dot {width:6px;height:6px;background:#94a3b8;border-radius:50%;animation:bounce 1.4s infinite ease-in-out both;}
+.dot:nth-child(1) {animation-delay:-0.32s;}
+.dot:nth-child(2) {animation-delay:-0.16s;}
+@keyframes bounce {0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)}}
 </style>
 </head>
 <body>
-<div class="row"><div><h1 data-i18n="title">Agent1 Knowledge Base</h1><p data-i18n="subtitle">Ask questions against the local wiki.</p></div><span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span></div>
-<div class="card">
-<textarea id="question" placeholder="Enter a question"></textarea>
-<div class="controls">
-  <div class="field">
-    <label for="team" data-i18n="teamLabel">Team (Knowledge Base)</label>
-    <select id="team"></select>
+<div class="layout">
+<div class="chat-section">
+  <div class="header-row">
+    <div class="header-titles">
+      <h1 data-i18n="title">Uchat Knowledge Base</h1>
+      <p data-i18n="subtitle">Ask questions against the local wiki.</p>
+    </div>
+    <span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span>
   </div>
-  <div class="field">
-    <label for="language" data-i18n="langLabel">Answer language</label>
-    <select id="language">
-      <option value="zh-CN">简体中文</option>
-      <option value="zh-TW">繁體中文</option>
-      <option value="ko">한국어</option>
-      <option value="ja">日本語</option>
-      <option value="en">English</option>
-      <option value="pt">Português</option>
-      <option value="ru">Русский</option>
-      <option value="es">Español</option>
-    </select>
+
+  <div class="chat-card">
+    <div class="chat-history" id="chatHistory">
+      <!-- Chat bubbles will go here -->
+    </div>
+    <div class="chat-input-area">
+      <textarea id="question" placeholder="Enter a question"></textarea>
+      <div class="controls">
+        <div class="field">
+          <label for="team" data-i18n="teamLabel">Team (Knowledge Base)</label>
+          <select id="team"></select>
+        </div>
+        <div class="field">
+          <label for="language" data-i18n="langLabel">Answer language</label>
+          <select id="language">
+            <option value="zh-CN">简体中文</option>
+            <option value="zh-TW">繁體中文</option>
+            <option value="ko">한국어</option>
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+            <option value="pt">Português</option>
+            <option value="ru">Русский</option>
+            <option value="es">Español</option>
+          </select>
+        </div>
+        <button id="ask" data-i18n="askBtn">Ask</button>
+        <button id="newConversation" class="secondary" type="button" data-i18n="newConvBtn">New conversation</button>
+      </div>
+    </div>
   </div>
-  <button id="ask" data-i18n="askBtn">Ask</button>
-  <button id="newConversation" class="secondary" type="button" data-i18n="newConvBtn">New conversation</button>
+
+  <div class="footer-links">
+    <a href="/login" data-i18n="signIn">Sign in</a> · 
+    <a href="/manage" data-i18n="manageSources">Manage sources</a> · 
+    <a href="/upload" data-i18n="uploadDocs">Upload documentation</a>
+  </div>
 </div>
-<p class="hint" data-i18n="hint">Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.</p>
-<pre id="answer" data-i18n="answerPlaceholder">The answer will appear here.</pre>
 </div>
-<p><a href="/login" data-i18n="signIn">Sign in</a> · <a href="/manage" data-i18n="manageSources">Manage sources</a> · <a href="/upload" data-i18n="uploadDocs">Upload documentation</a></p>
+
 <script>
 const i18n = {
-  'zh-CN': { title: 'Agent1 知识库', subtitle: '向本地知识库提问。', placeholder: '输入您的问题', teamLabel: '团队 (知识库)', langLabel: '回答语言', askBtn: '提问', newConvBtn: '新对话', hint: '在此浏览器中的后续问题会保留近期的对话上下文。“新对话”会清除该上下文。', answerPlaceholder: '答案将显示在这里。', waiting: '等待 Worker 处理中...', healthChecking: '正在检查 Worker...', healthOnline: 'Worker 在线', healthOffline: 'Worker 离线', signIn: '登录', manageSources: '管理源文件', uploadDocs: '上传文档', newConvStarted: '已开始新对话。' },
-  'zh-TW': { title: 'Agent1 知識庫', subtitle: '向本地知識庫提問。', placeholder: '輸入您的問題', teamLabel: '團隊 (知識庫)', langLabel: '回答語言', askBtn: '提問', newConvBtn: '新對話', hint: '在此瀏覽器中的後續問題會保留近期的對話上下文。“新對話”會清除該上下文。', answerPlaceholder: '答案將顯示在這裡。', waiting: '等待 Worker 處理中...', healthChecking: '正在檢查 Worker...', healthOnline: 'Worker 在線', healthOffline: 'Worker 離線', signIn: '登入', manageSources: '管理來源', uploadDocs: '上傳文件', newConvStarted: '已開始新對話。' },
-  'ko': { title: 'Agent1 지식 베이스', subtitle: '로컬 위키에 질문하세요.', placeholder: '질문을 입력하세요', teamLabel: '팀 (지식 베이스)', langLabel: '답변 언어', askBtn: '질문하기', newConvBtn: '새 대화', hint: '이 브라우저에서 후속 질문은 최근 대화 컨텍스트를 유지합니다. “새 대화”를 누르면 초기화됩니다.', answerPlaceholder: '여기에 답변이 표시됩니다.', waiting: '워커 대기 중...', healthChecking: '워커 확인 중...', healthOnline: '워커 온라인', healthOffline: '워커 오프라인', signIn: '로그인', manageSources: '소스 관리', uploadDocs: '문서 업로드', newConvStarted: '새 대화가 시작되었습니다.' },
-  'ja': { title: 'Agent1 ナレッジベース', subtitle: 'ローカルのWikiに質問する', placeholder: '質問を入力してください', teamLabel: 'チーム (ナレッジベース)', langLabel: '回答の言語', askBtn: '質問する', newConvBtn: '新しい会話', hint: 'このブラウザでのフォローアップ質問は、最近の会話のコンテキストを保持します。「新しい会話」でリセットされます。', answerPlaceholder: 'ここに回答が表示されます。', waiting: 'ワーカーを待機中...', healthChecking: 'ワーカーを確認中...', healthOnline: 'ワーカーオンライン', healthOffline: 'ワーカーオフライン', signIn: 'サインイン', manageSources: 'ソースの管理', uploadDocs: 'ドキュメントのアップロード', newConvStarted: '新しい会話が開始されました。' },
-  'en': { title: 'Agent1 Knowledge Base', subtitle: 'Ask questions against the local wiki.', placeholder: 'Enter a question', teamLabel: 'Team (Knowledge Base)', langLabel: 'Answer language', askBtn: 'Ask', newConvBtn: 'New conversation', hint: 'Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.', answerPlaceholder: 'The answer will appear here.', waiting: 'Waiting for Worker...', healthChecking: 'Checking Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Sign in', manageSources: 'Manage sources', uploadDocs: 'Upload documentation', newConvStarted: 'New conversation started.' },
-  'pt': { title: 'Base de Conhecimento Agent1', subtitle: 'Faça perguntas à wiki local.', placeholder: 'Insira uma pergunta', teamLabel: 'Equipe (Base de Conhecimento)', langLabel: 'Idioma da resposta', askBtn: 'Perguntar', newConvBtn: 'Nova conversa', hint: 'Perguntas de acompanhamento neste navegador mantêm o contexto da conversa recente. “Nova conversa” limpa esse contexto.', answerPlaceholder: 'A resposta aparecerá aqui.', waiting: 'Aguardando o Worker...', healthChecking: 'Verificando o Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Entrar', manageSources: 'Gerenciar fontes', uploadDocs: 'Enviar documentação', newConvStarted: 'Nova conversa iniciada.' },
-  'ru': { title: 'База знаний Agent1', subtitle: 'Задайте вопросы локальной вики.', placeholder: 'Введите вопрос', teamLabel: 'Команда (База знаний)', langLabel: 'Язык ответа', askBtn: 'Спросить', newConvBtn: 'Новый диалог', hint: 'Последующие вопросы в этом браузере сохраняют контекст недавнего диалога. «Новый диалог» очищает этот контекст.', answerPlaceholder: 'Здесь появится ответ.', waiting: 'Ожидание Worker...', healthChecking: 'Проверка Worker...', healthOnline: 'Worker онлайн', healthOffline: 'Worker оффлайн', signIn: 'Войти', manageSources: 'Управление источниками', uploadDocs: 'Загрузить документацию', newConvStarted: 'Начат новый диалог.' },
-  'es': { title: 'Base de Conocimiento Agent1', subtitle: 'Haga preguntas a la wiki local.', placeholder: 'Introduzca una pregunta', teamLabel: 'Equipo (Base de Conocimiento)', langLabel: 'Idioma de la respuesta', askBtn: 'Preguntar', newConvBtn: 'Nueva conversación', hint: 'Las preguntas de seguimiento en este navegador mantienen el contexto reciente. “Nueva conversación” borra ese contexto.', answerPlaceholder: 'La respuesta aparecerá aquí.', waiting: 'Esperando al Worker...', healthChecking: 'Comprobando Worker...', healthOnline: 'Worker en línea', healthOffline: 'Worker desconectado', signIn: 'Iniciar sesión', manageSources: 'Administrar fuentes', uploadDocs: 'Subir documentación', newConvStarted: 'Nueva conversación iniciada.' }
+  'zh-CN': { title: '优必答 知识库', subtitle: '向本地知识库提问。', placeholder: '输入您的问题', teamLabel: '团队 (知识库)', langLabel: '回答语言', askBtn: '提问', newConvBtn: '新对话', hint: '在此浏览器中的后续问题会保留近期的对话上下文。“新对话”会清除该上下文。', waiting: '等待 Worker 处理中...', healthChecking: '正在检查 Worker...', healthOnline: 'Worker 在线', healthOffline: 'Worker 离线', signIn: '登录', manageSources: '管理源文件', uploadDocs: '上传文档', newConvStarted: '已开始新对话。',
+    'lang_zh-CN': '简体中文', 'lang_zh-TW': '繁体中文', 'lang_ko': '韩语', 'lang_ja': '日语', 'lang_en': '英语', 'lang_pt': '葡萄牙语', 'lang_ru': '俄语', 'lang_es': '西班牙语' },
+  'zh-TW': { title: '優必答 知識庫', subtitle: '向本地知識庫提問。', placeholder: '輸入您的問題', teamLabel: '團隊 (知識庫)', langLabel: '回答語言', askBtn: '提問', newConvBtn: '新對話', hint: '在此瀏覽器中的後續問題會保留近期的對話上下文。“新對話”會清除該上下文。', waiting: '等待 Worker 處理中...', healthChecking: '正在檢查 Worker...', healthOnline: 'Worker 在線', healthOffline: 'Worker 離線', signIn: '登入', manageSources: '管理來源', uploadDocs: '上傳文件', newConvStarted: '已開始新對話。',
+    'lang_zh-CN': '簡體中文', 'lang_zh-TW': '繁體中文', 'lang_ko': '韓語', 'lang_ja': '日語', 'lang_en': '英語', 'lang_pt': '葡萄牙語', 'lang_ru': '俄語', 'lang_es': '西班牙語' },
+  'ko': { title: 'Uchat 지식 베이스', subtitle: '로컬 위키에 질문하세요.', placeholder: '질문을 입력하세요', teamLabel: '팀 (지식 베이스)', langLabel: '답변 언어', askBtn: '질문하기', newConvBtn: '새 대화', hint: '이 브라우저에서 후속 질문은 최근 대화 컨텍스트를 유지합니다. “새 대화”를 누르면 초기화됩니다.', waiting: '워커 대기 중...', healthChecking: '워커 확인 중...', healthOnline: '워커 온라인', healthOffline: '워커 오프라인', signIn: '로그인', manageSources: '소스 관리', uploadDocs: '문서 업로드', newConvStarted: '새 대화가 시작되었습니다.',
+    'lang_zh-CN': '중국어 간체', 'lang_zh-TW': '중국어 번체', 'lang_ko': '한국어', 'lang_ja': '일본어', 'lang_en': '영어', 'lang_pt': '포르투갈어', 'lang_ru': '러시아어', 'lang_es': '스페인어' },
+  'ja': { title: 'Uchat ナレッジベース', subtitle: 'ローカルのWikiに質問する', placeholder: '質問を入力してください', teamLabel: 'チーム (ナレッジベース)', langLabel: '回答の言語', askBtn: '質問する', newConvBtn: '新しい会話', hint: 'このブラウザでのフォローアップ質問は、最近の会話のコンテキストを保持します。「新しい会話」でリセットされます。', waiting: 'ワーカーを待機中...', healthChecking: 'ワーカーを確認中...', healthOnline: 'ワーカーオンライン', healthOffline: 'ワーカーオフライン', signIn: 'サインイン', manageSources: 'ソースの管理', uploadDocs: 'ドキュメントのアップロード', newConvStarted: '新しい会話が開始されました。',
+    'lang_zh-CN': '簡体字中国語', 'lang_zh-TW': '繁体字中国語', 'lang_ko': '韓国語', 'lang_ja': '日本語', 'lang_en': '英語', 'lang_pt': 'ポルトガル語', 'lang_ru': 'ロシア語', 'lang_es': 'スペイン語' },
+  'en': { title: 'Uchat Knowledge Base', subtitle: 'Ask questions against the local wiki.', placeholder: 'Enter a question', teamLabel: 'Team (Knowledge Base)', langLabel: 'Answer language', askBtn: 'Ask', newConvBtn: 'New conversation', hint: 'Follow-up questions in this browser keep recent conversation context. “New conversation” clears that context.', waiting: 'Waiting for Worker...', healthChecking: 'Checking Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Sign in', manageSources: 'Manage sources', uploadDocs: 'Upload documentation', newConvStarted: 'New conversation started.',
+    'lang_zh-CN': 'Simplified Chinese', 'lang_zh-TW': 'Traditional Chinese', 'lang_ko': 'Korean', 'lang_ja': 'Japanese', 'lang_en': 'English', 'lang_pt': 'Portuguese', 'lang_ru': 'Russian', 'lang_es': 'Spanish' },
+  'pt': { title: 'Base de Conhecimento Uchat', subtitle: 'Faça perguntas à wiki local.', placeholder: 'Insira uma pergunta', teamLabel: 'Equipe (Base de Conhecimento)', langLabel: 'Idioma da resposta', askBtn: 'Perguntar', newConvBtn: 'Nova conversa', hint: 'Perguntas de acompanhamento neste navegador mantêm o contexto da conversa recente. “Nova conversa” limpa esse contexto.', waiting: 'Aguardando o Worker...', healthChecking: 'Verificando o Worker...', healthOnline: 'Worker online', healthOffline: 'Worker offline', signIn: 'Entrar', manageSources: 'Gerenciar fontes', uploadDocs: 'Enviar documentação', newConvStarted: 'Nova conversa iniciada.',
+    'lang_zh-CN': 'Chinês Simplificado', 'lang_zh-TW': 'Chinês Tradicional', 'lang_ko': 'Coreano', 'lang_ja': 'Japonês', 'lang_en': 'Inglês', 'lang_pt': 'Português', 'lang_ru': 'Russo', 'lang_es': 'Espanhol' },
+  'ru': { title: 'База знаний Uchat', subtitle: 'Задайте вопросы локальной вики.', placeholder: 'Введите вопрос', teamLabel: 'Команда (База знаний)', langLabel: 'Язык ответа', askBtn: 'Спросить', newConvBtn: 'Новый диалог', hint: 'Последующие вопросы в этом браузере сохраняют контекст недавнего диалога. «Новый диалог» очищает этот контекст.', waiting: 'Ожидание Worker...', healthChecking: 'Проверка Worker...', healthOnline: 'Worker онлайн', healthOffline: 'Worker оффлайн', signIn: 'Войти', manageSources: 'Управление источниками', uploadDocs: 'Загрузить документацию', newConvStarted: 'Начат новый диалог.',
+    'lang_zh-CN': 'Китайский (упрощенный)', 'lang_zh-TW': 'Китайский (традиционный)', 'lang_ko': 'Корейский', 'lang_ja': 'Японский', 'lang_en': 'Английский', 'lang_pt': 'Португальский', 'lang_ru': 'Русский', 'lang_es': 'Испанский' },
+  'es': { title: 'Base de Conocimiento Uchat', subtitle: 'Haga preguntas a la wiki local.', placeholder: 'Introduzca una pregunta', teamLabel: 'Equipo (Base de Conocimiento)', langLabel: 'Idioma de la respuesta', askBtn: 'Preguntar', newConvBtn: 'Nueva conversación', hint: 'Las preguntas de seguimiento en este navegador mantienen el contexto reciente. “Nueva conversación” borra ese contexto.', waiting: 'Esperando al Worker...', healthChecking: 'Comprobando Worker...', healthOnline: 'Worker en línea', healthOffline: 'Worker desconectado', signIn: 'Iniciar sesión', manageSources: 'Administrar fuentes', uploadDocs: 'Subir documentación', newConvStarted: 'Nueva conversación iniciada.',
+    'lang_zh-CN': 'Chino Simplificado', 'lang_zh-TW': 'Chino Tradicional', 'lang_ko': 'Coreano', 'lang_ja': 'Japonés', 'lang_en': 'Inglés', 'lang_pt': 'Portugués', 'lang_ru': 'Ruso', 'lang_es': 'Español' }
 };
 
 const health=document.getElementById('health');
 const askButton=document.getElementById('ask');
 const newConversationButton=document.getElementById('newConversation');
 const question=document.getElementById('question');
-const answer=document.getElementById('answer');
+const chatHistory=document.getElementById('chatHistory');
 const language=document.getElementById('language');
 const team=document.getElementById('team');
+
 const conversationKey='agent1_conversation_id';
 const languageKey='agent1_answer_language';
 const teamKey='agent1_team';
+const historyKey='agent1_chat_history';
 
 let currentLang = 'zh-CN';
 let workerOnline = false;
+let currentChat = [];
+
+function saveHistory() {
+  localStorage.setItem(historyKey, JSON.stringify(currentChat));
+}
+
+function loadHistory() {
+  const data = localStorage.getItem(historyKey);
+  if (data) {
+    try {
+      currentChat = JSON.parse(data);
+      renderChat();
+    } catch(e) {
+      currentChat = [];
+    }
+  }
+}
+
+function renderChat() {
+  chatHistory.innerHTML = '';
+  currentChat.forEach(msg => {
+    const d = document.createElement('div');
+    d.className = 'bubble ' + msg.role;
+    d.textContent = msg.content;
+    chatHistory.appendChild(d);
+  });
+  scrollToBottom();
+}
+
+function addMessage(role, content) {
+  currentChat.push({role, content});
+  saveHistory();
+  const d = document.createElement('div');
+  d.className = 'bubble ' + role;
+  d.textContent = content;
+  chatHistory.appendChild(d);
+  scrollToBottom();
+}
+
+function clearChat() {
+  currentChat = [];
+  saveHistory();
+  chatHistory.innerHTML = '';
+}
+
+function scrollToBottom() {
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
 
 function translateUI() {
   const t = i18n[currentLang] || i18n['en'];
+  document.title = t.title;
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     if (t[key]) {
-      if (key === 'healthChecking' || key === 'healthOnline' || key === 'healthOffline') return; // Handled separately
-      if (el === answer && (answer.innerHTML.includes('class="spinner"') || answer.textContent === t.answerPlaceholder)) {
-         // Don't overwrite actual answer
-      } else {
-         el.textContent = t[key];
-      }
+      if (key === 'healthChecking' || key === 'healthOnline' || key === 'healthOffline') return;
+      el.textContent = t[key];
     }
   });
   question.placeholder = t.placeholder;
@@ -87,6 +195,7 @@ allowedTeams.forEach(t=>{const op=document.createElement('option');op.value=t;op
 
 function newConversationId(){return 'web:'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));}
 function getConversationId(){let id=localStorage.getItem(conversationKey);if(!id){id=newConversationId();localStorage.setItem(conversationKey,id)}return id;}
+
 language.value=localStorage.getItem(languageKey)||'zh-CN';
 currentLang = language.value;
 
@@ -124,37 +233,51 @@ checkHealth();setInterval(checkHealth,5000);
 async function submitQuestion(){
   const q=question.value.trim();
   if(!q)return;
+  
   askButton.disabled=true;
   newConversationButton.disabled=true;
-  const t = i18n[currentLang] || i18n['en'];
-  answer.innerHTML = `<div class="flex-center"><div class="spinner"></div><span>${t.waiting}</span></div>`;
+  question.value='';
+  
+  addMessage('user', q);
+  
+  const loadingBubble = document.createElement('div');
+  loadingBubble.className = 'bubble bot typing-indicator';
+  loadingBubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+  chatHistory.appendChild(loadingBubble);
+  scrollToBottom();
+
   try{
     const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,language:language.value,team:team.value,conversation_id:getConversationId()})});
     const d=await r.json();
     if(d.conversation_id) localStorage.setItem(conversationKey,d.conversation_id);
+    loadingBubble.remove();
+    
     if(d.error) {
-      answer.textContent=d.error;
+      addMessage('bot', d.error);
     } else {
-      answer.textContent=d.answer||'No response';
+      addMessage('bot', d.answer || 'No response');
     }
   }catch(e){
-    answer.textContent=String(e);
+    loadingBubble.remove();
+    addMessage('bot', String(e));
   }finally{
     askButton.disabled=false;
     newConversationButton.disabled=false;
   }
 }
 askButton.onclick=submitQuestion;
-question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter')submitQuestion()});
+question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter') {event.preventDefault();submitQuestion();}});
 newConversationButton.onclick=()=>{
   localStorage.setItem(conversationKey,newConversationId());
-  question.value='';
+  clearChat();
   const t = i18n[currentLang] || i18n['en'];
-  answer.textContent=t.newConvStarted;
+  addMessage('system', t.newConvStarted);
   question.focus()
 };
 
-// Initial translation
+// Init
 translateUI();
+loadHistory();
+
 </script>
 </body></html>
