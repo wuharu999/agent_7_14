@@ -54,14 +54,13 @@ def get_team_config(team: str) -> TeamConfig:
         except Exception:
             pass
 
-    team_base = WORKER_ROOT_DIR / team
     return TeamConfig(
         team_name=team,
-        base_dir=team_base,
-        raw_sources_dir=team_base / "raw" / "sources",
-        wiki_dir=team_base / "wiki",
-        llm_wiki_queue_file=team_base / ".llm-wiki" / "ingest-queue.json",
-        llm_wiki_cache_file=team_base / ".llm-wiki" / "ingest-cache.json",
+        base_dir=WORKER_ROOT_DIR,
+        raw_sources_dir=WORKER_ROOT_DIR / "raw" / "sources" / team,
+        wiki_dir=WORKER_ROOT_DIR / "wiki",
+        llm_wiki_queue_file=WORKER_ROOT_DIR / ".llm-wiki" / "ingest-queue.json",
+        llm_wiki_cache_file=WORKER_ROOT_DIR / ".llm-wiki" / "ingest-cache.json",
         llm_wiki_api_url=f"http://127.0.0.1:{port}/api/v1"
     )
 
@@ -106,6 +105,8 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024**3)))
 MAX_ZIP_FILES = int(os.environ.get("MAX_ZIP_FILES", "20000"))
 MAX_ZIP_EXTRACTED_BYTES = int(os.environ.get("MAX_ZIP_EXTRACTED_BYTES", str(10 * 1024**3)))
 MAX_ZIP_SINGLE_FILE_BYTES = int(os.environ.get("MAX_ZIP_SINGLE_FILE_BYTES", str(2 * 1024**3)))
+TEAM_MAX_EXTRACTED_BYTES = int(os.environ.get("TEAM_MAX_EXTRACTED_BYTES", str(50 * 1024**3)))
+TEAM_MAX_FILES = int(os.environ.get("TEAM_MAX_FILES", "100000"))
 
 LLM_WIKI_POLL_SECONDS = float(os.environ.get("LLM_WIKI_POLL_SECONDS", "2"))
 LLM_WIKI_MONITOR_TIMEOUT = int(os.environ.get("LLM_WIKI_MONITOR_TIMEOUT", "7200"))

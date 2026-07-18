@@ -21,6 +21,7 @@ FILE_COMMAND_TIMEOUT = int(os.environ.get("FILE_COMMAND_TIMEOUT", "60"))
 AUTHORING_COMMAND_TIMEOUT = int(
     os.environ.get("AUTHORING_COMMAND_TIMEOUT", str(WORKER_TIMEOUT + 30))
 )
+TEAM_MAX_UPLOAD_BYTES = int(os.environ.get("TEAM_MAX_UPLOAD_BYTES", str(20 * 1024**3)))
 
 ALLOWED_TEAMS = tuple(
     team.strip()

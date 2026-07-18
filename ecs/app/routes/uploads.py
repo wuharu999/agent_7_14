@@ -11,8 +11,8 @@ from fastapi import APIRouter, File, Form, Header, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from ecs.app.auth import require_roles, verify_csrf, check_team_access
-from ecs.app.config import ALLOWED_TEAMS, PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET
-from ecs.app.database import create_upload, get_upload, update_upload, write_audit
+from ecs.app.config import ALLOWED_TEAMS, PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET, TEAM_MAX_UPLOAD_BYTES
+from ecs.app.database import create_upload, get_upload, update_upload, write_audit, get_team_upload_usage
 from ecs.app.gateway import gateway
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, is_supported_upload
 
@@ -127,6 +127,15 @@ async def upload_file(
         await asyncio.to_thread(_copy_upload_sync, file.file, target_path)
     finally:
         await file.close()
+
+    file_size = target_path.stat().st_size
+    current_usage = get_team_upload_usage(team)
+    if current_usage + file_size > TEAM_MAX_UPLOAD_BYTES:
+        target_path.unlink(missing_ok=True)
+        return JSONResponse(
+            {"error": f"Upload would exceed team quota of {TEAM_MAX_UPLOAD_BYTES} bytes"},
+            status_code=413
+        )
 
     create_upload(
         upload_id=upload_id,

@@ -541,6 +541,16 @@ def refresh_upload_aggregate(upload_id: str) -> None:
     )
 
 
+def get_team_upload_usage(team: str) -> int:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT SUM(size_bytes) as total_size FROM uploads "
+            "WHERE team = ? AND status != 'deleted' AND stage != 'sources_removed'",
+            (team,)
+        ).fetchone()
+    return int(row["total_size"]) if row and row["total_size"] else 0
+
+
 def get_upload(upload_id: str) -> dict[str, Any] | None:
     with _DB_LOCK, _connect() as connection:
         upload = connection.execute(
@@ -625,8 +635,17 @@ def list_dispatchable_uploads() -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def get_all_upload_timestamps() -> dict[str, str]:
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT upload_id, created_at FROM uploads"
+        ).fetchall()
+    return {row["upload_id"]: row["created_at"] for row in rows}
+
+
 # ---------------------------------------------------------------------------
 # Claude authoring sessions and reviewed articles
+
 # ---------------------------------------------------------------------------
 
 def create_authoring_session(*, session_id: str, created_by: int, team: str) -> None:
