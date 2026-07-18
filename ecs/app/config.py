@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / "ecs" / ".env")
 
-APP_NAME = os.environ.get("APP_NAME", "Agent1 Knowledge Base")
+APP_NAME = os.environ.get("APP_NAME", "Uchat Knowledge Base")
 APP_VERSION = "7.14-final"
 
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", str(PROJECT_ROOT / "ecs-data"))).expanduser().resolve()
