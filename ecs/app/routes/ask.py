@@ -45,6 +45,18 @@ async def ask(request: Request, body: dict):
     allowed, msg = limiter.is_allowed(client_ip)
     if not allowed:
         return JSONResponse({"error": msg}, status_code=429)
+        
+    from ecs.app.auth import current_session
+    from ecs.app.database import _DB_LOCK, _connect, utc_now
+    session = current_session(request)
+    user_id = session["user_id"] if session else None
+    
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "INSERT INTO qa_visitors (ip_address, user_id, visited_at) VALUES (?, ?, ?)",
+            (client_ip, user_id, utc_now())
+        )
+        
     question = str(body.get("question") or "").strip()
     if not question:
         return JSONResponse({"error": "Question cannot be empty"}, status_code=400)

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Team Management</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 20px; background: #f5f7fb; color: #172033; }
+        .card { background: #fff; border: 1px solid #dbe2ee; border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+        h1, h2 { margin-top: 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+        button { background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        button.danger { background: #dc2626; }
+        a { color: #2563eb; text-decoration: none; }
+        .error { color: #dc2626; }
+        .msg { color: #16a34a; }
+    </style>
+</head>
+<body>
+    <h1>Team Management</h1>
+    
+    <div style="margin-bottom: 15px;">
+        <a href="/dashboard">Back to Dashboard</a> | <a href="/manage">File Manager</a> | <a href="/logout">Logout</a>
+    </div>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+    {% if msg %}
+    <p class="msg">{{ msg }}</p>
+    {% endif %}
+
+    <div class="card">
+        <h2>Join a Team</h2>
+        <form method="post" action="/teams/join">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="team">Team Name:</label>
+            <input type="text" id="team" name="team" required>
+            <button type="submit">Request to Join</button>
+        </form>
+    </div>
+
+    {% for team in captain_teams %}
+    <div class="card">
+        <h2>Manage Team: {{ team.name }} (Captain)</h2>
+        <h3>Pending Requests</h3>
+        {% if team.requests %}
+        <table>
+            <tr><th>User ID</th><th>Requested At</th><th>Action</th></tr>
+            {% for req in team.requests %}
+            <tr>
+                <td>{{ req.user_id }}</td>
+                <td>{{ req.requested_at }}</td>
+                <td>
+                    <form method="post" action="/teams/approve" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="request_id" value="{{ req.id }}">
+                        <button type="submit">Approve</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% else %}
+        <p>No pending requests.</p>
+        {% endif %}
+
+        <h3>Members</h3>
+        <table>
+            <tr><th>User ID</th><th>Email / Username</th><th>Role</th><th>Joined At</th><th>Actions</th></tr>
+            {% for mem in team.members %}
+            <tr>
+                <td>{{ mem.user_id }}</td>
+                <td>{{ mem.email or mem.username }}</td>
+                <td>{{ mem.role }}</td>
+                <td>{{ mem.joined_at }}</td>
+                <td>
+                    {% if mem.user_id != user_id %}
+                    <form method="post" action="/teams/kick" style="display:inline;" onsubmit="return confirm('Are you sure you want to kick this member?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="team" value="{{ team.name }}">
+                        <input type="hidden" name="member_id" value="{{ mem.user_id }}">
+                        <button type="submit" class="danger">Kick</button>
+                    </form>
+                    <form method="post" action="/teams/transfer_captain" style="display:inline;" onsubmit="return confirm('Are you sure you want to transfer captaincy to this member? You will become a regular member.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="team" value="{{ team.name }}">
+                        <input type="hidden" name="member_id" value="{{ mem.user_id }}">
+                        <button type="submit">Transfer Captain</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endfor %}
+
+    {% if not captain_teams %}
+    <div class="card">
+        <p>You are not currently a captain of any teams.</p>
+    </div>
+    {% endif %}
+
+</body>
+</html>

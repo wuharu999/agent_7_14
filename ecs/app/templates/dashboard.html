@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Operations Dashboard</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 20px; background: #f5f7fb; color: #172033; }
+        .card { background: #fff; border: 1px solid #dbe2ee; border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        h1, h2, h3 { margin-top: 0; }
+        .stat { font-size: 2em; font-weight: bold; color: #2563eb; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+        button { background: #2563eb; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+        a { color: #2563eb; text-decoration: none; margin-right: 15px; }
+        .error { color: #dc2626; }
+        .msg { color: #16a34a; }
+    </style>
+</head>
+<body>
+    <h1>Operations Dashboard</h1>
+    <div style="margin-bottom: 20px;">
+        <a href="/teams">Manage Teams & Join</a>
+        <a href="/manage">File Manager</a>
+        <a href="/logout">Logout</a>
+    </div>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+    {% if msg %}
+    <p class="msg">{{ msg }}</p>
+    {% endif %}
+
+    <div class="grid">
+        <div class="card">
+            <h2>Visitor Stats</h2>
+            <p>Total Unique IP Visitors: <span class="stat">{{ visitor_count }}</span></p>
+        </div>
+        <div class="card">
+            <h2>Wiki Generation Metrics</h2>
+            <table>
+                <tr><th>Date</th><th>New Entries</th></tr>
+                {% for row in wiki_metrics %}
+                <tr><td>{{ row.date }}</td><td>{{ row.new_entries }}</td></tr>
+                {% else %}
+                <tr><td colspan="2">No metrics recorded yet.</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+
+    <h2>Contradiction Detection & Team Review</h2>
+    {% for ts in team_settings %}
+    <div class="card">
+        <h3>Team: {{ ts.team_name }}</h3>
+        <p><strong>Auto-Review (3-day cycle):</strong> {{ 'Enabled' if ts.auto_review_enabled else 'Disabled' }}</p>
+        <p><strong>Last Review:</strong> {{ ts.last_review_at or 'Never' }}</p>
+        <p><strong>Previous Review:</strong> {{ ts.prev_review_at or 'None' }}</p>
+
+        <form method="post" action="/dashboard/toggle_auto_review" style="display:inline-block; margin-right: 10px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="team" value="{{ ts.team_name }}">
+            <input type="hidden" name="enabled" value="{{ 0 if ts.auto_review_enabled else 1 }}">
+            <button type="submit">{{ 'Disable' if ts.auto_review_enabled else 'Enable' }} Auto-Review</button>
+        </form>
+
+        <form method="post" action="/dashboard/trigger_review" style="display:inline-block;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="team" value="{{ ts.team_name }}">
+            <button type="submit" style="background:#059669;">Run Manual Review Now</button>
+        </form>
+    </div>
+    {% else %}
+    <div class="card">
+        <p>No teams available or you don't have access.</p>
+    </div>
+    {% endfor %}
+
+</body>
+</html>

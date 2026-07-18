@@ -60,6 +60,21 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                         error=data.get("error"),
                     )
 
+            elif message_type == "contradiction_alert":
+                team = str(data.get("team") or "")
+                details = str(data.get("details") or "")
+                if team and details:
+                    from ecs.app.database import get_team_captains
+                    from ecs.app.mock_email import MockEmailLogger
+                    captains = get_team_captains(team)
+                    for captain in captains:
+                        if captain.get("email"):
+                            MockEmailLogger.send_contradiction_alert(
+                                to_email=captain["email"],
+                                team_name=team,
+                                contradiction_details=details
+                            )
+
             elif message_type == "llm_wiki_snapshot":
                 gateway.latest_snapshot = data
 

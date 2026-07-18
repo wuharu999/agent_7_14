@@ -231,6 +231,13 @@ class WorkerManager:
                         "error": "Authoring queue is full; try again shortly",
                     }
                 )
+                
+        if message_type == "trigger_review":
+            task_id = str(data.get("id") or "")
+            team = str(data.get("team") or "")
+            if not task_id or not team:
+                return
+            asyncio.create_task(self.run_contradiction_review(task_id, team))
 
     @staticmethod
     def _question_lane(conversation_id: str) -> int:
@@ -663,3 +670,48 @@ class WorkerManager:
             )
             self.monitor_tasks.add(task)
             task.add_done_callback(self.monitor_tasks.discard)
+
+    async def run_contradiction_review(self, task_id: str, team: str) -> None:
+        log.info("Running contradiction review for team %s", team)
+        team_config = get_team_config(team)
+        wiki_dir = team_config.project_dir / "wiki"
+        if not wiki_dir.is_dir():
+            log.info("No wiki directory found for team %s", team)
+            return
+
+        files = list(wiki_dir.rglob("*.md"))
+        if not files:
+            log.info("No wiki files found for team %s", team)
+            return
+
+        # Simple prompt for Claude
+        prompt = (
+            f"Please read the following wiki files for the team '{team}' and identify any "
+            f"contradictions or conflicting information between them. If you find contradictions, "
+            f"list them clearly. If you don't find any, just reply 'No contradictions found.'\n\n"
+        )
+        # We might have too many files, so we'll just read the first 10 for simplicity in this prototype.
+        for f in files[:10]:
+            try:
+                content = f.read_text(encoding="utf-8")
+                prompt += f"--- File: {f.name} ---\n{content}\n\n"
+            except Exception:
+                pass
+
+        try:
+            result = await run_claude(
+                prompt=prompt,
+                allowed_tools=["Read"],
+                timeout=180,
+                max_tokens=4000
+            )
+            answer = result["answer"]
+            
+            if "No contradictions found" not in answer:
+                await self.emit({
+                    "type": "contradiction_alert",
+                    "team": team,
+                    "details": answer
+                })
+        except Exception as e:
+            log.error(f"Contradiction review failed: {e}")
