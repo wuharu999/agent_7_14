@@ -16,7 +16,7 @@ async def test_gateway_ask_stream():
         
     gw.send = mock_send
     # mock online property
-    type(gw).online = property(lambda self: True)
+    gw.websocket = object()
     
     # Start ask_stream as a task
     async def run_stream():
