@@ -207,6 +207,6 @@ async def remove_editor(
 
 @router.get("/api/manage/audit_log")
 async def get_audit_log(request: Request):
-    session = require_roles(request, {"admin"})
+    session = require_roles(request, {"admin", "editor"})
     return {"audit_log": list_audit_log()}
 

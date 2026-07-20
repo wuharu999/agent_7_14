@@ -42,7 +42,9 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
             <div id="robots-list" data-i18n="loadingRobots">Loading robots...</div>
         </div>
     </div>
-    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #dbe2ee;">
+</div>
+
+<div class="card" id="activity-panel" style="display: none;">
     <h3 data-i18n="recentAuditLog">Recent Audit Log</h3>
     <button id="refresh-audit" class="button secondary" style="margin-bottom: 10px;" data-i18n="refreshAudit">Refresh Log</button>
     <div id="audit-log" style="max-height: 300px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px;"></div>
@@ -174,8 +176,8 @@ function applyLanguage(){
   
   // Refresh UI data
   loadTree();
-  loadRobots();
-  loadAuditLog();
+  if (window.loadRobots) loadRobots();
+  if (window.loadAuditLog) loadAuditLog();
 }
 
 uiLanguage.value=localStorage.getItem('agent1_ui_language')||'en';
@@ -382,7 +384,13 @@ if (role === 'admin') {
             msg.style.color = 'red';
         }
     };
+    
+    window.loadRobots = loadRobots;
+}
 
+if (role === 'admin' || role === 'editor') {
+    document.getElementById('activity-panel').style.display = 'block';
+    
     async function loadAuditLog() {
         const div = document.getElementById('audit-log');
         div.innerHTML = tr('loading');
@@ -403,8 +411,6 @@ if (role === 'admin') {
     }
     
     document.getElementById('refresh-audit').onclick = loadAuditLog;
-    
-    window.loadRobots = loadRobots;
     window.loadAuditLog = loadAuditLog;
 }
 
