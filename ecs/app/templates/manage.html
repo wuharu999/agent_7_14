@@ -33,8 +33,6 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
             <h3 data-i18n="createRobot">Create Robot</h3>
             <form id="create-robot-form" style="display: flex; flex-direction: column; gap: 10px;">
                 <input type="text" id="robot-name" data-i18n="robotNamePlaceholder" placeholder="Robot Name" required style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <input type="text" id="robot-desc" data-i18n="robotDescPlaceholder" placeholder="Description" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <input type="text" id="robot-path" data-i18n="robotPathPlaceholder" placeholder="Storage Path (optional)" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
                 <button type="submit" class="button" data-i18n="createRobotBtn">Create Robot</button>
                 <p id="create-robot-msg" class="muted"></p>
             </form>
@@ -307,7 +305,7 @@ if (role === 'admin') {
                 div.style.padding = '10px';
                 div.style.border = '1px solid #cbd5e1';
                 div.style.borderRadius = '8px';
-                div.innerHTML = `<strong>${robot.name}</strong> <span class="muted" style="font-size:12px;">(${robot.storage_path})</span><br><span style="font-size:13px;">${robot.description}</span>`;
+                div.innerHTML = `<strong>${robot.name}</strong>`;
                 
                 const edDiv = document.createElement('div');
                 edDiv.style.marginTop = '8px';
@@ -370,8 +368,8 @@ if (role === 'admin') {
                 headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
                 body: JSON.stringify({
                     name: document.getElementById('robot-name').value,
-                    description: document.getElementById('robot-desc').value,
-                    storage_path: document.getElementById('robot-path').value,
+                    description: '',
+                    storage_path: '',
                 })
             });
             const d = await r.json();
