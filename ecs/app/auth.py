@@ -23,6 +23,7 @@ from ecs.app.database import (
     delete_session_by_hash,
     get_session_with_user,
     get_user_by_username,
+    get_user_by_email,
     update_user_record,
 )
 
