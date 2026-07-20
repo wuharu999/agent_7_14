@@ -2,46 +2,293 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Knowledge source manager</title>
+<title data-i18n="title">Knowledge source manager</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 8px 30px #1f293711}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,.button{padding:9px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;text-decoration:none}.secondary{background:#475569}.danger{background:#b91c1c}.danger:disabled{background:#94a3b8;cursor:not-allowed}.muted{color:#64748b}.status{padding:3px 8px;border-radius:999px;background:#e2e8f0;font-size:12px}.processing{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.failed,.partially_failed{background:#fee2e2;color:#991b1b}.queued{background:#dbeafe;color:#1e40af}.tree{list-style:none;padding-left:0}.tree ul{list-style:none;margin:6px 0 6px 22px;padding-left:12px;border-left:1px solid #cbd5e1}.item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px;border-radius:8px}.item:hover{background:#f8fafc}.name{min-width:0;overflow-wrap:anywhere}.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}code{overflow-wrap:anywhere}form{display:inline;margin:0}summary{list-style:none;outline:none;cursor:pointer}summary::-webkit-details-marker{display:none}summary .name::before{content:'▶ ';font-size:11px;color:#94a3b8;transition:transform .15s}details[open]>summary .name::before{content:'▼ ';color:#64748b}</style>
 </head>
 <body>
-<div class="top"><div><h1>Knowledge source manager</h1><p>Signed in as <strong>__USERNAME__</strong> · role <strong><span id="user-role">__ROLE__</span></strong></p></div><div class="actions"><a class="button" href="/upload">Upload</a><a class="button secondary" href="/">Questions</a><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="__CSRF_TOKEN__"><button class="secondary" type="submit">Log out</button></form></div></div>
+<div class="top">
+  <div>
+    <h1 data-i18n="header">Knowledge source manager</h1>
+    <p><span data-i18n="signedInAs">Signed in as </span><strong>__USERNAME__</strong> · <span data-i18n="role">role </span><strong><span id="user-role">__ROLE__</span></strong></p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/upload" data-i18n="upload">Upload</a>
+    <a class="button secondary" href="/" data-i18n="questions">Questions</a>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+      <button class="secondary" type="submit" data-i18n="logout">Log out</button>
+    </form>
+    <select id="ui-language" aria-label="Interface language" style="padding: 9px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-weight: 700; cursor: pointer;">
+      <option value="en">English</option>
+      <option value="zh-CN">简体中文</option>
+    </select>
+  </div>
+</div>
+
 <div class="card" id="admin-panel" style="display: none;">
-    <h2>Admin Panel: Robots & Editors</h2>
+    <h2 data-i18n="adminTitle">Admin Panel: Robots & Editors</h2>
     <div style="display: flex; gap: 20px; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 300px;">
-            <h3>Create Robot</h3>
+            <h3 data-i18n="createRobot">Create Robot</h3>
             <form id="create-robot-form" style="display: flex; flex-direction: column; gap: 10px;">
-                <input type="text" id="robot-name" placeholder="Robot Name" required style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <input type="text" id="robot-desc" placeholder="Description" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <input type="text" id="robot-path" placeholder="Storage Path (optional)" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <button type="submit" class="button">Create Robot</button>
+                <input type="text" id="robot-name" data-i18n="robotNamePlaceholder" placeholder="Robot Name" required style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                <input type="text" id="robot-desc" data-i18n="robotDescPlaceholder" placeholder="Description" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                <input type="text" id="robot-path" data-i18n="robotPathPlaceholder" placeholder="Storage Path (optional)" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                <button type="submit" class="button" data-i18n="createRobotBtn">Create Robot</button>
                 <p id="create-robot-msg" class="muted"></p>
             </form>
         </div>
         <div style="flex: 2; min-width: 300px;">
-            <h3>Robots & Editors</h3>
-            <div id="robots-list">Loading robots...</div>
+            <h3 data-i18n="robotsAndEditors">Robots & Editors</h3>
+            <div id="robots-list" data-i18n="loadingRobots">Loading robots...</div>
         </div>
     </div>
     <hr style="margin: 20px 0; border: 0; border-top: 1px solid #dbe2ee;">
-    <h3>Recent Audit Log</h3>
-    <button id="refresh-audit" class="button secondary" style="margin-bottom: 10px;">Refresh Log</button>
+    <h3 data-i18n="recentAuditLog">Recent Audit Log</h3>
+    <button id="refresh-audit" class="button secondary" style="margin-bottom: 10px;" data-i18n="refreshAudit">Refresh Log</button>
     <div id="audit-log" style="max-height: 300px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px;"></div>
 </div>
-<div class="card"><div class="actions"><button id="refresh">Refresh source tree</button><span id="worker" class="muted"></span></div><p id="message" class="muted">Loading raw/sources…</p><p id="error" class="error"></p><div id="tree"></div></div>
+
+<div class="card">
+  <div class="actions">
+    <button id="refresh" data-i18n="refreshSourceTree">Refresh source tree</button>
+    <span id="worker" class="muted"></span>
+  </div>
+  <p id="message" class="muted" data-i18n="loadingSources">Loading raw/sources…</p>
+  <p id="error" class="error"></p>
+  <div id="tree"></div>
+</div>
+
 <script>
 const csrfToken='__CSRF_TOKEN__';const canDelete=__CAN_DELETE__;
 const treeBox=document.getElementById('tree'),message=document.getElementById('message'),errorBox=document.getElementById('error'),worker=document.getElementById('worker');
+
+const translations = {
+  en: {
+    title: 'Knowledge source manager',
+    header: 'Knowledge source manager',
+    signedInAs: 'Signed in as ',
+    role: 'role ',
+    upload: 'Upload',
+    questions: 'Questions',
+    logout: 'Log out',
+    adminTitle: 'Admin Panel: Robots & Editors',
+    createRobot: 'Create Robot',
+    robotNamePlaceholder: 'Robot Name',
+    robotDescPlaceholder: 'Description',
+    robotPathPlaceholder: 'Storage Path (optional)',
+    createRobotBtn: 'Create Robot',
+    robotsAndEditors: 'Robots & Editors',
+    recentAuditLog: 'Recent Audit Log',
+    refreshAudit: 'Refresh Log',
+    refreshSourceTree: 'Refresh source tree',
+    loadingSources: 'Loading raw/sources…',
+    noFilesStored: 'No files or folders are currently stored in raw/sources.',
+    removeFolder: 'Remove folder',
+    removeFile: 'Remove',
+    waitIngestion: 'Wait for ingestion to finish',
+    confirmRemoveFolder: 'Remove this folder and every file inside it?\n\n{path}\n\nIt will be moved to .agent1-trash, not permanently erased.',
+    confirmRemoveFile: 'Remove this file?\n\n{path}\n\nIt will be moved to .agent1-trash, not permanently erased.',
+    removalFailed: 'Removal failed',
+    workerOnline: 'Worker online',
+    workerOffline: 'Worker offline',
+    entriesUnder: '{count} entries under {root}',
+    unableToList: 'Unable to list sources',
+    loadingRobots: 'Loading robots...',
+    addEditor: 'Add Editor',
+    userIdPlaceholder: 'User ID',
+    noEditorsAssigned: 'No editors assigned.',
+    confirmRemoveEditor: 'Remove {username} from {robotName}?',
+    creating: 'Creating...',
+    createdSuccess: 'Created successfully!',
+    failedToCreate: 'Failed to create',
+    loading: 'Loading...',
+    failedToLoadAudit: 'Failed to load audit log',
+    auditUser: 'User',
+    auditAction: 'Action',
+    auditTarget: 'Target',
+    auditResult: 'Result',
+    loadingEditors: 'Loading editors...'
+  },
+  'zh-CN': {
+    title: '知识源管理器',
+    header: '知识源管理器',
+    signedInAs: '当前登录：',
+    role: '角色：',
+    upload: '上传文件',
+    questions: '返回问答',
+    logout: '注销登录',
+    adminTitle: '管理员面板：机器人与编辑者',
+    createRobot: '创建机器人',
+    robotNamePlaceholder: '机器人名称',
+    robotDescPlaceholder: '描述信息',
+    robotPathPlaceholder: '存储路径 (可选)',
+    createRobotBtn: '创建机器人',
+    robotsAndEditors: '机器人与编辑者列表',
+    recentAuditLog: '最近审计日志',
+    refreshAudit: '刷新日志',
+    refreshSourceTree: '刷新源文件树',
+    loadingSources: '正在加载 raw/sources……',
+    noFilesStored: '当前 raw/sources 中没有存储任何文件或文件夹。',
+    removeFolder: '删除文件夹',
+    removeFile: '删除',
+    waitIngestion: '等待导入处理完成',
+    confirmRemoveFolder: '确认删除此文件夹及其内部的所有文件吗？\n\n{path}\n\n它将被移动到垃圾箱（.agent1-trash），而非永久抹除。',
+    confirmRemoveFile: '确认删除此文件吗？\n\n{path}\n\n它将被移动到垃圾箱（.agent1-trash），而非永久抹除。',
+    removalFailed: '删除失败',
+    workerOnline: 'Worker 在线',
+    workerOffline: 'Worker 离线',
+    entriesUnder: '{root} 下共有 {count} 个条目',
+    unableToList: '无法获取源文件树',
+    loadingRobots: '正在加载机器人列表……',
+    addEditor: '添加编辑者',
+    userIdPlaceholder: '用户 ID',
+    noEditorsAssigned: '未分配编辑者。',
+    confirmRemoveEditor: '确认从 {robotName} 中移除用户 {username} 吗？',
+    creating: '正在创建……',
+    createdSuccess: '创建成功！',
+    failedToCreate: '创建失败',
+    loading: '加载中……',
+    failedToLoadAudit: '加载审计日志失败',
+    auditUser: '用户',
+    auditAction: '操作',
+    auditTarget: '目标',
+    auditResult: '结果',
+    loadingEditors: '正在加载编辑者……'
+  }
+};
+
+const uiLanguage=document.getElementById('ui-language');
+function tr(key){return(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key}
+
+function applyLanguage(){
+  document.documentElement.lang=uiLanguage.value;
+  document.querySelectorAll('[data-i18n]').forEach(element => {
+    const translation = tr(element.dataset.i18n);
+    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+      element.placeholder = translation;
+    } else {
+      element.textContent = translation;
+    }
+  });
+  uiLanguage.setAttribute('aria-label',uiLanguage.value==='zh-CN'?'界面语言':'Interface language');
+  
+  // Refresh UI data
+  loadTree();
+  loadRobots();
+  loadAuditLog();
+}
+
+uiLanguage.value=localStorage.getItem('agent1_ui_language')||'en';
+
 function formatBytes(value){if(value===undefined||value===null)return'';const units=['B','KB','MB','GB','TB'];let n=Number(value),i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return (i? n.toFixed(1):Math.round(n))+' '+units[i]}
 function statusBadge(status){if(!status)return'';const span=document.createElement('span');span.className='status '+status;span.textContent=status;return span}
-function buildItem(item){const li=document.createElement('li');const row=document.createElement('div');row.className='item';const left=document.createElement('div');left.className='name';let label=(item.type==='directory'?'📁 ':item.type==='file'?'📄 ':'⛔ ')+item.name;left.title=item.path;const meta=document.createElement('div');meta.className='meta';if(item.created_at){const ts=document.createElement('span');ts.className='muted';ts.style.fontSize='12px';ts.textContent=item.created_at;meta.appendChild(ts)}if(item.status)meta.appendChild(statusBadge(item.status));if(item.type==='file'){const size=document.createElement('span');size.textContent=formatBytes(item.size_bytes);meta.appendChild(size)}if(canDelete&&item.type!=='symlink'){const button=document.createElement('button');button.className='danger';button.textContent=item.type==='directory'?'Remove folder':'Remove';if(item.status==='processing'){button.disabled=true;button.title='Wait for ingestion to finish'}button.onclick=(e)=>{e.stopPropagation();removeItem(item,button)};meta.appendChild(button)}row.append(left,meta);left.textContent=label;if(item.children&&item.children.length){const details=document.createElement('details');const summary=document.createElement('summary');summary.appendChild(row);details.appendChild(summary);const ul=document.createElement('ul');for(const child of item.children)ul.appendChild(buildItem(child));details.appendChild(ul);li.appendChild(details)}else{li.appendChild(row)}return li}
-function renderTree(tree){treeBox.innerHTML='';const children=tree.children||[];if(!children.length){treeBox.textContent='No files or folders are currently stored in raw/sources.';return}const ul=document.createElement('ul');ul.className='tree';for(const child of children)ul.appendChild(buildItem(child));treeBox.appendChild(ul)}
-async function loadTree(){errorBox.textContent='';message.textContent='Loading raw/sources…';try{const r=await fetch('/api/manage/sources');const d=await r.json();if(!r.ok){throw new Error(d.error||d.detail||'Unable to list sources')}worker.textContent=d.worker_online?'Worker online':'Worker offline';const tree=d.tree||{};message.textContent=`${tree.entry_count||0} entries under ${tree.root||'raw/sources'}`;renderTree(tree)}catch(e){message.textContent='';errorBox.textContent=String(e)}}
-async function removeItem(item,button){const kind=item.type==='directory'?'folder and every file inside it':'file';if(!confirm(`Remove this ${kind}?\n\n${item.path}\n\nIt will be moved to .agent1-trash, not permanently erased.`))return;button.disabled=true;errorBox.textContent='';try{const r=await fetch('/api/manage/sources/delete',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({path:item.path})});const d=await r.json();if(!r.ok)throw new Error(d.error||d.detail||'Removal failed');message.textContent=`Removed ${d.path}; moved ${d.deleted_files||0} file(s) to ${d.trash_path}`;await loadTree()}catch(e){errorBox.textContent=String(e);button.disabled=false}}
-document.getElementById('refresh').onclick=loadTree;loadTree();
+
+function buildItem(item){
+  const li=document.createElement('li');
+  const row=document.createElement('div');
+  row.className='item';
+  const left=document.createElement('div');
+  left.className='name';
+  let label=(item.type==='directory'?'📁 ':item.type==='file'?'📄 ':'⛔ ')+item.name;
+  left.title=item.path;
+  const meta=document.createElement('div');
+  meta.className='meta';
+  if(item.created_at){
+    const ts=document.createElement('span');
+    ts.className='muted';
+    ts.style.fontSize='12px';
+    ts.textContent=item.created_at;
+    meta.appendChild(ts);
+  }
+  if(item.status)meta.appendChild(statusBadge(item.status));
+  if(item.type==='file'){
+    const size=document.createElement('span');
+    size.textContent=formatBytes(item.size_bytes);
+    meta.appendChild(size);
+  }
+  if(canDelete&&item.type!=='symlink'){
+    const button=document.createElement('button');
+    button.className='danger';
+    button.textContent=item.type==='directory'?tr('removeFolder'):tr('removeFile');
+    if(item.status==='processing'){
+      button.disabled=true;
+      button.title=tr('waitIngestion');
+    }
+    button.onclick=(e)=>{e.stopPropagation();removeItem(item,button)};
+    meta.appendChild(button);
+  }
+  row.append(left,meta);
+  left.textContent=label;
+  if(item.children&&item.children.length){
+    const details=document.createElement('details');
+    const summary=document.createElement('summary');
+    summary.appendChild(row);
+    details.appendChild(summary);
+    const ul=document.createElement('ul');
+    for(const child of item.children)ul.appendChild(buildItem(child));
+    details.appendChild(ul);
+    li.appendChild(details);
+  }else{
+    li.appendChild(row);
+  }
+  return li;
+}
+
+function renderTree(tree){
+  treeBox.innerHTML='';
+  const children=tree.children||[];
+  if(!children.length){
+    treeBox.textContent=tr('noFilesStored');
+    return;
+  }
+  const ul=document.createElement('ul');
+  ul.className='tree';
+  for(const child of children)ul.appendChild(buildItem(child));
+  treeBox.appendChild(ul);
+}
+
+async function loadTree(){
+  errorBox.textContent='';
+  message.textContent=tr('loadingSources');
+  try{
+    const r=await fetch('/api/manage/sources');
+    const d=await r.json();
+    if(!r.ok){
+      throw new Error(d.error||d.detail||tr('unableToList'));
+    }
+    worker.textContent=d.worker_online?tr('workerOnline'):tr('workerOffline');
+    const tree=d.tree||{};
+    message.textContent=tr('entriesUnder').replace('{count}', tree.entry_count||0).replace('{root}', tree.root||'raw/sources');
+    renderTree(tree);
+  }catch(e){
+    message.textContent='';
+    errorBox.textContent=String(e);
+  }
+}
+
+async function removeItem(item,button){
+  const confirmMsg = item.type === 'directory' ? tr('confirmRemoveFolder') : tr('confirmRemoveFile');
+  if(!confirm(confirmMsg.replace('{path}', item.path))) return;
+  button.disabled=true;
+  errorBox.textContent='';
+  try{
+    const r=await fetch('/api/manage/sources/delete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+      body:JSON.stringify({path:item.path})
+    });
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||d.detail||tr('removalFailed'));
+    await loadTree();
+  }catch(e){
+    errorBox.textContent=String(e);
+    button.disabled=false;
+  }
+}
+
+document.getElementById('refresh').onclick=loadTree;
 
 // Admin Panel Logic
 const role = document.getElementById('user-role').textContent.trim();
@@ -64,12 +311,12 @@ if (role === 'admin') {
                 
                 const edDiv = document.createElement('div');
                 edDiv.style.marginTop = '8px';
-                edDiv.innerHTML = '<span class="muted" style="font-size:12px;">Loading editors...</span>';
+                edDiv.innerHTML = `<span class="muted" style="font-size:12px;">${tr('loadingEditors')}</span>`;
                 div.appendChild(edDiv);
                 
                 const form = document.createElement('form');
                 form.style.marginTop = '8px';
-                form.innerHTML = `<input type="number" placeholder="User ID" required style="padding:4px;width:80px;border:1px solid #ccc;border-radius:4px;"> <button type="submit" class="button" style="padding:4px 8px;font-size:12px;">Add Editor</button>`;
+                form.innerHTML = `<input type="number" placeholder="${tr('userIdPlaceholder')}" required style="padding:4px;width:80px;border:1px solid #ccc;border-radius:4px;"> <button type="submit" class="button" style="padding:4px 8px;font-size:12px;">${tr('addEditor')}</button>`;
                 form.onsubmit = async (e) => {
                     e.preventDefault();
                     const uid = form.querySelector('input').value;
@@ -87,7 +334,7 @@ if (role === 'admin') {
                 fetch(`/api/manage/robots/${robot.id}/editors`).then(res => res.json()).then(edData => {
                     edDiv.innerHTML = '';
                     if (!edData.editors.length) {
-                        edDiv.innerHTML = '<span class="muted" style="font-size:12px;">No editors assigned.</span>';
+                        edDiv.innerHTML = `<span class="muted" style="font-size:12px;">${tr('noEditorsAssigned')}</span>`;
                     } else {
                         edData.editors.forEach(ed => {
                             const edSpan = document.createElement('span');
@@ -95,7 +342,8 @@ if (role === 'admin') {
                             edSpan.style.marginRight = '5px';
                             edSpan.innerHTML = `${ed.username} (ID: ${ed.id}) <button type="button" style="background:none;border:none;color:red;cursor:pointer;padding:0 2px;" title="Remove">x</button>`;
                             edSpan.querySelector('button').onclick = async () => {
-                                if(confirm(`Remove ${ed.username} from ${robot.name}?`)) {
+                                const confirmEdMsg = tr('confirmRemoveEditor').replace('{username}', ed.username).replace('{robotName}', robot.name);
+                                if(confirm(confirmEdMsg)) {
                                     await fetch(`/api/manage/robots/${robot.id}/editors/${ed.id}`, {
                                         method: 'DELETE',
                                         headers: {'X-CSRF-Token': csrfToken}
@@ -114,7 +362,7 @@ if (role === 'admin') {
     document.getElementById('create-robot-form').onsubmit = async (e) => {
         e.preventDefault();
         const msg = document.getElementById('create-robot-msg');
-        msg.textContent = 'Creating...';
+        msg.textContent = tr('creating');
         msg.style.color = 'inherit';
         try {
             const r = await fetch('/api/manage/robots', {
@@ -127,8 +375,8 @@ if (role === 'admin') {
                 })
             });
             const d = await r.json();
-            if(!r.ok) throw new Error(d.error || 'Failed to create');
-            msg.textContent = 'Created successfully!';
+            if(!r.ok) throw new Error(d.error || tr('failedToCreate'));
+            msg.textContent = tr('createdSuccess');
             document.getElementById('create-robot-form').reset();
             loadRobots();
         } catch (err) {
@@ -139,7 +387,7 @@ if (role === 'admin') {
 
     async function loadAuditLog() {
         const div = document.getElementById('audit-log');
-        div.innerHTML = 'Loading...';
+        div.innerHTML = tr('loading');
         try {
             const r = await fetch('/api/manage/audit_log');
             const d = await r.json();
@@ -148,18 +396,24 @@ if (role === 'admin') {
                 const p = document.createElement('div');
                 p.style.borderBottom = '1px solid #e2e8f0';
                 p.style.padding = '4px 0';
-                p.innerHTML = `<strong class="muted">${log.created_at}</strong> - User: <strong>${log.username}</strong> (ID: ${log.user_id}) - Action: <span class="status">${log.action}</span> - Target: <code>${log.source_path}</code> - Result: <strong>${log.result}</strong> ${log.details ? `<br><span class="muted">${log.details}</span>` : ''}`;
+                p.innerHTML = `<strong class="muted">${log.created_at}</strong> - ${tr('auditUser')}: <strong>${log.username}</strong> (ID: ${log.user_id}) - ${tr('auditAction')}: <span class="status">${log.action}</span> - ${tr('auditTarget')}: <code>${log.source_path}</code> - ${tr('auditResult')}: <strong>${log.result}</strong> ${log.details ? `<br><span class="muted">${log.details}</span>` : ''}`;
                 div.appendChild(p);
             });
         } catch (e) {
-            div.textContent = 'Failed to load audit log';
+            div.textContent = tr('failedToLoadAudit');
         }
     }
     
     document.getElementById('refresh-audit').onclick = loadAuditLog;
     
-    loadRobots();
-    loadAuditLog();
+    window.loadRobots = loadRobots;
+    window.loadAuditLog = loadAuditLog;
 }
+
+applyLanguage();
+uiLanguage.onchange=()=>{
+  localStorage.setItem('agent1_ui_language',uiLanguage.value);
+  applyLanguage();
+};
 </script>
 </body></html>
