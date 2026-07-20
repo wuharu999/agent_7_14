@@ -49,7 +49,7 @@ def _trim_failures(key: str) -> list[float]:
 @router.post("/login")
 async def login(
     request: Request,
-    email: str = Form(...),
+    username: str = Form(...),
     password: str = Form(...),
     next_url: str = Form(default="/manage"),
 ):
@@ -61,7 +61,7 @@ async def login(
             status_code=303,
         )
 
-    user = authenticate(email, password)
+    user = authenticate(username, password)
     if user is None:
         _login_failures[key].append(time.monotonic())
         return RedirectResponse(

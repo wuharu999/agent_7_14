@@ -100,13 +100,12 @@ def create_or_update_user(username: str, email: str, password: str, role: str, t
     )
 
 
-def authenticate(email: str, password: str) -> dict[str, Any] | None:
+def authenticate(username: str, password: str) -> dict[str, Any] | None:
     try:
-        normalized = normalize_email(email)
+        normalized = normalize_username(username)
     except ValueError:
         return None
-    from ecs.app.database import get_user_by_email
-    user = get_user_by_email(normalized)
+    user = get_user_by_username(normalized)
     if not user or not bool(user.get("is_active")):
         return None
     if not verify_password(password, str(user["password_hash"]), str(user["password_salt"])):

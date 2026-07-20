@@ -53,11 +53,7 @@ async def login_page(
         return RedirectResponse(safe_next_url(next_url, "/manage"), status_code=303)
     page = _template("login.html")
     page = page.replace("__NEXT_URL__", html.escape(safe_next_url(next_url, "/manage"), quote=True))
-    messages = {
-        1: "Invalid username or password.",
-        2: "Too many failed attempts. Wait 15 minutes and try again.",
-    }
-    page = page.replace("__LOGIN_ERROR__", messages.get(error, ""))
+    page = page.replace("__LOGIN_ERROR_CODE__", str(error))
     return HTMLResponse(page)
 
 

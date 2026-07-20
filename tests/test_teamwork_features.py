@@ -12,7 +12,7 @@ def setup_module(module):
 
 def test_login_and_dashboard_access():
     # Attempt login with dummy credentials
-    response = client.post("/login", data={"email": "test@localhost", "password": "wrongpassword"}, follow_redirects=False)
+    response = client.post("/login", data={"username": "test_user", "password": "wrongpassword"}, follow_redirects=False)
     assert response.status_code == 303 # Redirects back to login on failure or success, but we check if it works.
 
 def test_dashboard_route_loads():

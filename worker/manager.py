@@ -305,9 +305,9 @@ class WorkerManager:
                         }
                     )
                     continue
-                has_content = await asyncio.to_thread(has_wiki_content, job.question)
+                has_content = await asyncio.to_thread(has_wiki_content, job.team, job.question)
                 if not has_content:
-                    await asyncio.to_thread(log_unanswered, job.question)
+                    await asyncio.to_thread(log_unanswered, job.team, job.question)
                 history = self.conversations.history(job.conversation_id)
 
                 if job.stream:
