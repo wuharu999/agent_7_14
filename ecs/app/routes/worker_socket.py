@@ -45,6 +45,9 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
             if message_type == "answer":
                 gateway.resolve_answer(str(data.get("id") or ""), str(data.get("text") or ""))
 
+            elif message_type == "qa_stream_chunk":
+                gateway.resolve_stream_chunk(str(data.get("id") or ""), data)
+
             elif message_type in {"source_tree_result", "delete_source_result"}:
                 gateway.resolve_command(str(data.get("id") or ""), data)
 

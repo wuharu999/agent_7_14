@@ -114,3 +114,60 @@ async def run_claude(
             "es": "[Error] El asistente no está disponible temporalmente. Por favor, inténtelo de nuevo más tarde.",
         }
         return generic_errors.get(language, generic_errors["zh-CN"])
+
+
+async def run_claude_stream(
+    question: str,
+    *,
+    team: str,
+    language: str = "zh-CN",
+    history: Sequence[ConversationTurn] = (),
+    on_chunk: Callable[[str, str, int], Awaitable[None]],
+    guard_decision: GuardDecision | None = None,
+) -> str:
+    decision = guard_decision or await guard_user_input(question)
+    if decision.blocked:
+        err_text = refusal_text(language)
+        await on_chunk(err_text, "", 0)
+        return err_text
+
+    language_name = LANGUAGE_NAMES.get(language, LANGUAGE_NAMES["zh-CN"])
+    prompt = USER_PROMPT.format(
+        question=question,
+        language_name=language_name,
+        history=_history_text(history),
+    )
+
+    from worker.claude_process import run_claude_process_stream
+    try:
+        return await run_claude_process_stream(
+            prompt,
+            team=team,
+            system_prompt=SYSTEM_PROMPT,
+            on_chunk=on_chunk,
+            timeout=CLAUDE_TIMEOUT,
+        )
+    except ClaudePolicyViolation:
+        err_text = refusal_text(language)
+        await on_chunk(err_text, "", 0)
+        return err_text
+    except ClaudeProcessError as exc:
+        import logging
+        log = logging.getLogger("worker.claude_runner")
+        detail = str(exc)
+        log.error("Claude execution failed: %s", detail)
+
+        generic_errors = {
+            "zh-CN": "[错误] 助手暂时无法响应，请稍后再试。",
+            "zh-TW": "[錯誤] 助手暫時無法回應，請稍後再試。",
+            "ko": "[오류] 어시스턴트가 일시적으로 응답할 수 없습니다. 나중에 다시 시도해 주세요.",
+            "ja": "[エラー] アシスタントは一時的に応答できません。後でもう一度お試しください。",
+            "en": "[Error] The assistant is temporarily unavailable. Please try again later.",
+            "pt": "[Erro] O assistente está temporariamente indisponível. Tente novamente mais tarde.",
+            "ru": "[Ошибка] Ассистент временно недоступен. Пожалуйста, повторите попытку позже.",
+            "es": "[Error] El asistente no está disponible temporalmente. Por favor, inténtelo de nuevo más tarde.",
+        }
+        err_msg = generic_errors.get(language, generic_errors["zh-CN"])
+        await on_chunk(err_msg, "", 0)
+        return err_msg
+

@@ -164,6 +164,7 @@ function addMessage(role, content) {
   d.textContent = content;
   chatHistory.appendChild(d);
   scrollToBottom();
+  return d;
 }
 
 function clearChat() {
@@ -247,15 +248,114 @@ async function submitQuestion(){
   scrollToBottom();
 
   try{
-    const r=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,language:language.value,team:team.value,conversation_id:getConversationId()})});
-    const d=await r.json();
-    if(d.conversation_id) localStorage.setItem(conversationKey,d.conversation_id);
+    const r=await fetch('/ask',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        question:q,
+        language:language.value,
+        team:team.value,
+        conversation_id:getConversationId()
+      })
+    });
+    
+    if(!r.ok) {
+      const d=await r.json();
+      loadingBubble.remove();
+      addMessage('bot', d.error || 'Request failed');
+      return;
+    }
+    
     loadingBubble.remove();
     
-    if(d.error) {
-      addMessage('bot', d.error);
-    } else {
-      addMessage('bot', d.answer || 'No response');
+    const botBubble = addMessage('bot', '');
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let done = false;
+    let buffer = "";
+    let accumulatedText = "";
+    
+    let thinkingDiv = null;
+    
+    while(!done) {
+      const { value, done: readerDone } = await reader.read();
+      done = readerDone;
+      if (value) {
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            
+            if (event.status === "metadata") {
+              if(event.conversation_id) {
+                localStorage.setItem(conversationKey, event.conversation_id);
+              }
+              continue;
+            }
+            
+            if (event.status === "error") {
+              botBubble.textContent = event.error;
+              accumulatedText = event.error;
+              break;
+            }
+            
+            if (event.thinking) {
+              if (!thinkingDiv) {
+                thinkingDiv = document.createElement('div');
+                thinkingDiv.className = 'thinking-block';
+                thinkingDiv.style.fontStyle = 'italic';
+                thinkingDiv.style.opacity = '0.7';
+                thinkingDiv.style.marginBottom = '8px';
+                thinkingDiv.style.padding = '8px';
+                thinkingDiv.style.borderLeft = '3px solid var(--accent-light, #3b82f6)';
+                thinkingDiv.style.backgroundColor = 'rgba(0,0,0,0.03)';
+                thinkingDiv.style.borderRadius = '0 4px 4px 0';
+                botBubble.insertBefore(thinkingDiv, botBubble.firstChild);
+              }
+              thinkingDiv.textContent += event.thinking;
+            }
+            
+            if (event.thinking_tokens && !event.thinking && !event.text) {
+              if (!thinkingDiv) {
+                thinkingDiv = document.createElement('div');
+                thinkingDiv.className = 'thinking-block';
+                thinkingDiv.style.fontStyle = 'italic';
+                thinkingDiv.style.opacity = '0.7';
+                thinkingDiv.style.marginBottom = '8px';
+                thinkingDiv.style.padding = '8px';
+                thinkingDiv.style.borderLeft = '3px solid var(--accent-light, #3b82f6)';
+                thinkingDiv.style.backgroundColor = 'rgba(0,0,0,0.03)';
+                thinkingDiv.style.borderRadius = '0 4px 4px 0';
+                botBubble.insertBefore(thinkingDiv, botBubble.firstChild);
+              }
+              thinkingDiv.textContent = `Thinking (${event.thinking_tokens} tokens)...`;
+            }
+            
+            if (event.text) {
+              let textContainer = botBubble.querySelector('.text-content');
+              if (!textContainer) {
+                textContainer = document.createElement('span');
+                textContainer.className = 'text-content';
+                botBubble.appendChild(textContainer);
+              }
+              textContainer.textContent += event.text;
+              accumulatedText += event.text;
+            }
+            scrollToBottom();
+          } catch(e) {
+            console.error("Failed to parse JSON line", line, e);
+          }
+        }
+      }
+    }
+    
+    if (currentChat.length > 0 && currentChat[currentChat.length - 1].role === 'bot') {
+      currentChat[currentChat.length - 1].content = accumulatedText || 'No response';
+      saveHistory();
     }
   }catch(e){
     loadingBubble.remove();

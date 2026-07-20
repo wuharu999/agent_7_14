@@ -11,6 +11,7 @@ class QuestionJob:
     team: str
     conversation_id: str
     language: str
+    stream: bool = False
 
 
 @dataclass(slots=True)

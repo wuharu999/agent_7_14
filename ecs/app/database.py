@@ -269,18 +269,49 @@ def create_user_record(
             """,
             (username, email, password_hash, password_salt, role, teams, now, now),
         )
-        return int(cursor.lastrowid)
+        user_id = int(cursor.lastrowid)
+
+        if teams.strip():
+            for t in teams.split(","):
+                t = t.strip()
+                if t:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
+                        (t, f"Team {t}", t, now)
+                    )
+                    robot_id = connection.execute("SELECT id FROM robots WHERE name = ?", (t,)).fetchone()["id"]
+                    connection.execute(
+                        "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
+                        (robot_id, user_id, now)
+                    )
+        return user_id
 
 
 def update_user_record(
     user_id: int, email: str, password_hash: str, password_salt: str, role: str, teams: str = ""
 ) -> None:
+    now = utc_now()
     with _DB_LOCK, _connect() as connection:
         connection.execute(
             "UPDATE users SET email = ?, password_hash = ?, password_salt = ?, role = ?, teams = ?, "
             "is_active = 1, updated_at = ? WHERE id = ?",
-            (email, password_hash, password_salt, role, teams, utc_now(), user_id),
+            (email, password_hash, password_salt, role, teams, now, user_id),
         )
+        # Clear existing associations first
+        connection.execute("DELETE FROM robot_editors WHERE user_id = ?", (user_id,))
+        if teams.strip():
+            for t in teams.split(","):
+                t = t.strip()
+                if t:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
+                        (t, f"Team {t}", t, now)
+                    )
+                    robot_id = connection.execute("SELECT id FROM robots WHERE name = ?", (t,)).fetchone()["id"]
+                    connection.execute(
+                        "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
+                        (robot_id, user_id, now)
+                    )
 
 
 def get_user_by_email(email: str) -> dict[str, Any] | None:

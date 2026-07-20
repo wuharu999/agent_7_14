@@ -18,6 +18,7 @@ class WorkerGateway:
         self.outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
         self.pending_answers: dict[str, asyncio.Future[str]] = {}
         self.pending_commands: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self.pending_streams: dict[str, asyncio.Queue[dict[str, Any]]] = {}
         self.sender_task: asyncio.Task[None] | None = None
         self._connection_lock = asyncio.Lock()
         self.latest_snapshot: dict[str, Any] = {}
@@ -56,6 +57,9 @@ class WorkerGateway:
             if not future.done():
                 future.set_exception(error)
             self.pending_commands.pop(command_id, None)
+        for qid, queue in list(self.pending_streams.items()):
+            queue.put_nowait({"status": "error", "error": "Worker disconnected"})
+            self.pending_streams.pop(qid, None)
         log.warning("Worker WebSocket detached")
 
     async def _sender_loop(self, websocket: WebSocket) -> None:
@@ -75,7 +79,7 @@ class WorkerGateway:
             raise ConnectionError("Worker is not connected")
         await self.outgoing.put(message)
 
-    async def ask(
+    async def ask_stream(
         self,
         question: str,
         *,
@@ -83,13 +87,12 @@ class WorkerGateway:
         conversation_id: str,
         language: str,
         timeout: int | None = None,
-    ) -> str:
+    ) -> Any:
         if not self.online:
             raise ConnectionError("Worker is not connected")
         qid = f"q-{uuid.uuid4().hex[:12]}"
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[str] = loop.create_future()
-        self.pending_answers[qid] = future
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self.pending_streams[qid] = queue
         try:
             await self.send(
                 {
@@ -99,11 +102,55 @@ class WorkerGateway:
                     "text": question,
                     "conversation_id": conversation_id,
                     "language": language,
+                    "stream": True,
                 }
             )
-            return await asyncio.wait_for(future, timeout=timeout or WORKER_TIMEOUT)
+            import time
+            start_time = time.time()
+            max_duration = timeout or WORKER_TIMEOUT
+            while True:
+                elapsed = time.time() - start_time
+                if elapsed >= max_duration:
+                    raise TimeoutError("Claude streaming timed out")
+                
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=max_duration - elapsed)
+                except asyncio.TimeoutError:
+                    raise TimeoutError("Claude streaming timed out")
+
+                yield event
+                if event.get("status") in ("done", "error"):
+                    break
         finally:
-            self.pending_answers.pop(qid, None)
+            self.pending_streams.pop(qid, None)
+
+    async def ask(
+        self,
+        question: str,
+        *,
+        team: str,
+        conversation_id: str,
+        language: str,
+        timeout: int | None = None,
+    ) -> str:
+        full_text = []
+        async for event in self.ask_stream(
+            question,
+            team=team,
+            conversation_id=conversation_id,
+            language=language,
+            timeout=timeout,
+        ):
+            if event.get("status") == "error":
+                raise RuntimeError(event.get("error") or "Unknown streaming error")
+            if event.get("text"):
+                full_text.append(str(event["text"]))
+        return "".join(full_text)
+
+    def resolve_stream_chunk(self, qid: str, chunk: dict[str, Any]) -> None:
+        queue = self.pending_streams.get(qid)
+        if queue is not None:
+            queue.put_nowait(chunk)
 
     async def command(
         self,

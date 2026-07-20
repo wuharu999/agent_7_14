@@ -82,6 +82,7 @@ def build_command(
     system_prompt: str,
     tools: Sequence[str],
     json_schema: dict[str, Any] | None = None,
+    stream_json: bool = False,
 ) -> tuple[list[str], str]:
     selected_tools = tuple(tools)
     if selected_tools not in {(), READ_ONLY_TOOLS}:
@@ -116,10 +117,9 @@ def build_command(
         "--disallowedTools",
         ",".join(DENIED_TOOLS),
     ]
-    if selected_tools:
-        allowed_rules = READ_ONLY_ALLOW_RULES
-        command.extend(["--allowedTools", ",".join(allowed_rules)])
-    if json_schema is not None:
+    if stream_json:
+        command.extend(["--output-format", "stream-json", "--verbose"])
+    elif json_schema is not None:
         command.extend(
             [
                 "--output-format",
@@ -128,6 +128,9 @@ def build_command(
                 json.dumps(json_schema, separators=(",", ":")),
             ]
         )
+    if selected_tools:
+        allowed_rules = READ_ONLY_ALLOW_RULES
+        command.extend(["--allowedTools", ",".join(allowed_rules)])
     command.extend(safe_model_args(CLAUDE_EXTRA_ARGS))
     return command, canary
 
@@ -185,3 +188,133 @@ async def run_claude_process(
     if canary in result:
         raise ClaudePolicyViolation("Claude response violated the disclosure policy")
     return result
+
+
+async def run_claude_process_stream(
+    user_prompt: str,
+    *,
+    team: str,
+    system_prompt: str,
+    on_chunk: Callable[[str, str, int], Awaitable[None]],
+    tools: Sequence[str] = READ_ONLY_TOOLS,
+    timeout: int | None = None,
+) -> str:
+    command, canary = build_command(
+        system_prompt=system_prompt,
+        tools=tools,
+        stream_json=True,
+    )
+    tc = get_team_config(team)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=str(tc.base_dir),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise ClaudeProcessError("本地未找到 claude 命令") from exc
+    except OSError as exc:
+        raise ClaudeProcessError(f"Unable to start Claude: {exc}") from exc
+
+    process.stdin.write(user_prompt.encode("utf-8"))
+    await process.stdin.drain()
+    process.stdin.close()
+
+    last_text = ""
+    last_thinking = ""
+
+    async def read_stdout():
+        nonlocal last_text, last_thinking
+        while True:
+            line_bytes = await process.stdout.readline()
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            event_type = data.get("type")
+
+            if event_type == "system" and data.get("subtype") == "thinking_tokens":
+                tokens = int(data.get("estimated_tokens") or 0)
+                await on_chunk("", "", tokens)
+
+            elif event_type == "assistant":
+                message = data.get("message") or {}
+                content_list = message.get("content") or []
+
+                current_thinking = ""
+                current_text = ""
+
+                for block in content_list:
+                    block_type = block.get("type")
+                    if block_type == "thinking":
+                        current_thinking = block.get("thinking") or ""
+                    elif block_type == "text":
+                        current_text = block.get("text") or ""
+
+                text_delta = ""
+                thinking_delta = ""
+
+                if current_text.startswith(last_text):
+                    text_delta = current_text[len(last_text):]
+                    last_text = current_text
+                else:
+                    text_delta = current_text
+                    last_text = current_text
+
+                if current_thinking.startswith(last_thinking):
+                    thinking_delta = current_thinking[len(last_thinking):]
+                    last_thinking = current_thinking
+                else:
+                    thinking_delta = current_thinking
+                    last_thinking = current_thinking
+
+                if text_delta or thinking_delta:
+                    await on_chunk(text_delta, thinking_delta, 0)
+
+    stderr_output = []
+    async def read_stderr():
+        while True:
+            chunk = await process.stderr.read(512)
+            if not chunk:
+                break
+            stderr_output.append(chunk.decode("utf-8", errors="replace"))
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(read_stdout(), read_stderr()),
+            timeout=timeout or CLAUDE_TIMEOUT
+        )
+        await process.wait()
+    except asyncio.TimeoutError as exc:
+        await stop_process(process)
+        raise ClaudeProcessError(
+            f"Claude 调用超时 ({timeout or CLAUDE_TIMEOUT}s)"
+        ) from exc
+    except asyncio.CancelledError:
+        await stop_process(process)
+        raise
+
+    if process.returncode != 0:
+        detail = "".join(stderr_output).strip()[:800]
+        raise ClaudeProcessError(
+            f"Claude 执行失败 (code={process.returncode}): {detail}"
+        )
+
+    if not last_text and not last_thinking:
+        raise ClaudeProcessError("Claude returned an empty response")
+
+    full_result = last_text or last_thinking
+    if canary in full_result:
+        raise ClaudePolicyViolation("Claude response violated the disclosure policy")
+
+    return full_result
+

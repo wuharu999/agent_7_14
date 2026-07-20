@@ -75,20 +75,26 @@ async def ask(request: Request, body: dict):
     if not _CONVERSATION_ID.fullmatch(conversation_id):
         conversation_id = f"web:{uuid.uuid4().hex}"
 
-    try:
-        answer = await gateway.ask(
-            question,
-            team=team,
-            conversation_id=conversation_id,
-            language=language,
-        )
-        return {
-            "answer": answer,
-            "conversation_id": conversation_id,
-            "language": language,
-            "team": team,
-        }
-    except TimeoutError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=504)
-    except ConnectionError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=503)
+    from fastapi.responses import StreamingResponse
+    import json
+
+    async def event_generator():
+        try:
+            yield json.dumps({
+                "status": "metadata",
+                "conversation_id": conversation_id,
+                "language": language,
+                "team": team
+            }, ensure_ascii=False) + "\n"
+
+            async for event in gateway.ask_stream(
+                question,
+                team=team,
+                conversation_id=conversation_id,
+                language=language,
+            ):
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        except Exception as exc:
+            yield json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")

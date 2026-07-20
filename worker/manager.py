@@ -11,7 +11,7 @@ from typing import Any
 
 import websockets
 
-from worker.claude_runner import GAP_MARKER, run_claude
+from worker.claude_runner import GAP_MARKER, run_claude, run_claude_stream
 from worker.authoring import AuthoringError, chat as authoring_chat, create_session as create_authoring_session
 from worker.authoring import generate_article as generate_authoring_article, get_session as get_authoring_session
 from worker.conversation_store import ConversationStore
@@ -194,6 +194,7 @@ class WorkerManager:
                 team=team,
                 conversation_id=conversation_id,
                 language=language,
+                stream=bool(data.get("stream")),
             )
             lane = self._question_lane(conversation_id)
             await self.question_queues[lane].put(job)
@@ -299,35 +300,117 @@ class WorkerManager:
                 if not has_content:
                     await asyncio.to_thread(log_unanswered, job.question)
                 history = self.conversations.history(job.conversation_id)
-                answer = await run_claude(
-                    job.question,
-                    team=job.team,
-                    language=job.language,
-                    history=history,
-                    guard_decision=guard_decision,
-                )
-                if answer.startswith(GAP_MARKER):
-                    await asyncio.to_thread(log_unanswered, job.question)
-                    answer = answer[len(GAP_MARKER):].strip()
-                self.conversations.append(job.conversation_id, job.question, answer)
-                await self.emit(
-                    {
-                        "type": "answer",
-                        "id": job.job_id,
-                        "conversation_id": job.conversation_id,
-                        "text": answer,
-                    }
-                )
+
+                if job.stream:
+                    accumulated_text = ""
+                    sent_length = 0
+                    has_gap_marker = False
+
+                    async def on_chunk(text: str, thinking: str, thinking_tokens: int):
+                        nonlocal accumulated_text, sent_length, has_gap_marker
+                        if thinking or thinking_tokens:
+                            await self.emit({
+                                "type": "qa_stream_chunk",
+                                "id": job.job_id,
+                                "conversation_id": job.conversation_id,
+                                "text": "",
+                                "thinking": thinking,
+                                "thinking_tokens": thinking_tokens,
+                                "status": "chunk",
+                            })
+                            return
+
+                        if text:
+                            accumulated_text += text
+                            if len(accumulated_text) >= len(GAP_MARKER) and accumulated_text.startswith(GAP_MARKER):
+                                has_gap_marker = True
+
+                            visible_text = accumulated_text
+                            if has_gap_marker:
+                                visible_text = accumulated_text[len(GAP_MARKER):]
+
+                            to_send = visible_text[sent_length:]
+                            if to_send:
+                                sent_length += len(to_send)
+                                await self.emit({
+                                    "type": "qa_stream_chunk",
+                                    "id": job.job_id,
+                                    "conversation_id": job.conversation_id,
+                                    "text": to_send,
+                                    "thinking": "",
+                                    "thinking_tokens": 0,
+                                    "status": "chunk",
+                                })
+
+                    try:
+                        answer = await run_claude_stream(
+                            job.question,
+                            team=job.team,
+                            language=job.language,
+                            history=history,
+                            on_chunk=on_chunk,
+                            guard_decision=guard_decision,
+                        )
+                        if has_gap_marker or answer.startswith(GAP_MARKER):
+                            await asyncio.to_thread(log_unanswered, job.question)
+                            if answer.startswith(GAP_MARKER):
+                                answer = answer[len(GAP_MARKER):].strip()
+
+                        self.conversations.append(job.conversation_id, job.question, answer)
+                        await self.emit({
+                            "type": "qa_stream_chunk",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "status": "done",
+                        })
+                    except Exception as stream_exc:
+                        log.exception("Claude streaming failed")
+                        await self.emit({
+                            "type": "qa_stream_chunk",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "status": "error",
+                            "error": str(stream_exc),
+                        })
+                else:
+                    answer = await run_claude(
+                        job.question,
+                        team=job.team,
+                        language=job.language,
+                        history=history,
+                        guard_decision=guard_decision,
+                    )
+                    if answer.startswith(GAP_MARKER):
+                        await asyncio.to_thread(log_unanswered, job.question)
+                        answer = answer[len(GAP_MARKER):].strip()
+                    self.conversations.append(job.conversation_id, job.question, answer)
+                    await self.emit(
+                        {
+                            "type": "answer",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "text": answer,
+                        }
+                    )
             except Exception as exc:
                 log.exception("QA job failed")
-                await self.emit(
-                    {
-                        "type": "answer",
+                if job.stream:
+                    await self.emit({
+                        "type": "qa_stream_chunk",
                         "id": job.job_id,
                         "conversation_id": job.conversation_id,
-                        "text": f"[错误] Worker QA failed: {exc}",
-                    }
-                )
+                        "status": "error",
+                        "error": str(exc),
+                    })
+                else:
+                    await self.emit(
+                        {
+                            "type": "answer",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "text": f"[错误] Worker QA failed: {exc}",
+                        }
+                    )
             finally:
                 queue.task_done()
 
