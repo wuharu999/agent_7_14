@@ -210,3 +210,82 @@ async def get_audit_log(request: Request):
     session = require_roles(request, {"admin", "editor"})
     return {"audit_log": list_audit_log()}
 
+
+@router.post("/api/manage/generate_report")
+async def generate_report_endpoint(
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"admin", "editor"})
+    verify_csrf(session, x_csrf_token)
+    
+    from ecs.app.database import _connect, _DB_LOCK
+    from datetime import datetime
+    import urllib.request
+    import asyncio
+    
+    with _DB_LOCK, _connect() as connection:
+        visitors = connection.execute(
+            "SELECT ip_address, visited_at FROM qa_visitors ORDER BY visited_at DESC"
+        ).fetchall()
+        audit_logs = connection.execute(
+            "SELECT username, action, source_path, result, created_at FROM file_audit_log ORDER BY created_at DESC"
+        ).fetchall()
+        
+    unique_ips = set()
+    ip_counts = {}
+    for v in visitors:
+        ip = v["ip_address"]
+        unique_ips.add(ip)
+        ip_counts[ip] = ip_counts.get(ip, 0) + 1
+        
+    geolocations = {}
+    
+    def resolve_geo(ip: str):
+        if ip in ("127.0.0.1", "localhost", "unknown"):
+            return "Localhost / Private network"
+        try:
+            with urllib.request.urlopen(f"http://ip-api.com/json/{ip}", timeout=3) as res:
+                data = json.loads(res.read().decode())
+                if data.get("status") == "success":
+                    country = data.get("country", "Unknown")
+                    region = data.get("regionName", "Unknown")
+                    city = data.get("city", "Unknown")
+                    org = data.get("org", "Unknown")
+                    return f"{country} ({region}, {city}) - {org}"
+                else:
+                    return "Failed to resolve location"
+        except Exception:
+            return "Error geolocating"
+            
+    for ip in unique_ips:
+        geolocations[ip] = await asyncio.to_thread(resolve_geo, ip)
+        
+    lines = []
+    lines.append("# User Activity & Geolocation Report")
+    lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+    lines.append("## QA Visitor Statistics")
+    lines.append(f"- **Total QA Visits Recorded**: {len(visitors)}")
+    lines.append("")
+    lines.append("| IP Address | Visit Count | Resolved Location / ISP |")
+    lines.append("| --- | --- | --- |")
+    for ip, count in sorted(ip_counts.items(), key=lambda x: x[1], reverse=True):
+        geo = geolocations.get(ip, "Unknown")
+        lines.append(f"| `{ip}` | {count} | {geo} |")
+    lines.append("")
+    
+    lines.append("## Recent Administrative & File Audit Logs")
+    lines.append(f"- **Total Action Logs**: {len(audit_logs)}")
+    lines.append("")
+    lines.append("| Timestamp | User | Action | Target | Result |")
+    lines.append("| --- | --- | --- | --- | --- |")
+    for log in audit_logs[:50]:
+        lines.append(
+            f"| {log['created_at']} | {log['username']} | `{log['action']}` | `{log['source_path']}` | {log['result']} |"
+        )
+        
+    report_markdown = "\n".join(lines)
+    return {"report": report_markdown}
+
+

@@ -46,8 +46,17 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
 
 <div class="card" id="activity-panel" style="display: none;">
     <h3 data-i18n="recentAuditLog">Recent Audit Log</h3>
-    <button id="refresh-audit" class="button secondary" style="margin-bottom: 10px;" data-i18n="refreshAudit">Refresh Log</button>
-    <div id="audit-log" style="max-height: 300px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px;"></div>
+    <div class="actions" style="margin-bottom: 10px;">
+        <button id="refresh-audit" class="button secondary" data-i18n="refreshAudit">Refresh Log</button>
+        <button id="generate-report" class="button" data-i18n="generateReportBtn">Generate User Activity Report</button>
+    </div>
+    <div id="audit-log" style="max-height: 300px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 15px;"></div>
+    
+    <div id="report-section" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
+        <h4 data-i18n="reportTitle" style="margin-top: 0;">User Activity & Geolocation Report</h4>
+        <textarea id="report-content" rows="12" style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 13px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; padding: 8px;" readonly></textarea>
+        <button id="close-report" class="button secondary" data-i18n="closeReportBtn">Close Report</button>
+    </div>
 </div>
 
 <div class="card">
@@ -109,7 +118,12 @@ const translations = {
     auditAction: 'Action',
     auditTarget: 'Target',
     auditResult: 'Result',
-    loadingEditors: 'Loading editors...'
+    loadingEditors: 'Loading editors...',
+    generateReportBtn: 'Generate User Activity Report',
+    reportTitle: 'User Activity & Geolocation Report',
+    closeReportBtn: 'Close Report',
+    generatingReport: 'Generating Report...',
+    failedToGenerateReport: 'Failed to generate report.'
   },
   'zh-CN': {
     title: '知识源管理器',
@@ -155,7 +169,12 @@ const translations = {
     auditAction: '操作',
     auditTarget: '目标',
     auditResult: '结果',
-    loadingEditors: '正在加载编辑者……'
+    loadingEditors: '正在加载编辑者……',
+    generateReportBtn: '生成用户活动报告',
+    reportTitle: '用户活动与地理位置分析报告',
+    closeReportBtn: '关闭报告',
+    generatingReport: '正在生成报告……',
+    failedToGenerateReport: '生成报告失败。'
   }
 };
 
@@ -411,6 +430,41 @@ if (role === 'admin' || role === 'editor') {
     }
     
     document.getElementById('refresh-audit').onclick = loadAuditLog;
+    
+    const generateBtn = document.getElementById('generate-report');
+    const reportSection = document.getElementById('report-section');
+    const reportContent = document.getElementById('report-content');
+    
+    generateBtn.onclick = async () => {
+        generateBtn.disabled = true;
+        const originalText = generateBtn.textContent;
+        generateBtn.textContent = tr('generatingReport');
+        try {
+            const r = await fetch('/api/manage/generate_report', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                }
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || tr('failedToGenerateReport'));
+            reportContent.value = d.report || '';
+            reportSection.style.display = 'block';
+            reportSection.scrollIntoView({ behavior: 'smooth' });
+        } catch (e) {
+            alert(String(e));
+        } finally {
+            generateBtn.disabled = false;
+            generateBtn.textContent = originalText;
+        }
+    };
+    
+    document.getElementById('close-report').onclick = () => {
+        reportSection.style.display = 'none';
+        reportContent.value = '';
+    };
+    
     window.loadAuditLog = loadAuditLog;
 }
 
