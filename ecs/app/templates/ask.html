@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Uchat Knowledge Base</title>
+<link rel="stylesheet" href="/petdex/styles.css">
 <style>
 body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#f5f7fb;color:#172033;display:flex;min-height:100vh;overflow-x:hidden}
 .layout{display:flex;width:100%;justify-content:center;align-items:center;min-height:100vh;}
@@ -47,9 +48,12 @@ button:disabled{opacity:.55;cursor:not-allowed}
 <div class="layout">
 <div class="chat-section">
   <div class="header-row">
-    <div class="header-titles">
-      <h1 data-i18n="title">Uchat Knowledge Base</h1>
-      <p data-i18n="subtitle">Ask questions against the local wiki.</p>
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 2;"></div>
+      <div class="header-titles">
+        <h1 data-i18n="title">Uchat Knowledge Base</h1>
+        <p data-i18n="subtitle">Ask questions against the local wiki.</p>
+      </div>
     </div>
     <span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span>
   </div>
@@ -136,6 +140,32 @@ const teamKey='agent1_team';
 const historyKey='agent1_chat_history';
 
 let currentLang = 'zh-CN';
+
+const companionEl = document.getElementById('coding-companion');
+function setCompanionMode(mode) {
+  if (companionEl) {
+    companionEl.dataset.mode = mode;
+    companionEl.setAttribute('aria-label', `Robot companion: ${mode}`);
+  }
+}
+
+question.addEventListener('input', () => {
+  if (question.value.trim() && companionEl.dataset.mode === 'sleeping') {
+    setCompanionMode('thinking');
+  } else if (!question.value.trim() && companionEl.dataset.mode === 'thinking') {
+    setCompanionMode('sleeping');
+  }
+});
+question.addEventListener('focus', () => {
+  if (companionEl.dataset.mode === 'sleeping') {
+    setCompanionMode('thinking');
+  }
+});
+question.addEventListener('blur', () => {
+  if (!question.value.trim() && companionEl.dataset.mode === 'thinking') {
+    setCompanionMode('sleeping');
+  }
+});
 let workerOnline = false;
 let currentChat = [];
 
@@ -256,6 +286,7 @@ async function submitQuestion(){
   const q=question.value.trim();
   if(!q)return;
   
+  setCompanionMode('charging');
   askButton.disabled=true;
   newConversationButton.disabled=true;
   question.value='';
@@ -329,6 +360,7 @@ async function submitQuestion(){
             }
             
             if (event.thinking) {
+              setCompanionMode('thinking');
               if (!thinkingDiv) {
                 thinkingDiv = document.createElement('div');
                 thinkingDiv.className = 'thinking-block';
@@ -345,6 +377,7 @@ async function submitQuestion(){
             }
             
             if (event.thinking_tokens && !event.thinking && !event.text) {
+              setCompanionMode('thinking');
               if (!thinkingDiv) {
                 thinkingDiv = document.createElement('div');
                 thinkingDiv.className = 'thinking-block';
@@ -361,6 +394,7 @@ async function submitQuestion(){
             }
             
             if (event.text) {
+              setCompanionMode('charging');
               let textContainer = botBubble.querySelector('.text-content');
               if (!textContainer) {
                 textContainer = document.createElement('span');
@@ -390,6 +424,7 @@ async function submitQuestion(){
   }finally{
     askButton.disabled=false;
     newConversationButton.disabled=false;
+    setCompanionMode('sleeping');
   }
 }
 askButton.onclick=submitQuestion;

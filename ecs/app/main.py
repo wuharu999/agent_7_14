@@ -10,7 +10,15 @@ from ecs.app.routes import auth, ask, authoring, manage, pages, status, uploads,
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
+
+project_root = Path(__file__).resolve().parents[2]
+petdex_dir = project_root / "petdex_robot_companion"
+app.mount("/petdex", StaticFiles(directory=str(petdex_dir)), name="petdex")
+
 app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(ask.router)

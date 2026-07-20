@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/petdex/styles.css">
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -413,9 +414,12 @@
 
   <!-- ── Top Bar ── -->
   <header class="top-bar fade-in">
-    <div class="top-bar-title">
-      <h1 data-i18n="title">Uchat Knowledge Base</h1>
-      <p data-i18n="subtitle">Ask questions against the local wiki.</p>
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 2;"></div>
+      <div class="top-bar-title">
+        <h1 data-i18n="title">Uchat Knowledge Base</h1>
+        <p data-i18n="subtitle">Ask questions against the local wiki.</p>
+      </div>
     </div>
     <div class="health-badge" id="healthBadge">
       <span class="health-dot checking" id="healthDot"></span>
@@ -510,6 +514,32 @@ const historyKey      = 'agent1_wecom_chat_history';
 
 let currentLang = 'zh-CN';
 let currentChat = [];
+
+const companionEl = document.getElementById('coding-companion');
+function setCompanionMode(mode) {
+  if (companionEl) {
+    companionEl.dataset.mode = mode;
+    companionEl.setAttribute('aria-label', `Robot companion: ${mode}`);
+  }
+}
+
+questionEl.addEventListener('input', function() {
+  if (questionEl.value.trim() && companionEl.dataset.mode === 'sleeping') {
+    setCompanionMode('thinking');
+  } else if (!questionEl.value.trim() && companionEl.dataset.mode === 'thinking') {
+    setCompanionMode('sleeping');
+  }
+});
+questionEl.addEventListener('focus', function() {
+  if (companionEl.dataset.mode === 'sleeping') {
+    setCompanionMode('thinking');
+  }
+});
+questionEl.addEventListener('blur', function() {
+  if (!questionEl.value.trim() && companionEl.dataset.mode === 'thinking') {
+    setCompanionMode('sleeping');
+  }
+});
 
 /* ─── Populate teams ─── */
 const allowedTeams = __ALLOWED_TEAMS__;
@@ -646,6 +676,7 @@ function doAsk() {
   const q = questionEl.value.trim();
   if (!q) return;
 
+  setCompanionMode('charging');
   const t = i18n[currentLang] || i18n['en'];
   askBtn.disabled = true;
   newConvBtn.disabled = true;
@@ -686,6 +717,7 @@ function doAsk() {
   .finally(function() {
     askBtn.disabled = false;
     newConvBtn.disabled = false;
+    setCompanionMode('sleeping');
   });
 }
 
