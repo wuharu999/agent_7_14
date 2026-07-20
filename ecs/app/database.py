@@ -212,8 +212,43 @@ def initialize_database() -> None:
                 UNIQUE(team_name, user_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS robots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL DEFAULT '',
+                storage_path TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS robot_editors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                robot_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                assigned_at TEXT NOT NULL,
+                UNIQUE(robot_id, user_id),
+                FOREIGN KEY(robot_id) REFERENCES robots(id) ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
             """
         )
+
+        # Migrate existing teams to robots
+        teams_to_migrate = set()
+        for row in connection.execute("SELECT teams FROM users").fetchall():
+            for t in row["teams"].split(","):
+                if t.strip():
+                    teams_to_migrate.add(t.strip())
+        for row in connection.execute("SELECT DISTINCT team FROM uploads").fetchall():
+            if row["team"].strip():
+                teams_to_migrate.add(row["team"].strip())
+        
+        now = utc_now()
+        for t in teams_to_migrate:
+            connection.execute(
+                "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
+                (t, f"Legacy team {t}", t, now)
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +410,68 @@ def get_team_captains(team_name: str) -> list[dict]:
             """, (team_name,)
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+def get_all_robots() -> list[dict[str, Any]]:
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute("SELECT * FROM robots ORDER BY name").fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_robot(name: str, description: str = "", storage_path: str = "") -> int:
+    now = utc_now()
+    if not storage_path:
+        storage_path = name
+    with _DB_LOCK, _connect() as connection:
+        cursor = connection.execute(
+            "INSERT INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
+            (name, description, storage_path, now)
+        )
+        return int(cursor.lastrowid)
+
+
+def assign_robot_editor(robot_id: int, user_id: int) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
+            (robot_id, user_id, now)
+        )
+
+
+def remove_robot_editor(robot_id: int, user_id: int) -> None:
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "DELETE FROM robot_editors WHERE robot_id = ? AND user_id = ?",
+            (robot_id, user_id)
+        )
+
+
+def get_user_robots(user_id: int) -> list[dict[str, Any]]:
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT r.* FROM robots r
+            JOIN robot_editors re ON r.id = re.robot_id
+            WHERE re.user_id = ?
+            ORDER BY r.name
+            """, (user_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_robot_editors(robot_id: int) -> list[dict[str, Any]]:
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT u.id, u.username, u.email, re.assigned_at
+            FROM users u
+            JOIN robot_editors re ON u.id = re.user_id
+            WHERE re.robot_id = ?
+            ORDER BY u.username
+            """, (robot_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 # ---------------------------------------------------------------------------

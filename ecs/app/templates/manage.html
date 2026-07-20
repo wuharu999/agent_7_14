@@ -7,7 +7,30 @@
 body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 8px 30px #1f293711}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,.button{padding:9px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;text-decoration:none}.secondary{background:#475569}.danger{background:#b91c1c}.danger:disabled{background:#94a3b8;cursor:not-allowed}.muted{color:#64748b}.status{padding:3px 8px;border-radius:999px;background:#e2e8f0;font-size:12px}.processing{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.failed,.partially_failed{background:#fee2e2;color:#991b1b}.queued{background:#dbeafe;color:#1e40af}.tree{list-style:none;padding-left:0}.tree ul{list-style:none;margin:6px 0 6px 22px;padding-left:12px;border-left:1px solid #cbd5e1}.item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px;border-radius:8px}.item:hover{background:#f8fafc}.name{min-width:0;overflow-wrap:anywhere}.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}code{overflow-wrap:anywhere}form{display:inline;margin:0}summary{list-style:none;outline:none;cursor:pointer}summary::-webkit-details-marker{display:none}summary .name::before{content:'▶ ';font-size:11px;color:#94a3b8;transition:transform .15s}details[open]>summary .name::before{content:'▼ ';color:#64748b}</style>
 </head>
 <body>
-<div class="top"><div><h1>Knowledge source manager</h1><p>Signed in as <strong>__USERNAME__</strong> · role <strong>__ROLE__</strong></p></div><div class="actions"><a class="button" href="/upload">Upload</a><a class="button secondary" href="/">Questions</a><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="__CSRF_TOKEN__"><button class="secondary" type="submit">Log out</button></form></div></div>
+<div class="top"><div><h1>Knowledge source manager</h1><p>Signed in as <strong>__USERNAME__</strong> · role <strong><span id="user-role">__ROLE__</span></strong></p></div><div class="actions"><a class="button" href="/upload">Upload</a><a class="button secondary" href="/">Questions</a><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="__CSRF_TOKEN__"><button class="secondary" type="submit">Log out</button></form></div></div>
+<div class="card" id="admin-panel" style="display: none;">
+    <h2>Admin Panel: Robots & Editors</h2>
+    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 300px;">
+            <h3>Create Robot</h3>
+            <form id="create-robot-form" style="display: flex; flex-direction: column; gap: 10px;">
+                <input type="text" id="robot-name" placeholder="Robot Name" required style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                <input type="text" id="robot-desc" placeholder="Description" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                <input type="text" id="robot-path" placeholder="Storage Path (optional)" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+                <button type="submit" class="button">Create Robot</button>
+                <p id="create-robot-msg" class="muted"></p>
+            </form>
+        </div>
+        <div style="flex: 2; min-width: 300px;">
+            <h3>Robots & Editors</h3>
+            <div id="robots-list">Loading robots...</div>
+        </div>
+    </div>
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #dbe2ee;">
+    <h3>Recent Audit Log</h3>
+    <button id="refresh-audit" class="button secondary" style="margin-bottom: 10px;">Refresh Log</button>
+    <div id="audit-log" style="max-height: 300px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px;"></div>
+</div>
 <div class="card"><div class="actions"><button id="refresh">Refresh source tree</button><span id="worker" class="muted"></span></div><p id="message" class="muted">Loading raw/sources…</p><p id="error" class="error"></p><div id="tree"></div></div>
 <script>
 const csrfToken='__CSRF_TOKEN__';const canDelete=__CAN_DELETE__;
@@ -19,5 +42,124 @@ function renderTree(tree){treeBox.innerHTML='';const children=tree.children||[];
 async function loadTree(){errorBox.textContent='';message.textContent='Loading raw/sources…';try{const r=await fetch('/api/manage/sources');const d=await r.json();if(!r.ok){throw new Error(d.error||d.detail||'Unable to list sources')}worker.textContent=d.worker_online?'Worker online':'Worker offline';const tree=d.tree||{};message.textContent=`${tree.entry_count||0} entries under ${tree.root||'raw/sources'}`;renderTree(tree)}catch(e){message.textContent='';errorBox.textContent=String(e)}}
 async function removeItem(item,button){const kind=item.type==='directory'?'folder and every file inside it':'file';if(!confirm(`Remove this ${kind}?\n\n${item.path}\n\nIt will be moved to .agent1-trash, not permanently erased.`))return;button.disabled=true;errorBox.textContent='';try{const r=await fetch('/api/manage/sources/delete',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({path:item.path})});const d=await r.json();if(!r.ok)throw new Error(d.error||d.detail||'Removal failed');message.textContent=`Removed ${d.path}; moved ${d.deleted_files||0} file(s) to ${d.trash_path}`;await loadTree()}catch(e){errorBox.textContent=String(e);button.disabled=false}}
 document.getElementById('refresh').onclick=loadTree;loadTree();
+
+// Admin Panel Logic
+const role = document.getElementById('user-role').textContent.trim();
+if (role === 'admin') {
+    document.getElementById('admin-panel').style.display = 'block';
+    
+    async function loadRobots() {
+        try {
+            const r = await fetch('/api/manage/robots');
+            const d = await r.json();
+            const list = document.getElementById('robots-list');
+            list.innerHTML = '';
+            for (const robot of d.robots) {
+                const div = document.createElement('div');
+                div.style.marginBottom = '15px';
+                div.style.padding = '10px';
+                div.style.border = '1px solid #cbd5e1';
+                div.style.borderRadius = '8px';
+                div.innerHTML = `<strong>${robot.name}</strong> <span class="muted" style="font-size:12px;">(${robot.storage_path})</span><br><span style="font-size:13px;">${robot.description}</span>`;
+                
+                const edDiv = document.createElement('div');
+                edDiv.style.marginTop = '8px';
+                edDiv.innerHTML = '<span class="muted" style="font-size:12px;">Loading editors...</span>';
+                div.appendChild(edDiv);
+                
+                const form = document.createElement('form');
+                form.style.marginTop = '8px';
+                form.innerHTML = `<input type="number" placeholder="User ID" required style="padding:4px;width:80px;border:1px solid #ccc;border-radius:4px;"> <button type="submit" class="button" style="padding:4px 8px;font-size:12px;">Add Editor</button>`;
+                form.onsubmit = async (e) => {
+                    e.preventDefault();
+                    const uid = form.querySelector('input').value;
+                    await fetch(`/api/manage/robots/${robot.id}/editors`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                        body: JSON.stringify({user_id: parseInt(uid)})
+                    });
+                    loadRobots();
+                };
+                div.appendChild(form);
+                list.appendChild(div);
+
+                // Fetch editors
+                fetch(`/api/manage/robots/${robot.id}/editors`).then(res => res.json()).then(edData => {
+                    edDiv.innerHTML = '';
+                    if (!edData.editors.length) {
+                        edDiv.innerHTML = '<span class="muted" style="font-size:12px;">No editors assigned.</span>';
+                    } else {
+                        edData.editors.forEach(ed => {
+                            const edSpan = document.createElement('span');
+                            edSpan.className = 'status';
+                            edSpan.style.marginRight = '5px';
+                            edSpan.innerHTML = `${ed.username} (ID: ${ed.id}) <button type="button" style="background:none;border:none;color:red;cursor:pointer;padding:0 2px;" title="Remove">x</button>`;
+                            edSpan.querySelector('button').onclick = async () => {
+                                if(confirm(`Remove ${ed.username} from ${robot.name}?`)) {
+                                    await fetch(`/api/manage/robots/${robot.id}/editors/${ed.id}`, {
+                                        method: 'DELETE',
+                                        headers: {'X-CSRF-Token': csrfToken}
+                                    });
+                                    loadRobots();
+                                }
+                            };
+                            edDiv.appendChild(edSpan);
+                        });
+                    }
+                });
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    document.getElementById('create-robot-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('create-robot-msg');
+        msg.textContent = 'Creating...';
+        msg.style.color = 'inherit';
+        try {
+            const r = await fetch('/api/manage/robots', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                body: JSON.stringify({
+                    name: document.getElementById('robot-name').value,
+                    description: document.getElementById('robot-desc').value,
+                    storage_path: document.getElementById('robot-path').value,
+                })
+            });
+            const d = await r.json();
+            if(!r.ok) throw new Error(d.error || 'Failed to create');
+            msg.textContent = 'Created successfully!';
+            document.getElementById('create-robot-form').reset();
+            loadRobots();
+        } catch (err) {
+            msg.textContent = String(err);
+            msg.style.color = 'red';
+        }
+    };
+
+    async function loadAuditLog() {
+        const div = document.getElementById('audit-log');
+        div.innerHTML = 'Loading...';
+        try {
+            const r = await fetch('/api/manage/audit_log');
+            const d = await r.json();
+            div.innerHTML = '';
+            d.audit_log.forEach(log => {
+                const p = document.createElement('div');
+                p.style.borderBottom = '1px solid #e2e8f0';
+                p.style.padding = '4px 0';
+                p.innerHTML = `<strong class="muted">${log.created_at}</strong> - User: <strong>${log.username}</strong> (ID: ${log.user_id}) - Action: <span class="status">${log.action}</span> - Target: <code>${log.source_path}</code> - Result: <strong>${log.result}</strong> ${log.details ? `<br><span class="muted">${log.details}</span>` : ''}`;
+                div.appendChild(p);
+            });
+        } catch (e) {
+            div.textContent = 'Failed to load audit log';
+        }
+    }
+    
+    document.getElementById('refresh-audit').onclick = loadAuditLog;
+    
+    loadRobots();
+    loadAuditLog();
+}
 </script>
 </body></html>

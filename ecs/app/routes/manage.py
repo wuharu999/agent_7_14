@@ -6,8 +6,8 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ecs.app.auth import require_roles, verify_csrf, check_team_access
-from ecs.app.database import get_all_upload_timestamps, mark_sources_deleted, write_audit
+from ecs.app.auth import require_roles, verify_csrf, check_robot_access
+from ecs.app.database import get_all_upload_timestamps, mark_sources_deleted, write_audit, list_audit_log, get_all_robots, create_robot, get_robot_editors, assign_robot_editor, remove_robot_editor
 from ecs.app.gateway import gateway
 
 router = APIRouter()
@@ -37,7 +37,7 @@ async def list_sources(request: Request):
     if session.get("role") != "admin":
         tree["children"] = [
             child for child in tree.get("children", [])
-            if check_team_access(session, child.get("name"))
+            if check_robot_access(session, child.get("name"))
         ]
 
     timestamps = get_all_upload_timestamps()
@@ -74,8 +74,8 @@ async def delete_source(
     parts = source_path.split("/")
     if parts:
         team = parts[0]
-        if not check_team_access(session, team):
-            return JSONResponse({"error": "You do not have permission to manage this team"}, status_code=403)
+        if not check_robot_access(session, team):
+            return JSONResponse({"error": "You do not have permission to manage this robot"}, status_code=403)
 
     try:
         result = await gateway.command("delete_source", path=source_path)
@@ -147,3 +147,66 @@ async def delete_source(
         "deleted_files": result.get("deleted_files", 0),
         "message": "Source moved to Worker trash. LLM Wiki Source Watch will process the removal.",
     }
+
+
+class CreateRobotRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="")
+    storage_path: str = Field(default="")
+
+class AssignEditorRequest(BaseModel):
+    user_id: int
+
+@router.get("/api/manage/robots")
+async def list_robots(request: Request):
+    session = require_roles(request, {"admin"})
+    return {"robots": get_all_robots()}
+
+@router.post("/api/manage/robots")
+async def create_robot_endpoint(
+    payload: CreateRobotRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"admin"})
+    verify_csrf(session, x_csrf_token)
+    try:
+        rid = create_robot(payload.name, payload.description, payload.storage_path)
+        return {"status": "ok", "robot_id": rid}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+@router.get("/api/manage/robots/{robot_id}/editors")
+async def list_robot_editors(robot_id: int, request: Request):
+    session = require_roles(request, {"admin"})
+    return {"editors": get_robot_editors(robot_id)}
+
+@router.post("/api/manage/robots/{robot_id}/editors")
+async def assign_editor(
+    robot_id: int,
+    payload: AssignEditorRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"admin"})
+    verify_csrf(session, x_csrf_token)
+    assign_robot_editor(robot_id, payload.user_id)
+    return {"status": "ok"}
+
+@router.delete("/api/manage/robots/{robot_id}/editors/{user_id}")
+async def remove_editor(
+    robot_id: int,
+    user_id: int,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"admin"})
+    verify_csrf(session, x_csrf_token)
+    remove_robot_editor(robot_id, user_id)
+    return {"status": "ok"}
+
+@router.get("/api/manage/audit_log")
+async def get_audit_log(request: Request):
+    session = require_roles(request, {"admin"})
+    return {"audit_log": list_audit_log()}
+

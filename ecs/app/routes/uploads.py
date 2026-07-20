@@ -10,7 +10,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, File, Form, Header, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from ecs.app.auth import require_roles, verify_csrf, check_team_access
+from ecs.app.auth import require_roles, verify_csrf, check_robot_access
 from ecs.app.config import ALLOWED_TEAMS, PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET, TEAM_MAX_UPLOAD_BYTES
 from ecs.app.database import create_upload, get_upload, update_upload, write_audit, get_team_upload_usage
 from ecs.app.gateway import gateway
@@ -100,9 +100,9 @@ async def upload_file(
         return JSONResponse(
             {"error": f"Team must be one of {', '.join(ALLOWED_TEAMS)}"}, status_code=400
         )
-    if not check_team_access(session, team):
+    if not check_robot_access(session, team):
         return JSONResponse(
-            {"error": f"You do not have permission to manage the team '{team}'"}, status_code=403
+            {"error": f"You do not have permission to manage the robot '{team}'"}, status_code=403
         )
 
     original_filename = file.filename or "uploaded_file"
@@ -117,15 +117,16 @@ async def upload_file(
         )
 
     # Check for unusual activity (more than 5 uploads in 1 minute)
-    from ecs.app.database import get_recent_upload_count, get_team_captains
+    from ecs.app.database import get_recent_upload_count, _connect, _DB_LOCK
     from ecs.app.mock_email import MockEmailLogger
     recent_uploads = get_recent_upload_count(int(session["user_id"]), minutes=1)
     if recent_uploads >= 5:
-        captains = get_team_captains(team)
-        for captain in captains:
-            if captain.get("email"):
+        with _DB_LOCK, _connect() as connection:
+            admins = connection.execute("SELECT email FROM users WHERE role = 'admin'").fetchall()
+        for admin in admins:
+            if admin["email"]:
                 MockEmailLogger.send_unusual_activity(
-                    captain_email=captain["email"],
+                    captain_email=admin["email"],
                     team_name=team,
                     member_username=str(session["username"]),
                     activity_desc=f"User has uploaded more than 5 files in the last minute ({recent_uploads + 1} uploads).",

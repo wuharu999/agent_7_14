@@ -199,8 +199,17 @@ def safe_next_url(value: str | None, default: str = "/manage") -> str:
     return value
 
 
-def check_team_access(session: dict[str, Any], team: str) -> bool:
+def check_robot_access(session: dict[str, Any], robot_path: str) -> bool:
     if session.get("role") == "admin":
         return True
-    user_teams = [t.strip() for t in str(session.get("teams", "")).split(",") if t.strip()]
-    return team in user_teams
+    from ecs.app.database import _DB_LOCK, _connect
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT r.id FROM robots r
+            JOIN robot_editors re ON r.id = re.robot_id
+            WHERE r.storage_path = ? AND re.user_id = ?
+            """, (robot_path, session["user_id"])
+        ).fetchone()
+        return bool(row)
+
