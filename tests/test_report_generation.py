@@ -46,7 +46,7 @@ def test_generate_report_with_mock_auth(monkeypatch):
     data = response.json()
     assert "report" in data
     report = data["report"]
-    assert "# User Activity & Geolocation Report" in report
+    assert "# \u7528\u6237\u6d3b\u52a8\u4e0e\u5730\u7406\u4f4d\u7f6e\u5206\u6790\u62a5\u544a" in report
     assert "127.0.0.1" in report
     assert "test_action" in report
     assert "test_path" in report

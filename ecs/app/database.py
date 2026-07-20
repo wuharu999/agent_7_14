@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -39,7 +40,7 @@ def initialize_database() -> None:
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 password_salt TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('viewer', 'editor', 'admin')),
+                role TEXT NOT NULL CHECK(role IN ('editor', 'admin')),
                 teams TEXT NOT NULL DEFAULT '',
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
@@ -250,6 +251,27 @@ def initialize_database() -> None:
                 (t, f"Legacy team {t}", t, now)
             )
 
+        # Seed default admin account if no admin exists
+        admin_exists = connection.execute(
+            "SELECT 1 FROM users WHERE role = 'admin' LIMIT 1"
+        ).fetchone()
+        if not admin_exists:
+            import os
+            from ecs.app.auth import hash_password
+            default_pw = os.environ.get("DEFAULT_ADMIN_PASSWORD", "Admin#2026!Secured89")
+            pw_hash, pw_salt = hash_password(default_pw)
+            all_teams = os.environ.get("ALLOWED_TEAMS", "tian_gong,walker_s2,walker_c1")
+            connection.execute(
+                """
+                INSERT INTO users (
+                    username, email, password_hash, password_salt, role, teams,
+                    is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'admin', ?, 1, ?, ?)
+                """,
+                ("admin", "admin@localhost", pw_hash, pw_salt, all_teams, now, now),
+            )
+            logging.getLogger(__name__).info("Seeded default admin account (username: admin)")
+
 
 # ---------------------------------------------------------------------------
 # Authentication and audit
@@ -339,9 +361,57 @@ def get_user_by_id(user_id: int) -> dict[str, Any] | None:
 def list_users() -> list[dict[str, Any]]:
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute(
-            "SELECT id, username, role, teams, is_active, created_at, updated_at FROM users ORDER BY username"
+            "SELECT id, username, email, role, teams, is_active, created_at, updated_at FROM users ORDER BY username"
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def update_user_details(user_id: int, role: str, teams: str = "") -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "UPDATE users SET role = ?, teams = ?, updated_at = ? WHERE id = ?",
+            (role, teams, now, user_id),
+        )
+        connection.execute("DELETE FROM robot_editors WHERE user_id = ?", (user_id,))
+        if teams.strip():
+            for t in teams.split(","):
+                t = t.strip()
+                if t:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
+                        (t, f"Team {t}", t, now)
+                    )
+                    robot_row = connection.execute("SELECT id FROM robots WHERE name = ?", (t,)).fetchone()
+                    if robot_row:
+                        robot_id = robot_row["id"]
+                        connection.execute(
+                            "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
+                            (robot_id, user_id, now)
+                        )
+
+
+def update_user_password(user_id: int, password_hash: str, password_salt: str) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
+            (password_hash, password_salt, now, user_id),
+        )
+
+
+def toggle_user_active(user_id: int) -> bool:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute("SELECT is_active FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            raise ValueError("User not found")
+        new_state = 0 if bool(row["is_active"]) else 1
+        connection.execute(
+            "UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
+            (new_state, now, user_id),
+        )
+        return bool(new_state)
 
 
 def create_session_record(
@@ -462,12 +532,16 @@ def create_robot(name: str, description: str = "", storage_path: str = "") -> in
 
 
 def assign_robot_editor(robot_id: int, user_id: int) -> None:
+    import sqlite3
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
-        connection.execute(
-            "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
-            (robot_id, user_id, now)
-        )
+        try:
+            connection.execute(
+                "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
+                (robot_id, user_id, now)
+            )
+        except sqlite3.IntegrityError:
+            pass  # FK constraint or other integrity issue — silently ignore
 
 
 def remove_robot_editor(robot_id: int, user_id: int) -> None:

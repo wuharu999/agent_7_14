@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>用户与文件夹权限管理 - Admin User Management</title>
+<style>
+body { font-family: system-ui, -apple-system, sans-serif; max-width: 1120px; margin: 40px auto; padding: 0 18px; background: #f5f7fb; color: #172033; }
+.top { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 20px; }
+.top h1 { font-size: 24px; margin: 0; }
+.nav-links a { color: #2563eb; text-decoration: none; font-weight: 500; margin-left: 14px; }
+.nav-links a:hover { text-decoration: underline; }
+.card { background: white; border: 1px solid #dbe2ee; border-radius: 14px; padding: 24px; box-shadow: 0 8px 30px rgba(31, 41, 55, 0.05); margin-bottom: 24px; }
+.card h2 { font-size: 18px; margin-top: 0; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #334155; }
+input[type="text"], input[type="email"], input[type="password"], select { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc; }
+.checkbox-item { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; font-size: 13px; cursor: pointer; }
+.checkbox-item input { margin: 0; width: 16px; height: 16px; }
+button { padding: 9px 18px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.15s; }
+button:hover { background: #1d4ed8; }
+button.secondary { background: #64748b; }
+button.secondary:hover { background: #475569; }
+button.danger { background: #dc2626; }
+button.danger:hover { background: #b91c1c; }
+button.success { background: #16a34a; }
+button.success:hover { background: #15803d; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid #e2e8f0; }
+th { background: #f8fafc; font-weight: 600; color: #475569; border-top: 1px solid #e2e8f0; }
+.badge { display: inline-block; padding: 3px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
+.badge-admin { background: #fef3c7; color: #92400e; }
+.badge-editor { background: #dbeafe; color: #1e40af; }
+
+.badge-active { background: #dcfce7; color: #166534; }
+.badge-inactive { background: #fee2e2; color: #991b1b; }
+.folder-tag { display: inline-block; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 6px; padding: 2px 7px; font-size: 12px; font-family: monospace; margin: 2px 2px 2px 0; }
+.status-msg { margin-top: 12px; font-size: 14px; padding: 10px 14px; border-radius: 8px; }
+.status-msg.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.status-msg.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+/* Modal */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay[hidden] { display: none !important; }
+.modal-body { background: white; border-radius: 14px; padding: 24px; max-width: 520px; width: 90%; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+</style>
+</head>
+<body>
+<div class="top">
+  <div>
+    <h1>用户与文件夹权限管理</h1>
+    <p style="margin:4px 0;color:#64748b;font-size:14px;">当前登录管理员：<strong>__USERNAME__</strong></p>
+  </div>
+  <div class="nav-links">
+    <a href="/manage">文件管理</a>
+    <a href="/upload">文档上传与AI编写</a>
+    <a href="/logout" style="color:#dc2626;">退出登录</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>创建新用户账户 (Create New User)</h2>
+  <form id="create-user-form">
+    <div class="form-grid">
+      <div>
+        <label for="new-username">用户名 (Username)</label>
+        <input type="text" id="new-username" placeholder="例: editor_zhang" required autocomplete="off">
+      </div>
+      <div>
+        <label for="new-email">电子邮箱 (Email)</label>
+        <input type="email" id="new-email" placeholder="例: zhang@example.com" required autocomplete="off">
+      </div>
+      <div>
+        <label for="new-password">初始密码 (Password, 最少10位)</label>
+        <input type="password" id="new-password" placeholder="密码最少 10 个字符" required minlength="10">
+      </div>
+      <div>
+        <label for="new-role">用户角色 (Role)</label>
+        <select id="new-role">
+          <option value="editor" selected>编辑者 (Editor - 可上传/管理/导出)</option>
+          <option value="admin">管理员 (Admin - 完全控制权限)</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label>文件夹/机器人权限分配 (Folder / Team Access Permissions)</label>
+      <div id="new-teams-checkboxes" class="checkbox-group"></div>
+      <p style="font-size:12px;color:#64748b;margin:4px 0 0 0;">勾选后，该编辑者仅能访问与操作指定文件夹中的源文件。</p>
+    </div>
+    <div style="margin-top:16px;">
+      <button type="submit">创建账户 (Create User)</button>
+    </div>
+  </form>
+  <div id="create-status" class="status-msg" hidden></div>
+</div>
+
+<div class="card">
+  <h2>
+    已注册用户列表 (System User Accounts)
+    <button type="button" class="secondary" onclick="loadUsers()" style="font-size:13px;padding:6px 12px;">刷新列表</button>
+  </h2>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>用户名</th>
+          <th>邮箱</th>
+          <th>角色 (Role)</th>
+          <th>允许访问的文件夹 (Allowed Folders)</th>
+          <th>状态</th>
+          <th>操作 (Actions)</th>
+        </tr>
+      </thead>
+      <tbody id="users-table-body">
+        <tr><td colspan="7" style="text-align:center;color:#64748b;">正在加载用户列表...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Edit User Modal -->
+<div id="edit-user-modal" class="modal-overlay" hidden>
+  <div class="modal-body">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid #e2e8f0;padding-bottom:10px;">
+      <h3 style="margin:0;font-size:18px;">修改用户权限与密码</h3>
+      <button type="button" onclick="closeEditModal()" class="secondary" style="padding:4px 10px;font-size:12px;">✕</button>
+    </div>
+    <form id="edit-user-form">
+      <input type="hidden" id="edit-user-id">
+      <div style="margin-bottom:14px;">
+        <label>用户名：<strong id="edit-username-display"></strong></label>
+      </div>
+      <div style="margin-bottom:14px;">
+        <label for="edit-role">用户角色 (Role)</label>
+        <select id="edit-role">
+          <option value="editor">编辑者 (Editor)</option>
+          <option value="admin">管理员 (Admin)</option>
+        </select>
+      </div>
+      <div style="margin-bottom:14px;">
+        <label>允许访问的文件夹 (Folder Access Permissions)</label>
+        <div id="edit-teams-checkboxes" class="checkbox-group"></div>
+      </div>
+      <div style="margin-bottom:18px;">
+        <label for="edit-password">重置新密码 (Reset Password, 留空表示不修改)</label>
+        <input type="password" id="edit-password" placeholder="留空保持原密码不变" minlength="10">
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;">
+        <button type="button" onclick="closeEditModal()" class="secondary">取消</button>
+        <button type="submit">保存修改</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const csrfToken = '__CSRF_TOKEN__';
+const allowedTeams = JSON.parse('__ALLOWED_TEAMS__');
+let allUsers = [];
+
+function renderTeamsCheckboxes(containerId, selectedTeams = []) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  const selectedSet = new Set(selectedTeams);
+  for (const team of allowedTeams) {
+    const label = document.createElement('label');
+    label.className = 'checkbox-item';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = team;
+    chk.name = containerId + '_chk';
+    if (selectedSet.has(team)) chk.checked = true;
+    label.appendChild(chk);
+    label.appendChild(document.createTextNode(' ' + team));
+    container.appendChild(label);
+  }
+}
+
+renderTeamsCheckboxes('new-teams-checkboxes', allowedTeams);
+
+async function loadUsers() {
+  const tbody = document.getElementById('users-table-body');
+  try {
+    const res = await fetch('/api/admin/users');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load users');
+    allUsers = data.users || [];
+    tbody.innerHTML = '';
+    if (!allUsers.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;">暂无用户记录。</td></tr>';
+      return;
+    }
+    for (const u of allUsers) {
+      const tr = document.createElement('tr');
+      const teamsList = u.teams ? u.teams.split(',').map(t => t.strip ? t.strip() : t.trim()).filter(Boolean) : [];
+      let teamsHtml = '';
+      if (u.role === 'admin') {
+        teamsHtml = '<span class="folder-tag" style="background:#fef3c7;color:#92400e;border-color:#fde68a;">全部文件夹 (All Folders)</span>';
+      } else if (teamsList.length) {
+        teamsHtml = teamsList.map(t => `<span class="folder-tag">${t}</span>`).join(' ');
+      } else {
+        teamsHtml = '<span style="color:#94a3b8;font-size:12px;">无专用文件夹 (No Folder Access)</span>';
+      }
+
+      tr.innerHTML = `
+        <td>${u.id}</td>
+        <td><strong>${u.username}</strong></td>
+        <td>${u.email || '-'}</td>
+        <td><span class="badge badge-${u.role}">${u.role}</span></td>
+        <td>${teamsHtml}</td>
+        <td><span class="badge badge-${u.is_active ? 'active' : 'inactive'}">${u.is_active ? '启用' : '禁用'}</span></td>
+        <td>
+          <button type="button" class="secondary" style="padding:4px 10px;font-size:12px;" onclick="openEditModal(${u.id})">编辑权限/密码</button>
+          <button type="button" class="${u.is_active ? 'danger' : 'success'}" style="padding:4px 10px;font-size:12px;margin-left:4px;" onclick="toggleActive(${u.id})">${u.is_active ? '禁用' : '启用'}</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:#dc2626;text-align:center;">错误: ${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById('create-user-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const statusDiv = document.getElementById('create-status');
+  statusDiv.hidden = true;
+  const username = document.getElementById('new-username').value.trim();
+  const email = document.getElementById('new-email').value.trim();
+  const password = document.getElementById('new-password').value;
+  const role = document.getElementById('new-role').value;
+  const checkedChks = Array.from(document.querySelectorAll('#new-teams-checkboxes input:checked')).map(c => c.value);
+
+  try {
+    const res = await fetch('/api/admin/users/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ username, email, password, role, teams: checkedChks })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '创建用户失败');
+    statusDiv.className = 'status-msg success';
+    statusDiv.textContent = `账户 ${username} 创建成功！`;
+    statusDiv.hidden = false;
+    document.getElementById('create-user-form').reset();
+    renderTeamsCheckboxes('new-teams-checkboxes', allowedTeams);
+    loadUsers();
+  } catch (err) {
+    statusDiv.className = 'status-msg error';
+    statusDiv.textContent = '错误: ' + err.message;
+    statusDiv.hidden = false;
+  }
+};
+
+function openEditModal(userId) {
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+  document.getElementById('edit-user-id').value = user.id;
+  document.getElementById('edit-username-display').textContent = user.username;
+  document.getElementById('edit-role').value = user.role;
+  document.getElementById('edit-password').value = '';
+  const currentTeams = user.teams ? user.teams.split(',').map(t => t.trim()).filter(Boolean) : [];
+  renderTeamsCheckboxes('edit-teams-checkboxes', currentTeams);
+  document.getElementById('edit-user-modal').hidden = false;
+}
+
+function closeEditModal() {
+  document.getElementById('edit-user-modal').hidden = true;
+}
+
+document.getElementById('edit-user-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const userId = document.getElementById('edit-user-id').value;
+  const role = document.getElementById('edit-role').value;
+  const password = document.getElementById('edit-password').value.trim();
+  const checkedChks = Array.from(document.querySelectorAll('#edit-teams-checkboxes input:checked')).map(c => c.value);
+
+  try {
+    const res = await fetch(`/api/admin/users/${userId}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ role, teams: checkedChks, password: password || null })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '更新失败');
+    closeEditModal();
+    loadUsers();
+  } catch (err) {
+    alert('更新失败: ' + err.message);
+  }
+};
+
+async function toggleActive(userId) {
+  try {
+    const res = await fetch(`/api/admin/users/${userId}/toggle_active`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '操作失败');
+    loadUsers();
+  } catch (err) {
+    alert('操作失败: ' + err.message);
+  }
+}
+
+loadUsers();
+</script>
+</body>
+</html>

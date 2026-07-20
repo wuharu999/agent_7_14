@@ -31,8 +31,7 @@ ecs-data/
 *.db-shm
 
 # Editor and IDE runtime state
-.vscode/*.db
-.vscode/*.db-*
+.vscode/
 .idea/
 
 # Live knowledge-base and Worker runtime data

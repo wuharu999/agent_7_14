@@ -14,6 +14,7 @@ def pack_release():
         ".git",
         ".pytest_cache",
         ".github",
+        ".vscode",
     }
     
     exclude_files = {

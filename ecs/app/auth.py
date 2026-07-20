@@ -83,8 +83,8 @@ def normalize_email(email: str) -> str:
 def create_or_update_user(username: str, email: str, password: str, role: str, teams: str = "") -> int:
     normalized_username = normalize_username(username)
     normalized_email = normalize_email(email)
-    if role not in {"viewer", "editor", "admin"}:
-        raise ValueError("Role must be viewer, editor or admin")
+    if role not in {"editor", "admin"}:
+        raise ValueError("Role must be editor or admin")
     password_hash, password_salt = hash_password(password)
     existing = get_user_by_email(normalized_email) or get_user_by_username(normalized_username)
     if existing:

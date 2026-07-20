@@ -30,7 +30,7 @@ class SessionRequest(BaseModel):
 
 
 class MessageRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=50_000)
+    message: str = Field(min_length=1, max_length=200_000)
 
 
 class ArticleRequest(BaseModel):

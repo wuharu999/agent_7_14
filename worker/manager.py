@@ -361,7 +361,7 @@ class WorkerManager:
                             guard_decision=guard_decision,
                         )
                         if has_gap_marker or answer.startswith(GAP_MARKER):
-                            await asyncio.to_thread(log_unanswered, job.question)
+                            await asyncio.to_thread(log_unanswered, job.team, job.question)
                             if answer.startswith(GAP_MARKER):
                                 answer = answer[len(GAP_MARKER):].strip()
 
@@ -390,7 +390,7 @@ class WorkerManager:
                         guard_decision=guard_decision,
                     )
                     if answer.startswith(GAP_MARKER):
-                        await asyncio.to_thread(log_unanswered, job.question)
+                        await asyncio.to_thread(log_unanswered, job.team, job.question)
                         answer = answer[len(GAP_MARKER):].strip()
                     self.conversations.append(job.conversation_id, job.question, answer)
                     await self.emit(

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PetDex Robot Companion</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="demo-card">
+    <h1>PetDex Robot Companion</h1>
+
+    <section class="sprite-stage" aria-live="polite">
+      <div id="robot"></div>
+    </section>
+
+    <div class="controls" aria-label="Animation mode">
+      <button type="button" data-mode="sleeping">Sleeping</button>
+      <button type="button" data-mode="charging">Charging</button>
+      <button type="button" data-mode="thinking">Thinking</button>
+    </div>
+  </main>
+
+  <script type="module">
+    import { PetDexCompanion } from "./petdex.js";
+
+    const robot = new PetDexCompanion(
+      document.querySelector("#robot"),
+      { mode: "thinking", scale: 4 }
+    );
+
+    const buttons = document.querySelectorAll("[data-mode]");
+
+    function selectMode(mode) {
+      robot.setMode(mode);
+
+      for (const button of buttons) {
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.mode === mode)
+        );
+      }
+    }
+
+    for (const button of buttons) {
+      button.addEventListener("click", () => selectMode(button.dataset.mode));
+    }
+
+    selectMode("thinking");
+
+    // Example automatic state changes:
+    // robot.setMode("thinking");
+    // robot.setMode("charging");
+    // robot.setMode("sleeping");
+  </script>
+</body>
+</html>

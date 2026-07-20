@@ -13,6 +13,7 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
     <p><span data-i18n="signedInAs">Signed in as </span><strong>__USERNAME__</strong> · <span data-i18n="role">role </span><strong><span id="user-role">__ROLE__</span></strong></p>
   </div>
   <div class="actions">
+    <a class="button admin-only-btn" href="/admin/users" style="display:none;background:#7c3aed;" data-i18n="userManagement">User Management</a>
     <a class="button" href="/upload" data-i18n="upload">Upload</a>
     <a class="button secondary" href="/" data-i18n="questions">Questions</a>
     <form method="post" action="/logout">
@@ -50,7 +51,7 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
         <button id="refresh-audit" class="button secondary" data-i18n="refreshAudit">Refresh Log</button>
         <button id="generate-report" class="button" data-i18n="generateReportBtn">Generate User Activity Report</button>
     </div>
-    <div id="audit-log" style="max-height: 300px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 15px;"></div>
+    <div id="audit-log" style="max-height: 300px; overflow-y: auto; overflow-x: hidden; word-break: break-all; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 15px;"></div>
     
     <div id="report-section" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
         <h4 data-i18n="reportTitle" style="margin-top: 0;">User Activity & Geolocation Report</h4>
@@ -82,6 +83,7 @@ const translations = {
     upload: 'Upload',
     questions: 'Questions',
     logout: 'Log out',
+    userManagement: 'User Management',
     adminTitle: 'Admin Panel: Robots & Editors',
     createRobot: 'Create Robot',
     robotNamePlaceholder: 'Robot Name',
@@ -123,7 +125,8 @@ const translations = {
     reportTitle: 'User Activity & Geolocation Report',
     closeReportBtn: 'Close Report',
     generatingReport: 'Generating Report...',
-    failedToGenerateReport: 'Failed to generate report.'
+    failedToGenerateReport: 'Failed to generate report.',
+    addEditorFailed: 'Failed to add editor. Please check the user ID.'
   },
   'zh-CN': {
     title: '知识源管理器',
@@ -133,6 +136,7 @@ const translations = {
     upload: '上传文件',
     questions: '返回问答',
     logout: '注销登录',
+    userManagement: '用户与权限管理',
     adminTitle: '管理员面板：机器人与编辑者',
     createRobot: '创建机器人',
     robotNamePlaceholder: '机器人名称',
@@ -174,7 +178,8 @@ const translations = {
     reportTitle: '用户活动与地理位置分析报告',
     closeReportBtn: '关闭报告',
     generatingReport: '正在生成报告……',
-    failedToGenerateReport: '生成报告失败。'
+    failedToGenerateReport: '生成报告失败。',
+    addEditorFailed: '添加编辑者失败，请检查用户 ID 是否正确。'
   }
 };
 
@@ -218,7 +223,15 @@ function buildItem(item){
     const ts=document.createElement('span');
     ts.className='muted';
     ts.style.fontSize='12px';
-    ts.textContent=item.created_at;
+    let dateStr = item.created_at;
+    try {
+      const idx = dateStr.indexOf('.');
+      if (idx > 0) dateStr = dateStr.substring(0, idx);
+      dateStr = dateStr.replace('T', ' ');
+      const plusIdx = dateStr.indexOf('+');
+      if (plusIdx > 0) dateStr = dateStr.substring(0, plusIdx);
+    } catch(e) {}
+    ts.textContent=dateStr;
     meta.appendChild(ts);
   }
   if(item.status)meta.appendChild(statusBadge(item.status));
@@ -312,6 +325,7 @@ document.getElementById('refresh').onclick=loadTree;
 // Admin Panel Logic
 const role = document.getElementById('user-role').textContent.trim();
 if (role === 'admin') {
+    document.querySelectorAll('.admin-only-btn').forEach(btn => btn.style.display = 'inline-flex');
     document.getElementById('admin-panel').style.display = 'block';
     
     async function loadRobots() {
@@ -338,13 +352,25 @@ if (role === 'admin') {
                 form.innerHTML = `<input type="number" placeholder="${tr('userIdPlaceholder')}" required style="padding:4px;width:80px;border:1px solid #ccc;border-radius:4px;"> <button type="submit" class="button" style="padding:4px 8px;font-size:12px;">${tr('addEditor')}</button>`;
                 form.onsubmit = async (e) => {
                     e.preventDefault();
-                    const uid = form.querySelector('input').value;
-                    await fetch(`/api/manage/robots/${robot.id}/editors`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
-                        body: JSON.stringify({user_id: parseInt(uid)})
-                    });
-                    loadRobots();
+                    const inp = form.querySelector('input');
+                    const uid = inp.value.trim();
+                    if (!uid) return;
+                    try {
+                        const res = await fetch(`/api/manage/robots/${robot.id}/editors`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                            body: JSON.stringify({user_id: parseInt(uid)})
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert(data.error || tr('addEditorFailed'));
+                            return;
+                        }
+                        inp.value = '';
+                        loadRobots();
+                    } catch (err) {
+                        alert(tr('addEditorFailed'));
+                    }
                 };
                 div.appendChild(form);
                 list.appendChild(div);

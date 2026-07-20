@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent1 UI Prototype</title>
+<style>
+  :root {
+    --bg-color: #0b0f19;
+    --card-bg: rgba(23, 32, 51, 0.6);
+    --card-border: rgba(255, 255, 255, 0.1);
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --node-color: #38bdf8;
+    --edge-color: rgba(56, 189, 248, 0.2);
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Split Layout */
+  .layout {
+    display: flex;
+    width: 100%;
+    z-index: 10;
+  }
+
+  .chat-section {
+    flex: 1;
+    max-width: 600px;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+  }
+
+  .graph-section {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Glassmorphism Card */
+  .card {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex-grow: 1;
+  }
+
+  h1 {
+    font-size: 24px;
+    margin: 0 0 4px;
+    background: linear-gradient(to right, #38bdf8, #818cf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  p.subtitle {
+    margin: 0 0 20px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 120px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 16px;
+    color: var(--text-primary);
+    font-size: 15px;
+    resize: vertical;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  select {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 140px;
+  }
+
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  select option {
+    background: var(--bg-color);
+  }
+
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.1s, background-color 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+  }
+
+  button:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.4);
+  }
+
+  button:active {
+    transform: translateY(0);
+  }
+
+  button.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: none;
+  }
+
+  button.secondary:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .answer-box {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 16px;
+    min-height: 100px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-top: 10px;
+  }
+
+  /* Fullscreen Graph Canvas */
+  #graph-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: all;
+  }
+
+  /* Mobile overlay */
+  @media (max-width: 900px) {
+    .layout {
+      flex-direction: column;
+    }
+    .chat-section {
+      max-width: 100%;
+      padding: 20px;
+    }
+    .graph-section {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 1;
+      opacity: 0.4; /* Dim graph on mobile so chat is readable */
+      pointer-events: none; /* Disable interaction on mobile background */
+    }
+    .chat-section {
+      z-index: 10;
+    }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Chat UI -->
+  <div class="chat-section">
+    <div>
+      <h1>Agent1 Knowledge Base</h1>
+      <p class="subtitle">Ask questions against the local wiki.</p>
+    </div>
+    
+    <div class="card">
+      <textarea id="question" placeholder="Ask about robotics, kinematics, or humanoid control..."></textarea>
+      
+      <div class="controls">
+        <div class="field">
+          <label>Team</label>
+          <select><option>tian_gong</option></select>
+        </div>
+        <div class="field">
+          <label>Language</label>
+          <select><option>English</option><option>简体中文</option></select>
+        </div>
+        <button>Ask</button>
+        <button class="secondary">New conversation</button>
+      </div>
+      
+      <div class="answer-box">
+        The answer will appear here. Try interacting with the nodes on the right!
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Graph -->
+  <div class="graph-section">
+    <canvas id="graph-canvas"></canvas>
+  </div>
+</div>
+
+<script>
+/**
+ * Simple physics-based force-directed graph
+ */
+const canvas = document.getElementById('graph-canvas');
+const ctx = canvas.getContext('2d');
+const questionBox = document.getElementById('question');
+
+let width = 0;
+let height = 0;
+
+function resize() {
+  const parent = canvas.parentElement;
+  width = parent.clientWidth;
+  height = parent.clientHeight || window.innerHeight;
+  canvas.width = width * window.devicePixelRatio;
+  canvas.height = height * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Node Data
+const nodes = [
+  { id: 0, label: 'Robot Learning', group: 1, radius: 24, x: width/2, y: height/2, vx: 0, vy: 0 },
+  { id: 1, label: 'Kinematics', group: 2, radius: 18, x: Math.random()*width, y: Math.random()*height, vx: 0, vy: 0 },
+  { id: 2, label: 'Humanoid Control', group: 2, radius: 20, x: Math.random()*width, y: Math.random()*height, vx: 0, vy: 0 },
+  { id: 3, label: 'Reinforcement Learning', group: 3, radius: 22, x: Math.random()*width, y: Math.random()*height, vx: 0, vy: 0 },
+  { id: 4, label: 'Computer Vision', group: 3, radius: 18, x: Math.random()*width, y: Math.random()*height, vx: 0, vy: 0 },
+  { id: 5, label: 'Motion Planning', group: 2, radius: 16, x: Math.random()*width, y: Math.random()*height, vx: 0, vy: 0 },
+  { id: 6, label: 'LLM Wiki', group: 1, radius: 20, x: Math.random()*width, y: Math.random()*height, vx: 0, vy: 0 },
+  { id: 7, label: 'Sim-to-Real', group: 3, radius: 16, x: Math.random()*width, y: Math.random()*height, vx: 0, vy: 0 }
+];
+
+const links = [
+  { source: 0, target: 1 }, { source: 0, target: 2 }, { source: 0, target: 3 },
+  { source: 2, target: 1 }, { source: 3, target: 2 }, { source: 0, target: 4 },
+  { source: 2, target: 5 }, { source: 6, target: 0 }, { source: 3, target: 7 },
+  { source: 7, target: 2 }
+];
+
+let hoveredNode = null;
+let draggedNode = null;
+
+// Mouse Interaction
+let mouse = { x: 0, y: 0, isDown: false };
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+  
+  if (draggedNode) {
+    draggedNode.x = mouse.x;
+    draggedNode.y = mouse.y;
+    draggedNode.vx = 0;
+    draggedNode.vy = 0;
+  } else {
+    hoveredNode = nodes.find(n => Math.hypot(n.x - mouse.x, n.y - mouse.y) < n.radius);
+    canvas.style.cursor = hoveredNode ? 'pointer' : 'default';
+  }
+});
+
+canvas.addEventListener('mousedown', () => {
+  mouse.isDown = true;
+  if (hoveredNode) draggedNode = hoveredNode;
+});
+
+canvas.addEventListener('mouseup', () => {
+  mouse.isDown = false;
+  draggedNode = null;
+});
+
+canvas.addEventListener('click', () => {
+  if (hoveredNode && !draggedNode) {
+    // Populate textarea on click
+    const text = questionBox.value;
+    const addition = \`Tell me more about \${hoveredNode.label}.\`;
+    questionBox.value = text ? text + '\\n' + addition : addition;
+    questionBox.focus();
+    
+    // Add a little pop effect
+    hoveredNode.radius += 5;
+    setTimeout(() => { hoveredNode.radius -= 5; }, 150);
+  }
+});
+
+// Physics Loop
+function update() {
+  const k = 0.05; // Spring constant
+  const rep = 2000; // Repulsion
+  const damp = 0.85; // Damping
+
+  // Repulsion
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      let n1 = nodes[i], n2 = nodes[j];
+      let dx = n1.x - n2.x;
+      let dy = n1.y - n2.y;
+      let dist = Math.hypot(dx, dy) || 1;
+      let force = rep / (dist * dist);
+      let fx = (dx / dist) * force;
+      let fy = (dy / dist) * force;
+      n1.vx += fx; n1.vy += fy;
+      n2.vx -= fx; n2.vy -= fy;
+    }
+  }
+
+  // Springs (Links)
+  links.forEach(link => {
+    let n1 = nodes[link.source];
+    let n2 = nodes[link.target];
+    let dx = n2.x - n1.x;
+    let dy = n2.y - n1.y;
+    let dist = Math.hypot(dx, dy) || 1;
+    let targetDist = 150;
+    let force = (dist - targetDist) * k;
+    let fx = (dx / dist) * force;
+    let fy = (dy / dist) * force;
+    n1.vx += fx; n1.vy += fy;
+    n2.vx -= fx; n2.vy -= fy;
+  });
+
+  // Center Gravity
+  nodes.forEach(n => {
+    n.vx += (width/2 - n.x) * 0.01;
+    n.vy += (height/2 - n.y) * 0.01;
+  });
+
+  // Apply velocities
+  nodes.forEach(n => {
+    if (n !== draggedNode) {
+      n.vx *= damp;
+      n.vy *= damp;
+      n.x += n.vx;
+      n.y += n.vy;
+      
+      // Boundaries
+      n.x = Math.max(n.radius, Math.min(width - n.radius, n.x));
+      n.y = Math.max(n.radius, Math.min(height - n.radius, n.y));
+    }
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, width, height);
+
+  // Draw edges
+  ctx.lineWidth = 1.5;
+  links.forEach(link => {
+    let n1 = nodes[link.source];
+    let n2 = nodes[link.target];
+    ctx.beginPath();
+    ctx.moveTo(n1.x, n1.y);
+    ctx.lineTo(n2.x, n2.y);
+    // Highlight edge if connected node is hovered
+    if (hoveredNode === n1 || hoveredNode === n2) {
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+    } else {
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+    }
+    ctx.stroke();
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+    
+    if (n === hoveredNode || n === draggedNode) {
+      ctx.fillStyle = '#60a5fa';
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#38bdf8';
+    } else {
+      ctx.fillStyle = '#38bdf8';
+      ctx.shadowBlur = 0;
+    }
+    
+    ctx.fill();
+    
+    // Draw Text
+    ctx.fillStyle = '#f8fafc';
+    ctx.shadowBlur = 0;
+    ctx.font = '12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(n.label, n.x, n.y + n.radius + 14);
+  });
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

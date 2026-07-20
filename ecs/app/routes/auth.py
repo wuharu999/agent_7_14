@@ -5,7 +5,8 @@ from collections import defaultdict
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
+
 
 from ecs.app.auth import (
     authenticate,
@@ -23,6 +24,20 @@ router = APIRouter()
 _LOGIN_WINDOW_SECONDS = 15 * 60
 _LOGIN_MAX_FAILURES = 5
 _login_failures: dict[str, list[float]] = defaultdict(list)
+
+
+@router.get("/api/me")
+async def get_me(request: Request):
+    session = current_session(request)
+    if session is None:
+        return JSONResponse({"logged_in": False, "role": None, "username": None})
+    return JSONResponse({
+        "logged_in": True,
+        "user_id": session.get("user_id"),
+        "username": session.get("username"),
+        "role": session.get("role"),
+        "csrf_token": session.get("csrf_token"),
+    })
 
 
 def _client_key(request: Request) -> str:

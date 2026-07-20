@@ -13,6 +13,7 @@ from pathlib import Path
 from ecs.app.config import DATA_ROOT, WORKER_SHARED_SECRET
 import shutil
 
+from ecs.app.auth import require_roles
 from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 
@@ -106,6 +107,7 @@ async def ask(request: Request, body: dict):
 
 @router.get("/api/export/wiki")
 async def export_wiki(request: Request, background_tasks: BackgroundTasks):
+    require_roles(request, {"editor", "admin"})
     if not gateway.online:
         return JSONResponse({"error": "Worker is offline"}, status_code=503)
     

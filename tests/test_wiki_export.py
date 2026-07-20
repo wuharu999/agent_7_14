@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from ecs.app.main import app
 from ecs.app.gateway import gateway
-from ecs.app import config
+from ecs.app import config, auth, database
 
 @pytest.fixture(autouse=True)
 def cleanup_gateway_exports():
@@ -16,11 +16,33 @@ def cleanup_gateway_exports():
     gateway.pending_exports.clear()
 
 
-def test_export_wiki_offline(monkeypatch):
-    # Mock gateway.websocket to be None
-    monkeypatch.setattr(gateway, "websocket", None)
-    
+import uuid
+
+def _create_admin_session():
+    uid = uuid.uuid4().hex[:6]
+    user_id = database.create_user_record(
+        username=f"admin_{uid}",
+        email=f"admin_{uid}@example.com",
+        password_hash="hash",
+        password_salt="salt",
+        role="admin",
+        teams="tian_gong",
+    )
+    token, _csrf = auth.create_login_session(user_id)
+    return token
+
+
+def test_export_wiki_unauthenticated(monkeypatch):
     client = TestClient(app)
+    response = client.get("/api/export/wiki")
+    assert response.status_code == 401
+
+
+def test_export_wiki_offline(monkeypatch):
+    monkeypatch.setattr(gateway, "websocket", None)
+    token = _create_admin_session()
+    client = TestClient(app)
+    client.cookies.set(config.SESSION_COOKIE_NAME, token)
     response = client.get("/api/export/wiki")
     assert response.status_code == 503
     assert response.json()["error"] == "Worker is offline"
@@ -28,28 +50,23 @@ def test_export_wiki_offline(monkeypatch):
 
 @pytest.mark.anyio
 async def test_export_wiki_success(monkeypatch):
-    # Mock gateway.websocket to be not None to make gateway.online True
     monkeypatch.setattr(gateway, "websocket", object())
     
-    # Mock gateway.send to intercept the message
     sent_msgs = []
     async def mock_send(msg):
         sent_msgs.append(msg)
     monkeypatch.setattr(gateway, "send", mock_send)
     
-    # Mock WORKER_SHARED_SECRET inside ecs.app.routes.ask
     from ecs.app.routes import ask as ask_route
     monkeypatch.setattr(ask_route, "WORKER_SHARED_SECRET", "test_secret")
     
-    # Create fake zip file content
     fake_zip_data = b"PK\x03\x04fake_zip_bytes"
+    token = _create_admin_session()
+    cookies = {config.SESSION_COOKIE_NAME: token}
     
-    # We will use httpx.AsyncClient with ASGITransport
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        # Start GET /api/export/wiki as a background task
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", cookies=cookies) as ac:
         get_task = asyncio.create_task(ac.get("/api/export/wiki"))
         
-        # Wait a tiny bit for the route to execute and send the WebSocket message
         for _ in range(10):
             await asyncio.sleep(0.05)
             if len(sent_msgs) > 0:
@@ -60,18 +77,15 @@ async def test_export_wiki_success(monkeypatch):
             print("GET response status:", res.status_code)
             print("GET response body:", res.text)
             
-        # Assert message sent
         assert len(sent_msgs) == 1
         export_id = sent_msgs[0]["export_id"]
         
-        # Now simulate the worker uploading the file
         files = {"file": ("wiki_export.zip", io.BytesIO(fake_zip_data), "application/zip")}
         headers = {"X-Worker-Secret": "test_secret"}
         post_response = await ac.post(f"/api/worker/upload-export/{export_id}", files=files, headers=headers)
         assert post_response.status_code == 200
         assert post_response.json() == {"status": "ok"}
         
-        # Now the GET request should finish successfully
         get_response = await get_task
         assert get_response.status_code == 200, get_response.text
         assert get_response.content == fake_zip_data

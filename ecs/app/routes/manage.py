@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ecs.app.auth import require_roles, verify_csrf, check_robot_access
-from ecs.app.database import get_all_upload_timestamps, mark_sources_deleted, write_audit, list_audit_log, get_all_robots, create_robot, get_robot_editors, assign_robot_editor, remove_robot_editor
+from ecs.app.database import get_all_upload_timestamps, mark_sources_deleted, write_audit, list_audit_log, get_all_robots, create_robot, get_robot_editors, assign_robot_editor, remove_robot_editor, get_user_by_id
 from ecs.app.gateway import gateway
 
 router = APIRouter()
@@ -19,7 +19,7 @@ class DeleteSourceRequest(BaseModel):
 
 @router.get("/api/manage/sources")
 async def list_sources(request: Request):
-    session = require_roles(request, {"viewer", "editor", "admin"})
+    session = require_roles(request, {"editor", "admin"})
     try:
         result = await gateway.command("list_sources")
     except ConnectionError:
@@ -41,16 +41,19 @@ async def list_sources(request: Request):
         ]
 
     timestamps = get_all_upload_timestamps()
-    def enrich_tree(node):
+    def enrich_tree(node, current_ts=None):
         if not isinstance(node, dict):
             return
         name = node.get("name")
+        node_ts = current_ts
         if name and name in timestamps:
-            node["created_at"] = timestamps[name]
+            node_ts = timestamps[name]
+        if node_ts:
+            node["created_at"] = node_ts
         children = node.get("children")
         if isinstance(children, list):
             for child in children:
-                enrich_tree(child)
+                enrich_tree(child, node_ts)
 
     enrich_tree(tree)
 
@@ -190,8 +193,11 @@ async def assign_editor(
 ):
     session = require_roles(request, {"admin"})
     verify_csrf(session, x_csrf_token)
+    user = get_user_by_id(payload.user_id)
+    if user is None:
+        return JSONResponse({"error": f"用户 ID {payload.user_id} 不存在"}, status_code=404)
     assign_robot_editor(robot_id, payload.user_id)
-    return {"status": "ok"}
+    return {"status": "ok", "username": user["username"]}
 
 @router.delete("/api/manage/robots/{robot_id}/editors/{user_id}")
 async def remove_editor(
@@ -243,42 +249,42 @@ async def generate_report_endpoint(
     
     def resolve_geo(ip: str):
         if ip in ("127.0.0.1", "localhost", "unknown"):
-            return "Localhost / Private network"
+            return "本地 / 内网"
         try:
             with urllib.request.urlopen(f"http://ip-api.com/json/{ip}", timeout=3) as res:
                 data = json.loads(res.read().decode())
                 if data.get("status") == "success":
-                    country = data.get("country", "Unknown")
-                    region = data.get("regionName", "Unknown")
-                    city = data.get("city", "Unknown")
-                    org = data.get("org", "Unknown")
-                    return f"{country} ({region}, {city}) - {org}"
+                    country = data.get("country", "未知")
+                    region = data.get("regionName", "未知")
+                    city = data.get("city", "未知")
+                    org = data.get("org", "未知")
+                    return f"{country}（{region}，{city}）- {org}"
                 else:
-                    return "Failed to resolve location"
+                    return "地理位置解析失败"
         except Exception:
-            return "Error geolocating"
+            return "地理定位出错"
             
     for ip in unique_ips:
         geolocations[ip] = await asyncio.to_thread(resolve_geo, ip)
         
     lines = []
-    lines.append("# User Activity & Geolocation Report")
-    lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("# 用户活动与地理位置分析报告")
+    lines.append(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
-    lines.append("## QA Visitor Statistics")
-    lines.append(f"- **Total QA Visits Recorded**: {len(visitors)}")
+    lines.append("## 问答访客统计")
+    lines.append(f"- **已记录的问答访问总数**：{len(visitors)}")
     lines.append("")
-    lines.append("| IP Address | Visit Count | Resolved Location / ISP |")
+    lines.append("| IP 地址 | 访问次数 | 解析位置 / 运营商 |")
     lines.append("| --- | --- | --- |")
     for ip, count in sorted(ip_counts.items(), key=lambda x: x[1], reverse=True):
-        geo = geolocations.get(ip, "Unknown")
+        geo = geolocations.get(ip, "未知")
         lines.append(f"| `{ip}` | {count} | {geo} |")
     lines.append("")
     
-    lines.append("## Recent Administrative & File Audit Logs")
-    lines.append(f"- **Total Action Logs**: {len(audit_logs)}")
+    lines.append("## 近期管理操作与文件审计日志")
+    lines.append(f"- **操作日志总数**：{len(audit_logs)}")
     lines.append("")
-    lines.append("| Timestamp | User | Action | Target | Result |")
+    lines.append("| 时间 | 用户 | 操作 | 目标 | 结果 |")
     lines.append("| --- | --- | --- | --- | --- |")
     for log in audit_logs[:50]:
         lines.append(

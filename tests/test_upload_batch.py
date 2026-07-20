@@ -115,7 +115,6 @@ class UploadEndpointTests(unittest.TestCase):
         self.to_thread_patch.start()
         database.initialize_database()
         self.editor_token, self.editor_csrf = self._create_session("editor", "editor", "tian_gong,walker_s2,walker_c1")
-        self.viewer_token, self.viewer_csrf = self._create_session("viewer", "viewer")
 
     def tearDown(self) -> None:
         self.to_thread_patch.stop()
@@ -181,12 +180,6 @@ class UploadEndpointTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as unauthenticated:
             self._upload("guide.md", token="", csrf="")
         self.assertEqual(unauthenticated.exception.status_code, 401)
-
-        with self.assertRaises(HTTPException) as viewer:
-            self._upload(
-                "guide.md", token=self.viewer_token, csrf=self.viewer_csrf
-            )
-        self.assertEqual(viewer.exception.status_code, 403)
 
         with self.assertRaises(HTTPException) as invalid_csrf:
             self._upload("guide.md", csrf="wrong-token")

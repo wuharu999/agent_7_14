@@ -42,7 +42,6 @@ Do not hard-code the username. Resolve it from `$HOME`.
 ```text
 Project root: $HOME/Documents/agent_7_14
 Worker environment: $HOME/Documents/agent_7_14/worker/.env
-Teams configuration: $HOME/Documents/agent_7_14/worker/teams.json
 LLM Wiki projects: $HOME/Documents/agent_7_14/agent1/<team>
 Expected tmux session: agent-7-14-worker
 ```
@@ -86,13 +85,18 @@ The latest intended product includes all of the following.
 - `/login` and `/logout` exist.
 - QA remains public.
 - Upload and source modification require authentication.
-- Roles:
-  - `viewer`: list files and view status only
-  - `editor`: list, upload, and remove
-  - `admin`: editor permissions plus account administration through CLI
+- Roles (only two):
+  - `editor`: list, upload, remove, and export
+  - `admin`: editor permissions plus user account administration via `/admin/users`
+- A hardcoded default admin account is seeded on first database initialization:
+  - Username: `admin`
+  - Password: `Admin#2026!Secured89` (override via `DEFAULT_ADMIN_PASSWORD` env var)
+  - Teams: all teams from `ALLOWED_TEAMS` env var
+  - This account is only created when no admin user exists in the database.
 - Passwords must be stored as salted slow hashes, never plaintext.
 - Sessions must use HttpOnly cookies.
 - State-changing browser requests must be protected by CSRF validation.
+- The `/teams` and `/dashboard` routes have been removed. Admin manages users at `/admin/users`.
 
 ### Upload and ingestion
 
@@ -381,6 +385,103 @@ chmod 600 worker/.env
 ```
 
 Never commit `.env`, SQLite data, uploaded source files, LLM provider keys, WeCom values, session tokens, or Claude credentials.
+
+---
+
+## Cloud deployment quick-start
+
+When uploading `release.zip` to a new cloud computer:
+
+### ECS server
+
+```bash
+# 1. Unzip release into the project root
+mkdir -p /root/agent_7_14 && cd /root/agent_7_14
+unzip release.zip -d .
+
+# 2. Create Python virtual environment
+python3 -m venv .venv-ecs
+source .venv-ecs/bin/activate
+pip install -r ecs/requirements.txt
+
+# 3. Create ecs/.env (copy from ecs/.env.example and fill in values)
+cp ecs/.env.example ecs/.env
+# Edit ecs/.env:
+#   - Set PUBLIC_BASE_URL to the cloud server's public URL
+#   - Set DATA_ROOT and DATABASE_PATH
+#   - Set WORKER_SHARED_SECRET (generate with: python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
+#   - Set WeCom values if applicable
+#   - Optionally set DEFAULT_ADMIN_PASSWORD (default: Admin#2026!Secured89)
+chmod 600 ecs/.env
+
+# 4. Start ECS (the database and default admin account are auto-created on startup)
+./scripts/run_ecs.sh
+# Or with a custom port:
+PORT=8000 ./scripts/run_ecs.sh
+
+# 5. Verify
+curl -s http://127.0.0.1:8000/health | python3 -m json.tool
+# Login at http://<server-ip>:8000/login with admin / Admin#2026!Secured89
+```
+
+### Worker computer
+
+```bash
+# 1. Unzip release into the project root
+mkdir -p $HOME/Documents/agent_7_14 && cd $HOME/Documents/agent_7_14
+unzip release.zip -d .
+
+# 2. Create Python virtual environment
+python3 -m venv .venv-worker
+source .venv-worker/bin/activate
+pip install -r worker/requirements.txt
+
+# 3. Create worker/.env (copy from worker/.env.example and fill in values)
+cp worker/.env.example worker/.env
+# Edit worker/.env:
+#   - Set SERVER_URL to ws://<ecs-public-ip>:8000/ws/client
+#   - Set WORKER_SHARED_SECRET (exact same value as ECS)
+#   - Set all paths using the fully resolved $HOME (e.g. /home/username/Documents/...)
+#   - Do NOT use literal $HOME — write the absolute path
+chmod 600 worker/.env
+
+# 4. Start Worker
+./scripts/run_worker.sh
+
+# 5. Verify connection
+curl -s http://<ecs-ip>:8000/health | python3 -m json.tool
+# Should show worker_online: true
+```
+
+### Environment variables that change between machines
+
+The following values in `.env` files must be adjusted for each deployment:
+
+| Variable | ECS | Worker | Notes |
+|---|---|---|---|
+| `PUBLIC_BASE_URL` | ✅ | — | Set to the ECS public IP/domain |
+| `DATA_ROOT` | ✅ | — | Absolute path to ECS data directory |
+| `DATABASE_PATH` | ✅ | — | Absolute path to SQLite database |
+| `SERVER_URL` | — | ✅ | WebSocket URL pointing to ECS |
+| `WORKER_SHARED_SECRET` | ✅ | ✅ | Must be identical on both |
+| `BASE_DIR` | — | ✅ | Absolute path to LLM Wiki project |
+| `STAGING_DIR` | — | ✅ | Absolute path under BASE_DIR |
+| `TRASH_DIR` | — | ✅ | Absolute path under BASE_DIR |
+| `LLM_WIKI_QUEUE_FILE` | — | ✅ | Absolute path to ingest-queue.json |
+| `LLM_WIKI_CACHE_FILE` | — | ✅ | Absolute path to ingest-cache.json |
+| `DEFAULT_ADMIN_PASSWORD` | ✅ | — | Optional; default `Admin#2026!Secured89` |
+| `WXWORK_*` | ✅ | — | WeCom integration secrets |
+
+### Default admin account
+
+On first startup with a fresh database, the ECS automatically creates:
+
+- Username: `admin`
+- Password: value of `DEFAULT_ADMIN_PASSWORD` env var, or `Admin#2026!Secured89`
+- Role: `admin`
+- Teams: all teams from `ALLOWED_TEAMS`
+
+Change the password immediately after first login via `/admin/users`.
 
 ---
 
