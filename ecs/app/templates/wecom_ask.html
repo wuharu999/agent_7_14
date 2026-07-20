@@ -434,16 +434,9 @@
     </div>
   </header>
 
-  <!-- ── Chat Area ── -->
-  <div class="chat-wrapper fade-in">
-    <div class="chat-history" id="chatHistory">
-      <!-- Chat bubbles -->
-    </div>
-  </div>
-
-  <!-- ── Input & Controls ── -->
-  <div class="glass-card fade-in">
-    <div class="selectors-row">
+  <!-- ── Selectors Bar at the Top ── -->
+  <div class="glass-card fade-in" style="padding: 10px 14px; margin-bottom: 8px; flex-shrink: 0; background: var(--bg-card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border-glass); border-radius: var(--radius); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.08);">
+    <div class="selectors-row" style="margin-bottom: 0;">
       <div class="select-group">
         <label data-i18n="teamLabel">Robot (Knowledge Base)</label>
         <select id="teamSelect"></select>
@@ -462,24 +455,36 @@
         </select>
       </div>
     </div>
-    
-    <div class="textarea-wrap">
-      <textarea id="question" data-i18n-attr="placeholder" data-i18n="placeholder" placeholder="Enter a question"></textarea>
+  </div>
+
+  <!-- ── Chat Area ── -->
+  <div class="chat-wrapper fade-in">
+    <div class="chat-history" id="chatHistory">
+      <!-- Chat bubbles -->
     </div>
-    
-    <div class="btn-row">
-      <button class="btn btn-primary" id="askBtn" onclick="doAsk()">
+  </div>
+
+  <!-- ── Input & Controls ── -->
+  <div class="glass-card fade-in" style="padding: 10px 14px; flex-shrink: 0; background: var(--bg-card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border-glass); border-radius: var(--radius);">
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <div class="textarea-wrap" style="flex: 1;">
+        <textarea id="question" data-i18n-attr="placeholder" data-i18n="placeholder" placeholder="Enter a question" style="min-height: 40px; height: 40px; max-height: 80px; padding: 8px 12px; resize: none; border-radius: var(--radius-sm);"></textarea>
+      </div>
+      <button class="btn btn-primary" id="askBtn" onclick="doAsk()" style="height: 40px; padding: 0 16px; border-radius: var(--radius-sm); margin: 0;">
         <span data-i18n="askBtn">Ask</span>
       </button>
-      <button class="btn btn-ghost" id="newConvBtn" onclick="newConversation()">
+    </div>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 8px;">
+      <button class="btn btn-ghost" id="newConvBtn" onclick="newConversation()" style="padding: 6px 12px; font-size: 13px; height: auto; border-radius: var(--radius-sm);">
         <span data-i18n="newConvBtn">New conversation</span>
       </button>
-      <button class="btn btn-ghost" id="exportWikiBtn" onclick="exportWiki()" title="Export to my AI" data-i18n-title="exportWikiTitle">
+      <button class="btn btn-ghost" id="exportWikiBtn" onclick="exportWiki()" title="Export to my AI" data-i18n-title="exportWikiTitle" style="padding: 6px 12px; font-size: 13px; height: auto; border-radius: var(--radius-sm);">
         <span data-i18n="exportWikiTitle">Export to my AI</span>
       </button>
     </div>
-    <p class="hint-text" data-i18n="hint">Follow-up questions in this browser keep recent conversation context. "New conversation" clears that context.</p>
-    <div style="text-align: center; margin-top: 15px; font-size: 14px;">
+    <p class="hint-text" data-i18n="hint" style="margin-top: 8px; font-size: 0.68rem; text-align: center;">Follow-up questions in this browser keep recent conversation context. "New conversation" clears that context.</p>
+    <div style="text-align: center; margin-top: 8px; font-size: 12px;">
       <a href="/" data-i18n="webLink" style="color: var(--accent-cyan); text-decoration: none; font-weight: 500;">Standard Web Version</a>
     </div>
   </div>
@@ -701,6 +706,8 @@ async function doAsk() {
   chatHistory.appendChild(loadingBubble);
   scrollToBottom();
 
+  let thinkingDiv = null;
+
   try {
     const r = await fetch('/ask', {
       method: 'POST',
@@ -732,8 +739,6 @@ async function doAsk() {
     let done = false;
     let buffer = "";
     let accumulatedText = "";
-    
-    let thinkingDiv = null;
     
     while(!done) {
       const { value, done: readerDone } = await reader.read();
@@ -836,6 +841,9 @@ async function doAsk() {
     }
     addMessage('bot', t.genericError || 'An error occurred. Please try again.');
   } finally {
+    if (thinkingDiv) {
+      thinkingDiv.style.display = 'none';
+    }
     askBtn.disabled = false;
     newConvBtn.disabled = false;
     setCompanionMode('sleeping');
