@@ -19,6 +19,7 @@ class WorkerGateway:
         self.pending_answers: dict[str, asyncio.Future[str]] = {}
         self.pending_commands: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self.pending_streams: dict[str, asyncio.Queue[dict[str, Any]]] = {}
+        self.pending_exports: dict[str, asyncio.Future[str]] = {}
         self.sender_task: asyncio.Task[None] | None = None
         self._connection_lock = asyncio.Lock()
         self.latest_snapshot: dict[str, Any] = {}
@@ -57,6 +58,10 @@ class WorkerGateway:
             if not future.done():
                 future.set_exception(error)
             self.pending_commands.pop(command_id, None)
+        for export_id, future in list(self.pending_exports.items()):
+            if not future.done():
+                future.set_exception(error)
+            self.pending_exports.pop(export_id, None)
         for qid, queue in list(self.pending_streams.items()):
             queue.put_nowait({"status": "error", "error": "Worker disconnected"})
             self.pending_streams.pop(qid, None)
@@ -183,6 +188,11 @@ class WorkerGateway:
         future = self.pending_commands.get(command_id)
         if future is not None and not future.done():
             future.set_result(result)
+
+    def resolve_export(self, export_id: str, path: str) -> None:
+        future = self.pending_exports.get(export_id)
+        if future is not None and not future.done():
+            future.set_result(path)
 
 
 gateway = WorkerGateway()

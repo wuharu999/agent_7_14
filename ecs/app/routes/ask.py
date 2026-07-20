@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 import uuid
+import asyncio
 
 import time
 from collections import defaultdict
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request, File, UploadFile, Header, BackgroundTasks
+from fastapi.responses import JSONResponse, FileResponse
+from pathlib import Path
+from ecs.app.config import DATA_ROOT, WORKER_SHARED_SECRET
+import shutil
 
 from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
@@ -98,3 +102,62 @@ async def ask(request: Request, body: dict):
             yield json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+
+@router.get("/api/export/wiki")
+async def export_wiki(request: Request, background_tasks: BackgroundTasks):
+    if not gateway.online:
+        return JSONResponse({"error": "Worker is offline"}, status_code=503)
+    
+    export_id = f"export-{uuid.uuid4().hex[:12]}"
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    gateway.pending_exports[export_id] = future
+    
+    try:
+        await gateway.send({"type": "create_export", "id": export_id, "export_id": export_id})
+        saved_path_str = await asyncio.wait_for(future, timeout=60.0)
+        saved_path = Path(saved_path_str)
+        
+        if not saved_path.is_file():
+            return JSONResponse({"error": "Export file not found"}, status_code=500)
+            
+        def clean_file(p: Path):
+            try:
+                p.unlink(missing_ok=True)
+            except Exception:
+                pass
+                
+        background_tasks.add_task(clean_file, saved_path)
+        return FileResponse(saved_path, filename="wiki_export.zip", media_type="application/zip")
+    except asyncio.TimeoutError:
+        return JSONResponse({"error": "Export timed out"}, status_code=504)
+    except Exception as exc:
+        return JSONResponse({"error": f"Export failed: {str(exc)}"}, status_code=500)
+    finally:
+        gateway.pending_exports.pop(export_id, None)
+
+
+@router.post("/api/worker/upload-export/{export_id}")
+async def upload_export(
+    export_id: str,
+    file: UploadFile = File(...),
+    x_worker_secret: str = Header(default="", alias="X-Worker-Secret"),
+):
+    if not WORKER_SHARED_SECRET or x_worker_secret != WORKER_SHARED_SECRET:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        
+    export_dir = DATA_ROOT / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    target_path = export_dir / f"{export_id}.zip"
+    
+    try:
+        def save_file():
+            with target_path.open("wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        await asyncio.to_thread(save_file)
+        
+        gateway.resolve_export(export_id, str(target_path))
+        return {"status": "ok"}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)

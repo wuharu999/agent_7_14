@@ -27,6 +27,9 @@ from worker.config import (
     ensure_directories,
     get_team_config,
     websocket_url,
+    http_base_url,
+    WORKER_ROOT_DIR,
+    WORKER_SHARED_SECRET,
 )
 from worker.downloader import download_file
 from worker.file_manager import (
@@ -261,6 +264,12 @@ class WorkerManager:
             if not task_id or not team:
                 return
             asyncio.create_task(self.run_contradiction_review(task_id, team))
+
+        if message_type == "create_export":
+            export_id = str(data.get("export_id") or "")
+            if export_id:
+                asyncio.create_task(self.handle_create_export(export_id))
+            return
 
     @staticmethod
     def _question_lane(conversation_id: str) -> int:
@@ -820,3 +829,48 @@ class WorkerManager:
                 })
         except Exception as e:
             log.error(f"Contradiction review failed: {e}")
+
+    async def handle_create_export(self, export_id: str) -> None:
+        import httpx
+        import tempfile
+        import shutil
+
+        log.info("Starting wiki export for export_id %s", export_id)
+        wiki_dir = WORKER_ROOT_DIR / "wiki"
+
+        if not wiki_dir.is_dir():
+            log.error("Wiki directory %s does not exist", wiki_dir)
+            return
+
+        tmp_dir = tempfile.gettempdir()
+        archive_base = Path(tmp_dir) / f"wiki_export_{export_id}"
+        zip_path = Path(tmp_dir) / f"wiki_export_{export_id}.zip"
+
+        try:
+            def create_zip():
+                shutil.make_archive(str(archive_base), 'zip', root_dir=str(wiki_dir))
+            await asyncio.to_thread(create_zip)
+
+            if not zip_path.is_file():
+                raise FileNotFoundError(f"Failed to create archive at {zip_path}")
+
+            http_base = http_base_url()
+            upload_url = f"{http_base}/api/worker/upload-export/{export_id}"
+            headers = {
+                "X-Worker-Secret": WORKER_SHARED_SECRET,
+                "User-Agent": "agent-7-14-worker/1.0",
+            }
+
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
+                with zip_path.open("rb") as f:
+                    files = {"file": (f"wiki_export_{export_id}.zip", f, "application/zip")}
+                    response = await client.post(upload_url, headers=headers, files=files)
+                    response.raise_for_status()
+            log.info("Successfully uploaded wiki export %s", export_id)
+        except Exception as e:
+            log.exception("Failed to handle create_export for %s", export_id)
+        finally:
+            try:
+                zip_path.unlink(missing_ok=True)
+            except Exception:
+                pass

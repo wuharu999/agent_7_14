@@ -123,6 +123,13 @@ def websocket_url() -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
+def http_base_url() -> str:
+    parts = urlsplit(SERVER_URL)
+    scheme = "https" if parts.scheme in ("wss", "https") else "http"
+    return f"{scheme}://{parts.netloc}"
+
+
+
 def ensure_directories() -> None:
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
