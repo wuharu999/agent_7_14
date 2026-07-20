@@ -41,6 +41,25 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .dot:nth-child(1) {animation-delay:-0.32s;}
 .dot:nth-child(2) {animation-delay:-0.16s;}
 @keyframes bounce {0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)}}
+
+/* Mascot CSS */
+.mascot { display:flex; align-items:center; justify-content:center; margin-left: auto; margin-right: 15px; }
+.monitor { width: 50px; height: 40px; background: #cbd5e1; border-radius: 6px; border: 3px solid #475569; position: relative; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1); transition: all 0.3s ease; }
+.monitor::before { content: ''; position: absolute; bottom: -8px; width: 20px; height: 6px; background: #475569; border-radius: 2px; }
+.monitor::after { content: ''; position: absolute; bottom: -11px; width: 30px; height: 4px; background: #475569; border-radius: 2px; }
+.screen { width: 38px; height: 28px; background: #0f172a; border-radius: 3px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+.face { color: #4ade80; font-family: monospace; font-size: 14px; font-weight: bold; text-shadow: 0 0 5px #4ade80; transition: color 0.3s; }
+
+/* States */
+.mascot.idle .face { animation: blink 4s infinite; }
+.mascot.waiting .face { animation: lookAround 2s infinite; color: #fbbf24; text-shadow: 0 0 5px #fbbf24; }
+.mascot.generating .monitor { animation: bounceMascot 0.4s infinite alternate; border-color: #3b82f6; }
+.mascot.generating .face { color: #3b82f6; text-shadow: 0 0 5px #3b82f6; animation: speak 0.2s infinite alternate; }
+
+@keyframes blink { 0%, 96%, 100% { opacity: 1; } 98% { opacity: 0; } }
+@keyframes lookAround { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes bounceMascot { 0% { transform: translateY(0); } 100% { transform: translateY(-5px); } }
+@keyframes speak { 0% { transform: scaleY(1); } 100% { transform: scaleY(0.6); } }
 </style>
 </head>
 <body>
@@ -51,6 +70,15 @@ button:disabled{opacity:.55;cursor:not-allowed}
       <h1 data-i18n="title">Uchat Knowledge Base</h1>
       <p data-i18n="subtitle">Ask questions against the local wiki.</p>
     </div>
+    
+    <div id="mascot" class="mascot idle">
+      <div class="monitor">
+        <div class="screen">
+          <span class="face" id="mascot-face">^_^</span>
+        </div>
+      </div>
+    </div>
+
     <span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span>
   </div>
 
@@ -239,6 +267,7 @@ async function submitQuestion(){
   newConversationButton.disabled=true;
   question.value='';
   
+  setMascotState('waiting');
   addMessage('user', q);
   
   const loadingBubble = document.createElement('div');
@@ -263,10 +292,12 @@ async function submitQuestion(){
       const d=await r.json();
       loadingBubble.remove();
       addMessage('bot', d.error || 'Request failed');
+      setMascotState('idle');
       return;
     }
     
     loadingBubble.remove();
+    setMascotState('generating');
     
     const botBubble = addMessage('bot', '');
     const reader = r.body.getReader();
@@ -357,14 +388,26 @@ async function submitQuestion(){
       currentChat[currentChat.length - 1].content = accumulatedText || 'No response';
       saveHistory();
     }
+    setMascotState('idle');
   }catch(e){
     loadingBubble.remove();
     addMessage('bot', String(e));
+    setMascotState('idle');
   }finally{
     askButton.disabled=false;
     newConversationButton.disabled=false;
   }
 }
+
+function setMascotState(state) {
+  const m = document.getElementById('mascot');
+  const f = document.getElementById('mascot-face');
+  m.className = 'mascot ' + state;
+  if (state === 'idle') f.textContent = '^_^';
+  if (state === 'waiting') f.textContent = 'O_O';
+  if (state === 'generating') f.textContent = '>_<';
+}
+
 askButton.onclick=submitQuestion;
 question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter') {event.preventDefault();submitQuestion();}});
 newConversationButton.onclick=()=>{
