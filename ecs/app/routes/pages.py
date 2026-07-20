@@ -17,7 +17,11 @@ _TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "templates"
 
 
 def _template(name: str) -> str:
-    return (_TEMPLATE_ROOT / name).read_text(encoding="utf-8")
+    content = (_TEMPLATE_ROOT / name).read_text(encoding="utf-8")
+    if name != "bg_graph.html" and "</body>" in content:
+        bg = (_TEMPLATE_ROOT / "bg_graph.html").read_text(encoding="utf-8")
+        content = content.replace("</body>", bg + "\n</body>")
+    return content
 
 
 def _login_redirect(next_url: str) -> RedirectResponse:
@@ -29,6 +33,14 @@ async def ask_page():
     page = _template("ask.html")
     page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
     return HTMLResponse(page)
+
+
+@router.get("/wecom-ask", response_class=HTMLResponse)
+async def wecom_ask_page():
+    page = _template("wecom_ask.html")
+    page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
+    return HTMLResponse(page)
+
 
 
 @router.get("/login", response_class=HTMLResponse)

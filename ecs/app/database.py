@@ -167,6 +167,53 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE upload_sources ADD COLUMN active_queue_count INTEGER NOT NULL DEFAULT 0")
         if "teams" not in _columns(connection, "users"):
             connection.execute("ALTER TABLE users ADD COLUMN teams TEXT NOT NULL DEFAULT ''")
+        if "email" not in _columns(connection, "users"):
+            connection.execute("ALTER TABLE users ADD COLUMN email TEXT")
+            connection.execute("UPDATE users SET email = username || '@localhost' WHERE email IS NULL")
+            connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS qa_visitors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address TEXT NOT NULL,
+                user_id INTEGER,
+                visited_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS wiki_metrics (
+                date TEXT PRIMARY KEY,
+                new_entries INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS team_settings (
+                team_name TEXT PRIMARY KEY,
+                auto_review_enabled INTEGER NOT NULL DEFAULT 0,
+                last_review_at TEXT,
+                prev_review_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS team_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                team_name TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('member', 'captain')),
+                joined_at TEXT NOT NULL,
+                UNIQUE(team_name, user_id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS team_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                team_name TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending', 'approved', 'denied')),
+                requested_at TEXT NOT NULL,
+                UNIQUE(team_name, user_id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            """
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -174,31 +221,39 @@ def initialize_database() -> None:
 # ---------------------------------------------------------------------------
 
 def create_user_record(
-    *, username: str, password_hash: str, password_salt: str, role: str, teams: str = ""
+    *, username: str, email: str, password_hash: str, password_salt: str, role: str, teams: str = ""
 ) -> int:
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
         cursor = connection.execute(
             """
             INSERT INTO users (
-                username, password_hash, password_salt, role, teams,
+                username, email, password_hash, password_salt, role, teams,
                 is_active, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
             """,
-            (username, password_hash, password_salt, role, teams, now, now),
+            (username, email, password_hash, password_salt, role, teams, now, now),
         )
         return int(cursor.lastrowid)
 
 
 def update_user_record(
-    user_id: int, password_hash: str, password_salt: str, role: str, teams: str = ""
+    user_id: int, email: str, password_hash: str, password_salt: str, role: str, teams: str = ""
 ) -> None:
     with _DB_LOCK, _connect() as connection:
         connection.execute(
-            "UPDATE users SET password_hash = ?, password_salt = ?, role = ?, teams = ?, "
+            "UPDATE users SET email = ?, password_hash = ?, password_salt = ?, role = ?, teams = ?, "
             "is_active = 1, updated_at = ? WHERE id = ?",
-            (password_hash, password_salt, role, teams, utc_now(), user_id),
+            (email, password_hash, password_salt, role, teams, utc_now(), user_id),
         )
+
+
+def get_user_by_email(email: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM users WHERE email = ?", (email,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def get_user_by_username(username: str) -> dict[str, Any] | None:
@@ -295,6 +350,31 @@ def list_audit_log(limit: int = 100) -> list[dict[str, Any]]:
             "SELECT * FROM file_audit_log ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_recent_upload_count(user_id: int, minutes: int = 1) -> int:
+    from ecs.app.database import _DB_LOCK, _connect
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) as count FROM file_audit_log WHERE user_id = ? AND action = 'upload_source' AND created_at >= ?",
+            (user_id, cutoff)
+        ).fetchone()
+        return int(row["count"]) if row else 0
+
+
+def get_team_captains(team_name: str) -> list[dict]:
+    from ecs.app.database import _DB_LOCK, _connect
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT users.* FROM users
+            JOIN team_members ON users.id = team_members.user_id
+            WHERE team_members.team_name = ? AND team_members.role = 'captain'
+            """, (team_name,)
+        ).fetchall()
+        return [dict(row) for row in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -732,3 +812,38 @@ def update_authoring_article(article_id: str, **fields: Any) -> None:
             f"UPDATE authoring_articles SET {assignments} WHERE article_id = ?",
             [*updates.values(), article_id],
         )
+
+
+def reconcile_existing_uploads(uploads_on_disk: list[dict[str, str]]) -> None:
+    existing_set = {(item["team"], item["upload_id"]) for item in uploads_on_disk}
+    
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT upload_id, team, status FROM uploads WHERE status IN ('completed', 'sources_removed')"
+        ).fetchall()
+        
+        now = utc_now()
+        updated_upload_ids = []
+        for row in rows:
+            uid = str(row["upload_id"])
+            team = str(row["team"])
+            current_status = str(row["status"])
+            
+            exists_on_disk = (team, uid) in existing_set
+            
+            if current_status == "completed" and not exists_on_disk:
+                connection.execute(
+                    "UPDATE upload_sources SET status = 'deleted', updated_at = ? WHERE upload_id = ?",
+                    (now, uid),
+                )
+                updated_upload_ids.append(uid)
+            elif current_status == "sources_removed" and exists_on_disk:
+                connection.execute(
+                    "UPDATE upload_sources SET status = 'completed', updated_at = ? WHERE upload_id = ?",
+                    (now, uid),
+                )
+                updated_upload_ids.append(uid)
+                
+    for uid in updated_upload_ids:
+        refresh_upload_aggregate(uid)
+

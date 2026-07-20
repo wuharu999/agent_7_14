@@ -128,6 +128,7 @@ class UploadEndpointTests(unittest.TestCase):
     def _create_session(username: str, role: str, teams: str = "") -> tuple[str, str]:
         user_id = database.create_user_record(
             username=username,
+            email=f"{username}@example.com",
             password_hash="unused-in-route-test",
             password_salt="unused-in-route-test",
             role=role,

@@ -146,6 +146,7 @@ class WorkerManager:
                     self.connected.set()
                     retry = 3.0
                     log.info("Worker connected")
+                    asyncio.create_task(self.send_existing_uploads_sync())
                     async for raw in websocket:
                         data = json.loads(raw)
                         await self.route_message(data)
@@ -158,6 +159,27 @@ class WorkerManager:
                 self.connected.clear()
             await asyncio.sleep(retry)
             retry = min(retry * 1.5, 45.0)
+
+    async def send_existing_uploads_sync(self) -> None:
+        import os
+        from worker.config import ALLOWED_TEAMS, get_team_config
+        existing_uploads = []
+        for team in ALLOWED_TEAMS:
+            tc = get_team_config(team)
+            if tc.raw_sources_dir.exists():
+                try:
+                    for entry in os.scandir(tc.raw_sources_dir):
+                        if entry.is_dir():
+                            existing_uploads.append({
+                                "team": team,
+                                "upload_id": entry.name
+                            })
+                except Exception:
+                    log.exception("Failed to scan raw sources directory for team %s", team)
+        await self.emit({
+            "type": "sync_existing_uploads",
+            "uploads": existing_uploads
+        })
 
     async def route_message(self, data: dict[str, Any]) -> None:
         message_type = str(data.get("type") or "")

@@ -72,17 +72,26 @@ def normalize_username(username: str) -> str:
     return value
 
 
-def create_or_update_user(username: str, password: str, role: str, teams: str = "") -> int:
-    normalized = normalize_username(username)
+def normalize_email(email: str) -> str:
+    value = email.strip().lower()
+    if not value or len(value) > 255 or "@" not in value:
+        raise ValueError("Invalid email address")
+    return value
+
+
+def create_or_update_user(username: str, email: str, password: str, role: str, teams: str = "") -> int:
+    normalized_username = normalize_username(username)
+    normalized_email = normalize_email(email)
     if role not in {"viewer", "editor", "admin"}:
         raise ValueError("Role must be viewer, editor or admin")
     password_hash, password_salt = hash_password(password)
-    existing = get_user_by_username(normalized)
+    existing = get_user_by_email(normalized_email) or get_user_by_username(normalized_username)
     if existing:
-        update_user_record(int(existing["id"]), password_hash, password_salt, role, teams)
+        update_user_record(int(existing["id"]), normalized_email, password_hash, password_salt, role, teams)
         return int(existing["id"])
     return create_user_record(
-        username=normalized,
+        username=normalized_username,
+        email=normalized_email,
         password_hash=password_hash,
         password_salt=password_salt,
         role=role,
@@ -90,12 +99,13 @@ def create_or_update_user(username: str, password: str, role: str, teams: str = 
     )
 
 
-def authenticate(username: str, password: str) -> dict[str, Any] | None:
+def authenticate(email: str, password: str) -> dict[str, Any] | None:
     try:
-        normalized = normalize_username(username)
+        normalized = normalize_email(email)
     except ValueError:
         return None
-    user = get_user_by_username(normalized)
+    from ecs.app.database import get_user_by_email
+    user = get_user_by_email(normalized)
     if not user or not bool(user.get("is_active")):
         return None
     if not verify_password(password, str(user["password_hash"]), str(user["password_salt"])):

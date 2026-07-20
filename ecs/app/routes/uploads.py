@@ -116,6 +116,21 @@ async def upload_file(
             status_code=400,
         )
 
+    # Check for unusual activity (more than 5 uploads in 1 minute)
+    from ecs.app.database import get_recent_upload_count, get_team_captains
+    from ecs.app.mock_email import MockEmailLogger
+    recent_uploads = get_recent_upload_count(int(session["user_id"]), minutes=1)
+    if recent_uploads >= 5:
+        captains = get_team_captains(team)
+        for captain in captains:
+            if captain.get("email"):
+                MockEmailLogger.send_unusual_activity(
+                    captain_email=captain["email"],
+                    team_name=team,
+                    member_username=str(session["username"]),
+                    activity_desc=f"User has uploaded more than 5 files in the last minute ({recent_uploads + 1} uploads).",
+                )
+
     upload_id = uuid.uuid4().hex[:16]
     task_id = f"dl-{uuid.uuid4().hex[:16]}"
     filename = safe_filename(original_filename)

@@ -57,6 +57,7 @@ class AuthoringPromptTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await authoring._run(
                 "a" * 250_000,
+                team="tian_gong",
                 system_prompt="Private task policy",
             )
         self.assertEqual(result, "Claude response")
@@ -81,8 +82,8 @@ class AuthoringPromptTests(unittest.IsolatedAsyncioTestCase):
 
 class PublicationTests(unittest.TestCase):
     def test_same_publication_is_idempotent(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, patch.object(
-            publisher, "RAW_SOURCES_DIR", Path(directory) / "raw" / "sources"
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "worker.config.WORKER_ROOT_DIR", Path(directory)
         ):
             first = publisher.publish_authoring_article(
                 "article-1", "tian_gong", "Guide", "# Guide\n"

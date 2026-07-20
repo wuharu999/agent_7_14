@@ -13,6 +13,7 @@ from ecs.app.database import (
     update_upload,
     upsert_source,
     update_authoring_article,
+    reconcile_existing_uploads,
 )
 from ecs.app.gateway import gateway
 from ecs.app.routes.uploads import dispatch_upload
@@ -77,6 +78,10 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
 
             elif message_type == "llm_wiki_snapshot":
                 gateway.latest_snapshot = data
+
+            elif message_type == "sync_existing_uploads":
+                uploads_on_disk = data.get("uploads") or []
+                await asyncio.to_thread(reconcile_existing_uploads, uploads_on_disk)
 
             elif message_type == "upload_security_warnings":
                 upload_id = str(data.get("upload_id") or "")

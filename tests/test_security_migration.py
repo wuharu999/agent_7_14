@@ -116,6 +116,27 @@ class SecurityMigrationTests(unittest.TestCase):
         )
         self.assertNotIn("excerpt", warnings[0])
 
+    def test_get_all_upload_timestamps(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test.db"
+            with patch.object(database, "DATABASE_PATH", path):
+                database.initialize_database()
+                database.create_upload(
+                    upload_id="upload-1",
+                    task_id="task-1",
+                    team="tian_gong",
+                    filename="1.md",
+                    size_bytes=10,
+                    ecs_path="/tmp/1",
+                    status="waiting_for_worker",
+                    stage="uploaded_to_ecs",
+                    message="saved",
+                )
+                timestamps = database.get_all_upload_timestamps()
+                self.assertIn("upload-1", timestamps)
+                self.assertIsInstance(timestamps["upload-1"], str)
+
 
 if __name__ == "__main__":
     unittest.main()
+

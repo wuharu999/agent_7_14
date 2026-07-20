@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ecs.app.auth import require_roles, verify_csrf, check_team_access
-from ecs.app.database import mark_sources_deleted, write_audit
+from ecs.app.database import get_all_upload_timestamps, mark_sources_deleted, write_audit
 from ecs.app.gateway import gateway
 
 router = APIRouter()
@@ -39,6 +39,20 @@ async def list_sources(request: Request):
             child for child in tree.get("children", [])
             if check_team_access(session, child.get("name"))
         ]
+
+    timestamps = get_all_upload_timestamps()
+    def enrich_tree(node):
+        if not isinstance(node, dict):
+            return
+        name = node.get("name")
+        if name and name in timestamps:
+            node["created_at"] = timestamps[name]
+        children = node.get("children")
+        if isinstance(children, list):
+            for child in children:
+                enrich_tree(child)
+
+    enrich_tree(tree)
 
     return {
         "worker_online": gateway.online,

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 from ecs.app.config import APP_NAME, APP_VERSION, ensure_directories
 from ecs.app.database import delete_expired_sessions, initialize_database
-from ecs.app.routes import auth, ask, authoring, manage, pages, status, uploads, wecom, worker_socket
+from ecs.app.routes import auth, ask, authoring, manage, pages, status, uploads, wecom, worker_socket, teams, dashboard
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -20,6 +20,8 @@ app.include_router(manage.router)
 app.include_router(status.router)
 app.include_router(worker_socket.router)
 app.include_router(wecom.router)
+app.include_router(teams.router)
+app.include_router(dashboard.router)
 
 
 @app.on_event("startup")

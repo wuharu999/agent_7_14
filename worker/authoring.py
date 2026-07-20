@@ -145,10 +145,11 @@ def _history(messages: list[dict[str, str]]) -> str:
     return "\n\n".join(selected)
 
 
-async def _run(prompt: str, *, system_prompt: str) -> str:
+async def _run(prompt: str, *, team: str, system_prompt: str) -> str:
     try:
         return await run_claude_process(
             prompt,
+            team=team,
             system_prompt=system_prompt,
             timeout=CLAUDE_TIMEOUT,
         )
@@ -172,6 +173,7 @@ async def chat(session_id: str, message: str) -> tuple[dict[str, Any], str]:
                 history=_history(messages),
                 message=message.strip(),
             ),
+            team=value["team"],
             system_prompt=CHAT_SYSTEM_PROMPT,
         )
     except ClaudePolicyViolation:
@@ -193,6 +195,7 @@ async def generate_article(session_id: str) -> str:
         raise AuthoringError("Cannot generate an article from an empty conversation")
     article = await _run(
         ARTICLE_USER_PROMPT.format(history=_history(value["messages"])),
+        team=value["team"],
         system_prompt=ARTICLE_SYSTEM_PROMPT,
     )
     if len(article.encode("utf-8")) > AUTHORING_MAX_ARTICLE_BYTES:
