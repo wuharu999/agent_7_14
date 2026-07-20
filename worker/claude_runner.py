@@ -81,8 +81,10 @@ async def run_claude(
     if decision.blocked:
         return refusal_text(language)
     language_name = LANGUAGE_NAMES.get(language, LANGUAGE_NAMES["zh-CN"])
+    target_team = "All Robots" if team in ("all", "default") else team
+    question_with_target = f"[Query Target: {target_team}] {question}"
     prompt = USER_PROMPT.format(
-        question=question,
+        question=question_with_target,
         language_name=language_name,
         history=_history_text(history),
     )
@@ -132,8 +134,10 @@ async def run_claude_stream(
         return err_text
 
     language_name = LANGUAGE_NAMES.get(language, LANGUAGE_NAMES["zh-CN"])
+    target_team = "All Robots" if team in ("all", "default") else team
+    question_with_target = f"[Query Target: {target_team}] {question}"
     prompt = USER_PROMPT.format(
-        question=question,
+        question=question_with_target,
         language_name=language_name,
         history=_history_text(history),
     )
