@@ -8,8 +8,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ecs.app.auth import require_roles, verify_csrf
-from ecs.app.config import ALLOWED_TEAMS, AUTHORING_COMMAND_TIMEOUT
+from ecs.app.config import AUTHORING_COMMAND_TIMEOUT
 from ecs.app.database import (
+    get_allowed_teams,
     create_authoring_article,
     create_authoring_session,
     get_authoring_article,
@@ -55,8 +56,9 @@ def _failure(result: dict) -> JSONResponse | None:
 async def create_session(payload: SessionRequest, request: Request, x_csrf_token: str = Header(default="", alias="X-CSRF-Token")):
     session = require_roles(request, {"editor", "admin"})
     verify_csrf(session, x_csrf_token)
-    if payload.team not in ALLOWED_TEAMS:
-        return JSONResponse({"error": "invalid team", "allowed_teams": list(ALLOWED_TEAMS)}, status_code=400)
+    allowed_teams_list = get_allowed_teams()
+    if payload.team not in allowed_teams_list:
+        return JSONResponse({"error": "invalid team", "allowed_teams": allowed_teams_list}, status_code=400)
     session_id = f"auth-{uuid.uuid4().hex[:24]}"
     create_authoring_session(session_id=session_id, created_by=int(session["user_id"]), team=payload.team)
     try:
@@ -167,8 +169,9 @@ async def publish_article(article_id: str, payload: ArticleRequest, request: Req
     article = get_authoring_article(article_id, int(session["user_id"]))
     if article is None:
         return JSONResponse({"error": "Authoring article not found"}, status_code=404)
-    if payload.team not in ALLOWED_TEAMS:
-        return JSONResponse({"error": "invalid team", "allowed_teams": list(ALLOWED_TEAMS)}, status_code=400)
+    allowed_teams_list = get_allowed_teams()
+    if payload.team not in allowed_teams_list:
+        return JSONResponse({"error": "invalid team", "allowed_teams": allowed_teams_list}, status_code=400)
     title = payload.title.strip()
     if not title:
         return JSONResponse({"error": "Article title cannot be empty"}, status_code=400)

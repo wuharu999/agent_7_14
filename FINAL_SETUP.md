@@ -49,26 +49,15 @@ chmod +x scripts/*.sh scripts/create_user.py
 ./scripts/bootstrap_ecs.sh
 ```
 
-The database migration runs automatically at ECS startup and adds the new authentication/audit tables without deleting old upload records.
-
-Create the first administrator:
-
-```bash
-cd /root/agent_7_14
-source .venv-ecs/bin/activate
-python3 scripts/create_user.py --username admin --role admin
-```
-
-The command asks for the password without displaying it. Passwords must be at least 10 characters and are stored using salted `scrypt`, not plaintext.
+The database migration runs automatically at ECS startup and adds the new authentication/audit tables without deleting old upload records. On a fresh database, startup creates the `admin` account using `DEFAULT_ADMIN_PASSWORD` or the default `Admin#2026!Secured89`. Change that password immediately at `/admin/users`.
 
 Create more accounts when needed:
 
 ```bash
-python3 scripts/create_user.py --username reviewer --role viewer
 python3 scripts/create_user.py --username uploader --role editor
 ```
 
-Running the command again for an existing username updates its password and role.
+The command asks for the password without displaying it. Passwords must be at least 10 characters and are stored using salted `scrypt`, not plaintext. Running the command again for an existing username updates its password and role.
 
 Start ECS:
 
@@ -87,6 +76,19 @@ curl http://127.0.0.1:8000/health
 ```
 
 ## 3. Worker upgrade
+
+From the development checkout, the repeatable remote deployment is:
+
+```bash
+WORKER_SSH_TARGET=user@worker-host ./scripts/deploy_worker.sh
+```
+
+The script builds `release.zip`, uploads it, backs up `worker/.env` and the
+live project metadata, stops the existing Worker tmux session, replaces code
+while preserving virtualenvs and `raw/`, `wiki/`, `.llm-wiki/`, trash, and
+runtime state, then starts the Worker again. Set `WORKER_REMOTE_ROOT` when the
+remote project is not `$HOME/Documents/agent_7_14`; set `START_WORKER=false` to
+deploy without starting it.
 
 Back up the existing Worker environment before replacing code:
 
@@ -151,7 +153,7 @@ Source Watch: ON
 Auto Ingest: ON
 ```
 
-The LLM Wiki local API may remain enabled, but the Worker does not need an API token when `LLM_WIKI_RESCAN_AFTER_PUBLISH=false`.
+The LLM Wiki local API may remain enabled, but the Worker does not call `/sources/rescan` and does not need an API token for monitoring.
 
 Start the Worker:
 
@@ -171,7 +173,7 @@ From any computer allowed by the ECS security group:
 http://47.239.12.206:8000/login
 ```
 
-Sign in with the account created by `create_user.py`.
+Sign in with the seeded `admin` account or an account created by `create_user.py`.
 
 Test in this order:
 

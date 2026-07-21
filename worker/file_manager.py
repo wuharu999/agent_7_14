@@ -12,7 +12,7 @@ from worker.config import (
     SUPPORTED_SOURCE_SUFFIXES,
     TRASH_DIR,
     get_team_config,
-    ALLOWED_TEAMS,
+    get_allowed_teams,
 )
 
 
@@ -46,7 +46,12 @@ def _resolve_relative(team: str, relative_path: str, *, allow_root: bool = False
     if raw.startswith("/") or Path(raw).is_absolute():
         raise FileManagerError("Absolute paths are not allowed")
     
-    tc = get_team_config(team)
+    try:
+        tc = get_team_config(team)
+    except ValueError as exc:
+        # Invalid team/path input is an expected file-manager validation error,
+        # not an internal Worker failure that should emit an ERROR traceback.
+        raise FileManagerError(str(exc)) from exc
     root = tc.raw_sources_dir.resolve()
     
     # Strip the team name from the path if it's the first part, because the old system 
@@ -180,7 +185,7 @@ def list_source_tree() -> dict[str, Any]:
         }
 
     team_children = []
-    for team in ALLOWED_TEAMS:
+    for team in get_allowed_teams():
         tc = get_team_config(team)
         if not tc.raw_sources_dir.exists():
             continue
@@ -284,4 +289,52 @@ def soft_delete_source(relative_path: str) -> dict[str, Any]:
         "trash_path": destination.relative_to(TRASH_DIR.parent).as_posix(),
         "deleted_files": deleted_files,
         "deleted_type": "directory" if destination.is_dir() else "file",
+    }
+
+
+def soft_delete_robot(team: str) -> dict[str, Any]:
+    """Move one robot's complete raw/sources folder into recoverable trash."""
+    try:
+        tc = get_team_config(team)
+    except ValueError as exc:
+        raise FileManagerError(str(exc)) from exc
+
+    raw_sources_root = (tc.base_dir / "raw" / "sources").resolve()
+    target = tc.raw_sources_dir
+    if target.is_symlink():
+        raise FileManagerError("Symbolic links cannot be managed")
+    if not target.exists():
+        return {
+            "path": team,
+            "trash_path": None,
+            "deleted_files": 0,
+            "deleted_type": "directory",
+            "removed": False,
+        }
+    if not target.is_dir():
+        raise FileManagerError("Robot source path is not a directory")
+    target = target.resolve()
+    if target.parent != raw_sources_root:
+        raise FileManagerError("Robot source path escapes raw/sources")
+
+    source_prefix = f"{team}/"
+    for identity in _processing_sources(team):
+        if identity == team or identity.startswith(source_prefix):
+            raise SourceBusyError(
+                f"Robot has a source currently being ingested: {identity}"
+            )
+
+    deleted_files = _count_files(target)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    trash_root = TRASH_DIR / f"{stamp}-{uuid4().hex[:8]}"
+    destination = trash_root / team
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    os.rename(target, destination)
+
+    return {
+        "path": team,
+        "trash_path": destination.relative_to(TRASH_DIR.parent).as_posix(),
+        "deleted_files": deleted_files,
+        "deleted_type": "directory",
+        "removed": True,
     }

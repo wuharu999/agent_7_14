@@ -2,7 +2,7 @@
 
 - Added SQLite users and login sessions.
 - Added salted `scrypt` password storage.
-- Added viewer/editor/admin roles.
+- Added editor/admin roles and removed the obsolete viewer role.
 - Added HttpOnly session cookie and CSRF protection.
 - Added basic failed-login throttling.
 - Protected upload, upload history/status and source management.
@@ -26,3 +26,42 @@
 - Added answer-language selection for Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
 - Added read-only Claude tool pre-approval (`Read`, `Glob`, `Grep`) and stricter service prompts so Claude reads the wiki silently instead of asking the website user for permission.
 - Removed public-web-search instructions from the bundled `CLAUDE.md`; QA is now explicitly based on the local project files.
+
+## Robot management and source-tree reconciliation
+
+- A successful **Refresh source tree** now makes the top-level Worker `raw/sources/` folders authoritative for the robot list and every robot selector.
+- Stale robot metadata from `ALLOWED_TEAMS`, old user records, or upload history is removed after that first successful reconciliation and is not re-created on ECS restart.
+- Added an administrator-only **Remove robot** action. The Worker first moves the complete robot source folder into `.agent1-trash`; only then does ECS remove the robot metadata and editor assignments.
+- Robot removal is blocked while one of that robot's sources is actively ingesting.
+- Worker startup creates only the shared `raw/sources/` root and no longer recreates a deleted configured robot folder.
+
+## Account settings menu
+
+- Added one shared ChatGPT-style account control with a circular initial avatar and username across the QA, WeCom QA, source manager, upload, upload-status, and administrator pages.
+- Moved source management, upload, knowledge-base export, and sign-out actions into the shared account settings menu on every application route.
+- The user-management link appears only when `/api/me` identifies the signed-in user as an administrator.
+- Removed standalone user-management links from the source manager and upload pages, and removed the standalone wiki-export buttons from the chat area.
+
+## Worker validation logging
+
+- Invalid robot or source paths are now returned as normal file-manager validation failures instead of being logged as internal Worker ERROR tracebacks.
+- Added regression coverage for traversal-style and invalid-team source paths.
+
+## Upload monitor team propagation
+
+- Fixed normal uploads failing after publication with `monitor_source() missing 1 required keyword-only argument: 'team'`.
+- The Worker now passes the selected robot team to LLM Wiki monitoring, optional rescans, and authored-wiki monitoring.
+- Existing source files from an affected upload remain in place and can be reconciled after restarting the corrected Worker.
+
+## Upload status and account rendering fixes
+
+- The upload page now renders the signed-in role instead of exposing the `__ROLE__` template placeholder.
+- The global LLM Wiki panel reads a shared queue file only once, even when several robots use the same LLM Wiki project.
+- The Worker resends the latest global snapshot after reconnecting, so an ECS restart does not leave the global panel empty while the queue is unchanged.
+- Current-upload monitoring now matches both team-prefixed shared-project paths and legacy paths.
+- Exhausted LLM Wiki retries are reported as failed; active retries remain retrying.
+- Status monitoring now follows the upstream LLM Wiki queue schema, where `maxRetries` is absent and the retry limit is fixed at three.
+- Upload support now uses upstream-compatible `.mdx` instead of unsupported `.markdown`.
+- Worker publishing now relies exclusively on LLM Wiki Source Watch and contains no `/sources/rescan` call, preventing duplicate ingestion even if an old environment setting is incorrect.
+- The Worker machine check loads `.env` through the Python configuration parser, so values containing spaces such as `CLAUDE_EXTRA_ARGS=--model haiku` no longer break the script.
+- Protected HTML routes, including `/admin/users`, redirect signed-out users to the login page instead of displaying an API-style JSON error.

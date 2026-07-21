@@ -2,14 +2,10 @@
 
 See [FINAL_SETUP.md](FINAL_SETUP.md), sections **ECS upgrade** and **Security warning before deployment**.
 
-The required new step is creating at least one login account:
-
-```bash
-source .venv-ecs/bin/activate
-python3 scripts/create_user.py --username admin --role admin
-```
-
-The database migration is automatic at application startup.
+The database migration is automatic at application startup. A fresh database
+also receives the default `admin` account. Set `DEFAULT_ADMIN_PASSWORD` before
+the first startup, or use `Admin#2026!Secured89` once and change it immediately
+at `/admin/users`.
 
 Keep the ECS authoring timeout longer than the Worker Claude timeout:
 

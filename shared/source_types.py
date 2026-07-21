@@ -5,7 +5,7 @@ from pathlib import PurePath
 DOCUMENT_SOURCE_SUFFIXES = (".pdf", ".docx", ".pptx", ".xlsx")
 TEXT_SOURCE_SUFFIXES = (
     ".md",
-    ".markdown",
+    ".mdx",
     ".txt",
     ".csv",
     ".json",

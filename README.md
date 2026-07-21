@@ -7,7 +7,7 @@ Agent1 is a public ECS gateway plus a private Worker for a robot-documentation k
 - Public question page and WeCom callback.
 - Authenticated multi-file upload page with per-file pipeline status.
 - Authenticated source-tree manager.
-- Viewer, editor and admin roles.
+- Editor and admin roles.
 - Soft deletion into `.agent1-trash/` rather than permanent erasure.
 - CSRF-protected file-changing requests.
 - SQLite users, sessions, uploads, source status and audit logs.
@@ -35,9 +35,8 @@ Agent1 is a public ECS gateway plus a private Worker for a robot-documentation k
 
 ## Roles
 
-- `viewer`: inspect source folders and files
 - `editor`: inspect, upload and remove sources
-- `admin`: same file permissions as editor; intended for system administrators
+- `admin`: editor permissions plus account administration at `/admin/users`
 
 ## Upload batches
 
@@ -52,11 +51,15 @@ are Markdown, TXT, CSV, JSON, HTML, XML, and YAML. ZIP archives may contain
 supported sources and should be used when related files need to remain one
 source bundle.
 
-Users are created from the ECS command line:
+On the first startup of a fresh database, the ECS seeds an `admin` account. Its
+password comes from `DEFAULT_ADMIN_PASSWORD`, or defaults to
+`Admin#2026!Secured89`. Change it immediately at `/admin/users`.
+
+Create additional accounts from the ECS command line when needed:
 
 ```bash
 source .venv-ecs/bin/activate
-python3 scripts/create_user.py --username admin --role admin
+python3 scripts/create_user.py --username uploader --role editor
 ```
 
 ## Important safety behavior
@@ -72,12 +75,12 @@ The Worker rejects absolute paths, `..` traversal, symlinks, removal of the `raw
 
 ## LLM Wiki
 
-With the multi-LLM team architecture, each team has its own isolated LLM Wiki project directory. For example, `agent1/<team_name>`.
-Keep LLM Wiki open on the exact project directory configured for the team in `worker/teams.json` with Source Watch and Auto Ingest enabled.
+All robots use the single live LLM Wiki project configured by `BASE_DIR` (normally `agent1/agent`). Their source files remain separated under `raw/sources/<robot>/`.
+Keep LLM Wiki open on that exact project directory with Source Watch and Auto Ingest enabled.
 
-`LLM_WIKI_RESCAN_AFTER_PUBLISH=false` is the default. This avoids triggering ingestion twice through both Source Watch and `/sources/rescan`.
+The Worker does not call `/sources/rescan`; Source Watch is the only ingestion trigger. Keep the legacy `LLM_WIKI_RESCAN_AFTER_PUBLISH=false` setting during upgrades for configuration consistency.
 
-The local LLM Wiki API token is optional for this version. Queue/cache monitoring and Auto Ingest do not require it.
+The local LLM Wiki API token is not required for queue/cache monitoring or Auto Ingest.
 
 ## Deployment
 

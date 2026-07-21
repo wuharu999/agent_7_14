@@ -4,6 +4,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Uchat Knowledge Base</title>
 <link rel="stylesheet" href="/petdex/styles.css">
+<link rel="stylesheet" href="/static/account_menu.css">
+<script src="/static/account_menu.js" defer></script>
 <style>
 body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#f5f7fb;color:#172033;display:flex;min-height:100vh;overflow-x:hidden}
 .layout{display:flex;width:100%;justify-content:center;align-items:center;min-height:100vh;}
@@ -53,7 +55,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 <body>
 <div class="layout">
 <div class="chat-section">
-  <div class="header-row">
+  <div class="header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
     <div style="display: flex; align-items: center; gap: 14px;">
       <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 2;"></div>
       <div class="header-titles">
@@ -61,7 +63,13 @@ button:disabled{opacity:.55;cursor:not-allowed}
         <p data-i18n="subtitle">Ask questions against the local wiki.</p>
       </div>
     </div>
-    <span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+      <span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span>
+      <div class="nav-links" id="nav-links-container" style="font-size: 13px; display: flex; align-items: center; gap: 12px; margin-top: 4px;">
+        <a href="/wecom-ask" data-i18n="wecomLink" style="color: #2563eb; text-decoration: none; font-weight: 500;">WeCom Version</a>
+        <div data-account-menu></div>
+      </div>
+    </div>
   </div>
 
   <div class="chat-card">
@@ -92,26 +100,13 @@ button:disabled{opacity:.55;cursor:not-allowed}
         <textarea id="question" placeholder="Enter a question" style="flex: 1; min-height: 40px; height: 40px; max-height: 80px; padding: 8px 12px; margin: 0; border-radius: 8px; box-sizing: border-box; resize: none;"></textarea>
         <button id="ask" data-i18n="askBtn" style="padding: 8px 16px; height: 40px; border-radius: 8px; margin: 0;">Ask</button>
       </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
         <button id="newConversation" class="secondary" type="button" data-i18n="newConvBtn" style="padding: 6px 12px; font-size: 13px; border-radius: 8px; margin: 0;">New conversation</button>
-        <button id="exportWiki" class="secondary" type="button" style="padding: 6px 12px; font-size: 13px; border-radius: 8px; margin: 0; display: flex; align-items: center; gap: 6px;" data-i18n-title="exportWikiTitle">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          <span data-i18n="exportWikiTitle">Export to my AI</span>
-        </button>
       </div>
     </div>
   </div>
 
-  <div class="footer-links">
-    <a href="/login" data-i18n="signIn">Sign in</a> · 
-    <a href="/manage" data-i18n="manageSources">Manage sources</a> · 
-    <a href="/upload" data-i18n="uploadDocs">Upload documentation</a> · 
-    <a href="/wecom-ask" data-i18n="wecomLink">WeCom Version</a>
-  </div>
+  <!-- Links moved to the top bar -->
 </div>
 </div>
 
@@ -294,14 +289,14 @@ async function submitQuestion(){
   if(askButton.disabled)return;
   const q=question.value.trim();
   if(!q)return;
-  
+
   setCompanionMode('charging');
   askButton.disabled=true;
   newConversationButton.disabled=true;
   question.value='';
-  
+
   addMessage('user', q);
-  
+
   const loadingBubble = document.createElement('div');
   loadingBubble.className = 'bubble bot typing-indicator';
   loadingBubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
@@ -321,7 +316,7 @@ async function submitQuestion(){
         conversation_id:getConversationId()
       })
     });
-    
+
     if(!r.ok) {
       const d=await r.json();
       if(loadingBubble && loadingBubble.parentNode) {
@@ -330,18 +325,18 @@ async function submitQuestion(){
       addMessage('bot', d.error || 'Request failed');
       return;
     }
-    
+
     if(loadingBubble && loadingBubble.parentNode) {
       loadingBubble.remove();
     }
-    
+
     const botBubble = addMessage('bot', '');
     const reader = r.body.getReader();
     const decoder = new TextDecoder();
     let done = false;
     let buffer = "";
     let accumulatedText = "";
-    
+
     while(!done) {
       const { value, done: readerDone } = await reader.read();
       done = readerDone;
@@ -349,25 +344,25 @@ async function submitQuestion(){
         buffer += decoder.decode(value, { stream: !done });
         const lines = buffer.split("\n");
         buffer = lines.pop();
-        
+
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
-            
+
             if (event.status === "metadata") {
               if(event.conversation_id) {
                 localStorage.setItem(conversationKey, event.conversation_id);
               }
               continue;
             }
-            
+
             if (event.status === "error") {
               botBubble.textContent = event.error;
               accumulatedText = event.error;
               break;
             }
-            
+
             if (event.thinking) {
               setCompanionMode('thinking');
               if (!thinkingDiv) {
@@ -394,7 +389,7 @@ async function submitQuestion(){
               thinkingDiv.textContent = text;
               thinkingDiv.style.display = text.trim() ? 'block' : 'none';
             }
-            
+
             if (event.thinking_tokens && !event.thinking && !event.text && !thinkingDiv?.dataset.raw) {
               setCompanionMode('thinking');
               if (!thinkingDiv) {
@@ -413,7 +408,7 @@ async function submitQuestion(){
               const labelText = isZh ? '思考中' : 'Thinking';
               thinkingDiv.innerHTML = `${labelText} <span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>`;
             }
-            
+
             if (event.text) {
               setCompanionMode('charging');
               let textContainer = botBubble.querySelector('.text-content');
@@ -432,7 +427,7 @@ async function submitQuestion(){
         }
       }
     }
-    
+
     if (currentChat.length > 0 && currentChat[currentChat.length - 1].role === 'bot') {
       currentChat[currentChat.length - 1].content = accumulatedText || 'No response';
       saveHistory();
@@ -461,46 +456,6 @@ newConversationButton.onclick=()=>{
   addMessage('system', t.newConvStarted);
   question.focus()
 };
-
-const exportWikiButton = document.getElementById('exportWiki');
-async function exportWiki() {
-  if (!exportWikiButton) return;
-  exportWikiButton.disabled = true;
-  exportWikiButton.style.opacity = '0.5';
-  try {
-    const meRes = await fetch('/api/me');
-    const meData = await meRes.json().catch(() => ({}));
-    if (!meData.logged_in || (meData.role !== 'editor' && meData.role !== 'admin')) {
-      alert(tr('exportDenied'));
-      return;
-    }
-    const response = await fetch('/api/export/wiki');
-    if (!response.ok) {
-      let errMsg = (response.status === 401 || response.status === 403) ? tr('exportDenied') : 'Export failed';
-      try {
-        const errData = await response.json();
-        errMsg = errData.error || errMsg;
-      } catch(_) {}
-      alert(errMsg);
-      return;
-    }
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'wiki_export.zip';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-  } catch (e) {
-    alert('Export failed: ' + e);
-  } finally {
-    exportWikiButton.disabled = false;
-    exportWikiButton.style.opacity = '1';
-  }
-}
-exportWikiButton.onclick = exportWiki;
 
 // Init
 translateUI();

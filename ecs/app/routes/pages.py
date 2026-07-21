@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ecs.app.auth import current_session, safe_next_url
-from ecs.app.config import ALLOWED_TEAMS
+from ecs.app.database import get_allowed_teams
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, UPLOAD_ACCEPT
 
 router = APIRouter()
@@ -31,14 +31,14 @@ def _login_redirect(next_url: str) -> RedirectResponse:
 @router.get("/", response_class=HTMLResponse)
 async def ask_page():
     page = _template("ask.html")
-    page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
+    page = page.replace("__ALLOWED_TEAMS__", json.dumps(get_allowed_teams(), ensure_ascii=False))
     return HTMLResponse(page)
 
 
 @router.get("/wecom-ask", response_class=HTMLResponse)
 async def wecom_ask_page():
     page = _template("wecom_ask.html")
-    page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
+    page = page.replace("__ALLOWED_TEAMS__", json.dumps(get_allowed_teams(), ensure_ascii=False))
     return HTMLResponse(page)
 
 
@@ -65,7 +65,7 @@ async def upload_page(request: Request):
     if session["role"] not in {"editor", "admin"}:
         return HTMLResponse("Upload permission required", status_code=403)
     page = _template("upload.html")
-    page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
+    page = page.replace("__ALLOWED_TEAMS__", json.dumps(get_allowed_teams(), ensure_ascii=False))
     page = page.replace("__UPLOAD_ACCEPT__", html.escape(UPLOAD_ACCEPT, quote=True))
     page = page.replace(
         "__SUPPORTED_UPLOAD_SUFFIXES__",
@@ -73,6 +73,7 @@ async def upload_page(request: Request):
     )
     page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
     page = page.replace("__USERNAME__", html.escape(str(session["username"])))
+    page = page.replace("__ROLE__", html.escape(str(session["role"])))
     return HTMLResponse(page)
 
 

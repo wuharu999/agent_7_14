@@ -21,7 +21,6 @@ from worker.config import (
     AUTHORING_WORKERS,
     DOWNLOAD_WORKERS,
     FILE_OPERATION_WORKERS,
-    LLM_WIKI_RESCAN_AFTER_PUBLISH,
     QA_WORKERS,
     STAGING_DIR,
     ensure_directories,
@@ -36,10 +35,11 @@ from worker.file_manager import (
     FileManagerError,
     SourceBusyError,
     list_source_tree,
+    soft_delete_robot,
     soft_delete_source,
 )
 from worker.knowledge import has_wiki_content, log_unanswered
-from worker.llm_wiki_monitor import monitor_source, request_rescan, monitor_global_queue
+from worker.llm_wiki_monitor import monitor_source, monitor_global_queue
 from worker.models import DownloadJob, FileOperationJob, QuestionJob
 from worker.publisher import (
     collect_supported_sources,
@@ -50,6 +50,7 @@ from worker.publisher import (
 )
 from worker.prompt_security import guard_user_input, refusal_text, scan_text_sources
 from worker.zip_extractor import extract_zip_safely
+from shared.team_names import normalize_team_name
 
 log = logging.getLogger("worker.manager")
 
@@ -75,13 +76,20 @@ class WorkerManager:
         self.active_command_ids: set[str] = set()
         self.active_authoring_ids: set[str] = set()
         self.monitor_tasks: set[asyncio.Task[None]] = set()
+        self.wiki_snapshot_refresh = asyncio.Event()
 
     async def run(self) -> None:
         ensure_directories()
         tasks: list[asyncio.Task[Any]] = [
             asyncio.create_task(self.sender_loop(), name="sender"),
             asyncio.create_task(self.connection_loop(), name="connection"),
-            asyncio.create_task(monitor_global_queue(self.emit), name="monitor_global_queue"),
+            asyncio.create_task(
+                monitor_global_queue(
+                    self.emit,
+                    refresh_event=self.wiki_snapshot_refresh,
+                ),
+                name="monitor_global_queue",
+            ),
         ]
         tasks.extend(
             asyncio.create_task(
@@ -147,6 +155,7 @@ class WorkerManager:
                 ) as websocket:
                     self.websocket = websocket
                     self.connected.set()
+                    self.wiki_snapshot_refresh.set()
                     retry = 3.0
                     log.info("Worker connected")
                     asyncio.create_task(self.send_existing_uploads_sync())
@@ -165,9 +174,9 @@ class WorkerManager:
 
     async def send_existing_uploads_sync(self) -> None:
         import os
-        from worker.config import ALLOWED_TEAMS, get_team_config
+        from worker.config import get_allowed_teams, get_team_config
         existing_uploads = []
-        for team in ALLOWED_TEAMS:
+        for team in get_allowed_teams():
             tc = get_team_config(team)
             if tc.raw_sources_dir.exists():
                 try:
@@ -226,7 +235,7 @@ class WorkerManager:
             )
             return
 
-        if message_type in {"list_sources", "delete_source"}:
+        if message_type in {"list_sources", "delete_source", "delete_robot_folder"}:
             command_id = str(data.get("id") or "")
             if not command_id or command_id in self.active_command_ids:
                 return
@@ -258,6 +267,36 @@ class WorkerManager:
                     }
                 )
                 
+        if message_type == "create_robot_folder":
+            command_id = str(data.get("id") or "")
+            try:
+                team = normalize_team_name(
+                    str(data.get("team") or ""), allow_reserved=False
+                )
+                from worker.config import get_team_config
+                tc = get_team_config(team)
+                await asyncio.to_thread(
+                    tc.raw_sources_dir.mkdir, parents=True, exist_ok=True
+                )
+                log.info("Created raw sources directory for robot/team %s", team)
+                if command_id:
+                    await self.emit({
+                        "type": "create_robot_folder_result",
+                        "id": command_id,
+                        "status": "ok",
+                        "team": team,
+                    })
+            except (OSError, ValueError) as exc:
+                log.warning("Unable to create robot/team source directory: %s", exc)
+                if command_id:
+                    await self.emit({
+                        "type": "create_robot_folder_result",
+                        "id": command_id,
+                        "status": "failed",
+                        "error": str(exc),
+                    })
+            return
+
         if message_type == "trigger_review":
             task_id = str(data.get("id") or "")
             team = str(data.get("team") or "")
@@ -472,11 +511,12 @@ class WorkerManager:
                 result = {"markdown": await generate_authoring_article(session_id)}
             elif message_type == "authoring_publish":
                 article_id = str(data.get("article_id") or "")
+                team = str(data.get("team") or "")
                 published_at_ms = int(time.time() * 1000)
                 source_path = await asyncio.to_thread(
                     publish_authoring_article,
                     article_id,
-                    str(data.get("team") or ""),
+                    team,
                     str(data.get("title") or "article"),
                     str(data.get("markdown") or ""),
                 )
@@ -493,6 +533,7 @@ class WorkerManager:
 
                 task = asyncio.create_task(
                     monitor_source(
+                        team=team,
                         upload_id=article_id,
                         source_identity=source_path,
                         published_at_ms=published_at_ms,
@@ -542,24 +583,30 @@ class WorkerManager:
                             **result,
                         }
                     )
+                elif job.operation == "delete_robot_folder":
+                    team = str(job.payload.get("team") or "")
+                    result = await asyncio.to_thread(soft_delete_robot, team)
+                    await self.emit(
+                        {
+                            "type": "delete_robot_folder_result",
+                            "id": job.command_id,
+                            "status": "ok",
+                            **result,
+                        }
+                    )
             except SourceBusyError as exc:
                 await self.emit(
                     {
-                        "type": "delete_source_result",
+                        "type": self._file_operation_result_type(job.operation),
                         "id": job.command_id,
                         "status": "busy",
                         "error": str(exc),
                     }
                 )
             except FileManagerError as exc:
-                result_type = (
-                    "source_tree_result"
-                    if job.operation == "list_sources"
-                    else "delete_source_result"
-                )
                 await self.emit(
                     {
-                        "type": result_type,
+                        "type": self._file_operation_result_type(job.operation),
                         "id": job.command_id,
                         "status": "failed",
                         "error": str(exc),
@@ -567,14 +614,9 @@ class WorkerManager:
                 )
             except Exception as exc:
                 log.exception("File operation failed")
-                result_type = (
-                    "source_tree_result"
-                    if job.operation == "list_sources"
-                    else "delete_source_result"
-                )
                 await self.emit(
                     {
-                        "type": result_type,
+                        "type": self._file_operation_result_type(job.operation),
                         "id": job.command_id,
                         "status": "failed",
                         "error": f"Worker file operation failed: {exc}",
@@ -583,6 +625,14 @@ class WorkerManager:
             finally:
                 self.active_command_ids.discard(job.command_id)
                 self.file_operation_queue.task_done()
+
+    @staticmethod
+    def _file_operation_result_type(operation: str) -> str:
+        return {
+            "list_sources": "source_tree_result",
+            "delete_source": "delete_source_result",
+            "delete_robot_folder": "delete_robot_folder_result",
+        }.get(operation, "delete_source_result")
 
     async def download_worker(self, worker_number: int) -> None:
         while True:
@@ -645,7 +695,12 @@ class WorkerManager:
                     final_directory,
                     f"{safe_team}/{safe_upload_id}",
                 )
-                await self.publish_and_monitor(job.upload_id, identities, published_at_ms)
+                await self.publish_and_monitor(
+                    upload_id=job.upload_id,
+                    team=job.team,
+                    identities=identities,
+                    published_at_ms=published_at_ms,
+                )
                 return
 
         job_root = STAGING_DIR / job.upload_id
@@ -727,7 +782,12 @@ class WorkerManager:
             job.upload_id,
         )
         published_at_ms = int(time.time() * 1000)
-        await self.publish_and_monitor(job.upload_id, identities, published_at_ms)
+        await self.publish_and_monitor(
+            upload_id=job.upload_id,
+            team=job.team,
+            identities=identities,
+            published_at_ms=published_at_ms,
+        )
         await asyncio.to_thread(shutil.rmtree, job_root, True)
 
     async def scan_and_report_sources(
@@ -756,7 +816,9 @@ class WorkerManager:
 
     async def publish_and_monitor(
         self,
+        *,
         upload_id: str,
+        team: str,
         identities: list[str],
         published_at_ms: int,
     ) -> None:
@@ -768,13 +830,12 @@ class WorkerManager:
                 "published_at_ms": published_at_ms,
             }
         )
-        # Source Watch + Auto Ingest is the normal trigger. Rescan is disabled by
-        # default because invoking both can make the same source appear twice.
-        if LLM_WIKI_RESCAN_AFTER_PUBLISH:
-            await request_rescan()
+        # Source Watch + Auto Ingest is the only ingestion trigger. Calling the
+        # rescan API here would enqueue the same newly published source twice.
         for identity in identities:
             task = asyncio.create_task(
                 monitor_source(
+                    team=team,
                     upload_id=upload_id,
                     source_identity=identity,
                     published_at_ms=published_at_ms,

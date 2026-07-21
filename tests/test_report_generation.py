@@ -26,6 +26,7 @@ def test_generate_report_with_mock_auth(monkeypatch):
     
     # Insert dummy QA visitor and audit log records to verify analysis
     with _DB_LOCK, _connect() as conn:
+        conn.execute("INSERT OR IGNORE INTO users (id, username, password_hash, password_salt, role, created_at, updated_at) VALUES (1, 'admin', 'hash', 'salt', 'admin', '2026-07-20T12:00:00', '2026-07-20T12:00:00')")
         conn.execute("DELETE FROM qa_visitors")
         conn.execute("DELETE FROM file_audit_log")
         conn.execute(

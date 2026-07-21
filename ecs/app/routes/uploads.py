@@ -11,8 +11,8 @@ from fastapi import APIRouter, File, Form, Header, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from ecs.app.auth import require_roles, verify_csrf, check_robot_access
-from ecs.app.config import ALLOWED_TEAMS, PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET, TEAM_MAX_UPLOAD_BYTES
-from ecs.app.database import create_upload, get_upload, update_upload, write_audit, get_team_upload_usage
+from ecs.app.config import PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET, TEAM_MAX_UPLOAD_BYTES
+from ecs.app.database import get_allowed_teams, create_upload, get_upload, update_upload, write_audit, get_team_upload_usage
 from ecs.app.gateway import gateway
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, is_supported_upload
 
@@ -96,9 +96,10 @@ async def upload_file(
     session = require_roles(request, {"editor", "admin"})
     verify_csrf(session, csrf_token)
 
-    if team not in ALLOWED_TEAMS:
+    allowed_teams_list = get_allowed_teams()
+    if team not in allowed_teams_list:
         return JSONResponse(
-            {"error": f"Team must be one of {', '.join(ALLOWED_TEAMS)}"}, status_code=400
+            {"error": f"Team must be one of {', '.join(allowed_teams_list)}"}, status_code=400
         )
     if not check_robot_access(session, team):
         return JSONResponse(

@@ -48,7 +48,12 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
             elif message_type == "qa_stream_chunk":
                 gateway.resolve_stream_chunk(str(data.get("id") or ""), data)
 
-            elif message_type in {"source_tree_result", "delete_source_result"}:
+            elif message_type in {
+                "source_tree_result",
+                "delete_source_result",
+                "create_robot_folder_result",
+                "delete_robot_folder_result",
+            }:
                 gateway.resolve_command(str(data.get("id") or ""), data)
 
             elif message_type == "authoring_result":
@@ -68,13 +73,19 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 team = str(data.get("team") or "")
                 details = str(data.get("details") or "")
                 if team and details:
-                    from ecs.app.database import get_team_captains
+                    from ecs.app.database import add_wiki_contradiction, _connect, _DB_LOCK
                     from ecs.app.mock_email import MockEmailLogger
-                    captains = get_team_captains(team)
-                    for captain in captains:
-                        if captain.get("email"):
+
+                    # Store contradiction in database
+                    add_wiki_contradiction(team, details)
+
+                    # Query all admins since team captains do not exist now
+                    with _DB_LOCK, _connect() as connection:
+                        admins = connection.execute("SELECT email FROM users WHERE role = 'admin'").fetchall()
+                    for admin in admins:
+                        if admin.get("email"):
                             MockEmailLogger.send_contradiction_alert(
-                                to_email=captain["email"],
+                                to_email=admin["email"],
                                 team_name=team,
                                 contradiction_details=details
                             )

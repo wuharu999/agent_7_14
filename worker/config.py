@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from dotenv import load_dotenv
 
 from shared.source_types import SUPPORTED_SOURCE_SUFFIXES
+from shared.team_names import normalize_team_name
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / "worker" / ".env")
@@ -22,7 +23,30 @@ ALLOWED_TEAMS = tuple(
     ).split(",")
     if team.strip()
 )
+
+
+def get_allowed_teams() -> list[str]:
+    teams = list(ALLOWED_TEAMS)
+    raw_sources = WORKER_ROOT_DIR / "raw" / "sources"
+    if raw_sources.is_dir():
+        for item in raw_sources.iterdir():
+            if item.is_dir() and not item.name.startswith("."):
+                if item.name not in teams:
+                    teams.append(item.name)
+    return sorted(teams)
 WORKER_ROOT_DIR = Path(os.environ.get("BASE_DIR", str(PROJECT_ROOT / "agent1"))).expanduser().resolve()
+LLM_WIKI_QUEUE_FILE = Path(
+    os.environ.get(
+        "LLM_WIKI_QUEUE_FILE",
+        str(WORKER_ROOT_DIR / ".llm-wiki" / "ingest-queue.json"),
+    )
+).expanduser().resolve()
+LLM_WIKI_CACHE_FILE = Path(
+    os.environ.get(
+        "LLM_WIKI_CACHE_FILE",
+        str(WORKER_ROOT_DIR / ".llm-wiki" / "ingest-cache.json"),
+    )
+).expanduser().resolve()
 STAGING_DIR = Path(
     os.environ.get("STAGING_DIR", str(WORKER_ROOT_DIR / ".agent1-worker" / "staging"))
 ).expanduser().resolve()
@@ -44,6 +68,7 @@ class TeamConfig:
     llm_wiki_api_url: str
 
 def get_team_config(team: str) -> TeamConfig:
+    team = normalize_team_name(team)
     teams_json_path = PROJECT_ROOT / "worker" / "teams.json"
     port = 19828 # default fallback
     if teams_json_path.is_file():
@@ -59,8 +84,8 @@ def get_team_config(team: str) -> TeamConfig:
         base_dir=WORKER_ROOT_DIR,
         raw_sources_dir=WORKER_ROOT_DIR / "raw" / "sources" / team,
         wiki_dir=WORKER_ROOT_DIR / "wiki",
-        llm_wiki_queue_file=WORKER_ROOT_DIR / ".llm-wiki" / "ingest-queue.json",
-        llm_wiki_cache_file=WORKER_ROOT_DIR / ".llm-wiki" / "ingest-cache.json",
+        llm_wiki_queue_file=LLM_WIKI_QUEUE_FILE,
+        llm_wiki_cache_file=LLM_WIKI_CACHE_FILE,
         llm_wiki_api_url=f"http://127.0.0.1:{port}/api/v1"
     )
 
@@ -134,9 +159,7 @@ def ensure_directories() -> None:
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
     AUTHORING_DIR.mkdir(parents=True, exist_ok=True)
-    
-    for team in ALLOWED_TEAMS:
-        tc = get_team_config(team)
-        tc.raw_sources_dir.mkdir(parents=True, exist_ok=True)
-        tc.wiki_dir.mkdir(parents=True, exist_ok=True)
-        tc.llm_wiki_queue_file.parent.mkdir(parents=True, exist_ok=True)
+    (WORKER_ROOT_DIR / "raw" / "sources").mkdir(parents=True, exist_ok=True)
+    (WORKER_ROOT_DIR / "wiki").mkdir(parents=True, exist_ok=True)
+    LLM_WIKI_QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LLM_WIKI_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)

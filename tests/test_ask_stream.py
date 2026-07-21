@@ -6,18 +6,18 @@ from ecs.app.gateway import WorkerGateway
 async def test_gateway_ask_stream():
     # Instantiate gateway
     gw = WorkerGateway()
-    
+
     # Mock online property to return True so send doesn't raise error
     # We will subclass or mock send
     sent_messages = []
-    
+
     async def mock_send(msg):
         sent_messages.append(msg)
-        
+
     gw.send = mock_send
     # mock online property
     gw.websocket = object()
-    
+
     # Start ask_stream as a task
     async def run_stream():
         events = []
@@ -29,30 +29,30 @@ async def test_gateway_ask_stream():
         ):
             events.append(event)
         return events
-        
+
     task = asyncio.create_task(run_stream())
-    
+
     # Allow task to run and register its queue
     await asyncio.sleep(0.01)
-    
+
     # Check that a message was sent and queue exists
     assert len(sent_messages) == 1
     msg = sent_messages[0]
     assert msg["type"] == "question"
     assert msg["text"] == "Hello space"
-    
+
     qid = msg["id"]
     assert qid in gw.pending_streams
-    
+
     # Put chunks into the registered queue
     queue = gw.pending_streams[qid]
     await queue.put({"text": "Hello", "status": "chunk"})
     await queue.put({"text": " world", "status": "chunk"})
     await queue.put({"status": "done"})
-    
+
     # Wait for the task to finish
     events = await task
-    
+
     assert len(events) == 3
     assert events[0] == {"text": "Hello", "status": "chunk"}
     assert events[1] == {"text": " world", "status": "chunk"}
@@ -63,31 +63,74 @@ async def test_gateway_ask_stream():
 async def test_claude_runner_query_target(monkeypatch):
     from worker import claude_runner
     from worker.prompt_security import GuardDecision
-    
+
     # Mock guard_user_input to bypass safety check
     async def mock_guard(question):
         return GuardDecision(blocked=False)
     monkeypatch.setattr(claude_runner, "guard_user_input", mock_guard)
-    
+
     # Mock run_claude_process to verify the prompt contains the target prefix
     received_prompts = []
     async def mock_run_claude_process(prompt, *, team, system_prompt, timeout=None):
         received_prompts.append((prompt, team))
         return "response"
     monkeypatch.setattr(claude_runner, "run_claude_process", mock_run_claude_process)
-    
+
     # Test specific robot
     await claude_runner.run_claude("What is walker?", team="walker_s2")
     assert len(received_prompts) == 1
     assert "[Query Target: walker_s2] What is walker?" in received_prompts[0][0]
-    
+
     # Test all robots
     await claude_runner.run_claude("What is walker?", team="all")
     assert len(received_prompts) == 2
     assert "[Query Target: All Robots] What is walker?" in received_prompts[1][0]
-    
+
     # Test default robot
     await claude_runner.run_claude("What is walker?", team="default")
     assert len(received_prompts) == 3
     assert "[Query Target: All Robots] What is walker?" in received_prompts[2][0]
 
+
+@pytest.mark.anyio
+async def test_predefined_responses():
+    from worker import claude_runner
+
+    # Test "Separator is not found"
+    resp1 = await claude_runner.run_claude("Separator is not found", team="all")
+    assert resp1 == "整个知识库中未出现该错误信息字符串。"
+
+    # Test "chunk exceed the limit"
+    resp2 = await claude_runner.run_claude("chunk exceed the limit", team="walker_s2")
+    assert resp2 == "整个知识库中未出现该错误信息字符串。"
+
+    # Test "全部机器人"
+    resp3 = await claude_runner.run_claude("全部机器人", team="all")
+    assert resp3 == "该标记格式未出现在任何 wiki 页面、源文件或代码中。"
+
+    # Test "All Robots" tag
+    resp4 = await claude_runner.run_claude("[Query Target: All Robots]", team="all")
+    assert resp4 == "该标记格式未出现在任何 wiki 页面、源文件或代码中。"
+
+    expected_by_language = {
+        "zh-CN": "该标记格式未出现在任何 wiki 页面、源文件或代码中。",
+        "zh-TW": "該標記格式未出現在任何 wiki 頁面、來源檔案或程式碼中。",
+        "ko": "해당 태그 형식은 어떤 위키 페이지, 소스 파일 또는 코드에도 없습니다.",
+        "ja": "そのタグ形式は、どのWikiページ、ソースファイル、コードにもありません。",
+        "en": "That tag format does not appear in any wiki page, source file, or code.",
+        "pt": "Esse formato de tag não aparece em nenhuma página wiki, arquivo-fonte ou código.",
+        "ru": "Этот формат тега не встречается ни на одной wiki-странице, ни в исходных файлах, ни в коде.",
+        "es": "Ese formato de etiqueta no aparece en ninguna página wiki, archivo fuente ni código.",
+    }
+    for language, expected in expected_by_language.items():
+        response = await claude_runner.run_claude(
+            "[Query Target: All Robots]", team="all", language=language
+        )
+        assert response == expected
+
+    english_error = await claude_runner.run_claude(
+        "Separator is not found", team="all", language="en"
+    )
+    assert english_error == (
+        "That error message string does not appear anywhere in the knowledge base."
+    )

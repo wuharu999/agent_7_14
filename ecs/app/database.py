@@ -8,9 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ecs.app.config import DATABASE_PATH
+from shared.team_names import normalize_team_name
+
+from ecs.app.config import ALLOWED_TEAMS, DATABASE_PATH
 
 _DB_LOCK = threading.RLock()
+_ROBOTS_SOURCE_TREE_SYNCED_KEY = "robots_source_tree_synced"
 
 
 def utc_now() -> str:
@@ -182,38 +185,6 @@ def initialize_database() -> None:
                 visited_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS wiki_metrics (
-                date TEXT PRIMARY KEY,
-                new_entries INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS team_settings (
-                team_name TEXT PRIMARY KEY,
-                auto_review_enabled INTEGER NOT NULL DEFAULT 0,
-                last_review_at TEXT,
-                prev_review_at TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS team_members (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                team_name TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('member', 'captain')),
-                joined_at TEXT NOT NULL,
-                UNIQUE(team_name, user_id),
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS team_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                team_name TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                status TEXT NOT NULL CHECK(status IN ('pending', 'approved', 'denied')),
-                requested_at TEXT NOT NULL,
-                UNIQUE(team_name, user_id),
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-
             CREATE TABLE IF NOT EXISTS robots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
@@ -231,25 +202,44 @@ def initialize_database() -> None:
                 FOREIGN KEY(robot_id) REFERENCES robots(id) ON DELETE CASCADE,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS wiki_contradictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                team TEXT NOT NULL,
+                details TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
 
-        # Migrate existing teams to robots
-        teams_to_migrate = set()
-        for row in connection.execute("SELECT teams FROM users").fetchall():
-            for t in row["teams"].split(","):
-                if t.strip():
-                    teams_to_migrate.add(t.strip())
-        for row in connection.execute("SELECT DISTINCT team FROM uploads").fetchall():
-            if row["team"].strip():
-                teams_to_migrate.add(row["team"].strip())
-        
         now = utc_now()
-        for t in teams_to_migrate:
-            connection.execute(
-                "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
-                (t, f"Legacy team {t}", t, now)
-            )
+        source_tree_synced = connection.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_ROBOTS_SOURCE_TREE_SYNCED_KEY,),
+        ).fetchone()
+        if source_tree_synced is None or source_tree_synced["value"] != "1":
+            # Preserve legacy robot metadata only until the first successful
+            # Worker source-tree refresh establishes the authoritative folders.
+            teams_to_migrate = set(ALLOWED_TEAMS)
+            for row in connection.execute("SELECT teams FROM users").fetchall():
+                for t in row["teams"].split(","):
+                    if t.strip():
+                        teams_to_migrate.add(t.strip())
+            for row in connection.execute("SELECT DISTINCT team FROM uploads").fetchall():
+                if row["team"].strip():
+                    teams_to_migrate.add(row["team"].strip())
+
+            for t in teams_to_migrate:
+                connection.execute(
+                    "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
+                    (t, f"Legacy team {t}", t, now),
+                )
 
         # Seed default admin account if no admin exists
         admin_exists = connection.execute(
@@ -500,48 +490,188 @@ def get_recent_upload_count(user_id: int, minutes: int = 1) -> int:
         return int(row["count"]) if row else 0
 
 
-def get_team_captains(team_name: str) -> list[dict]:
-    from ecs.app.database import _DB_LOCK, _connect
-    with _DB_LOCK, _connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT users.* FROM users
-            JOIN team_members ON users.id = team_members.user_id
-            WHERE team_members.team_name = ? AND team_members.role = 'captain'
-            """, (team_name,)
-        ).fetchall()
-        return [dict(row) for row in rows]
-
-
 def get_all_robots() -> list[dict[str, Any]]:
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute("SELECT * FROM robots ORDER BY name").fetchall()
     return [dict(row) for row in rows]
 
 
-def create_robot(name: str, description: str = "", storage_path: str = "") -> int:
-    now = utc_now()
-    if not storage_path:
-        storage_path = name
+def get_robot_by_name(name: str) -> dict[str, Any] | None:
     with _DB_LOCK, _connect() as connection:
-        cursor = connection.execute(
-            "INSERT INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
-            (name, description, storage_path, now)
-        )
-        return int(cursor.lastrowid)
+        row = connection.execute(
+            "SELECT * FROM robots WHERE name = ?", (name,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
-def assign_robot_editor(robot_id: int, user_id: int) -> None:
-    import sqlite3
+def create_robot(name: str, description: str = "", storage_path: str = "") -> int:
+    name = normalize_team_name(name, allow_reserved=False)
+    normalized_storage_path = normalize_team_name(
+        storage_path or name, allow_reserved=False
+    )
+    if normalized_storage_path != name:
+        raise ValueError("Robot storage path must match the robot name")
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
         try:
-            connection.execute(
-                "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
-                (robot_id, user_id, now)
+            cursor = connection.execute(
+                "INSERT INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
+                (name, description.strip(), normalized_storage_path, now)
             )
-        except sqlite3.IntegrityError:
-            pass  # FK constraint or other integrity issue — silently ignore
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"Robot '{name}' already exists") from exc
+        return int(cursor.lastrowid)
+
+
+def get_robot_by_id(robot_id: int) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM robots WHERE id = ?", (robot_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_active_editors() -> list[dict[str, Any]]:
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT id, username, email FROM users "
+            "WHERE role = 'editor' AND is_active = 1 ORDER BY username"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _sync_user_team_names(connection: sqlite3.Connection, user_id: int) -> None:
+    names = [
+        str(row["name"])
+        for row in connection.execute(
+            "SELECT r.name FROM robots r "
+            "JOIN robot_editors re ON re.robot_id = r.id "
+            "WHERE re.user_id = ? ORDER BY r.name",
+            (user_id,),
+        ).fetchall()
+    ]
+    connection.execute(
+        "UPDATE users SET teams = ?, updated_at = ? WHERE id = ?",
+        (",".join(names), utc_now(), user_id),
+    )
+
+
+def _mark_robot_source_tree_synced(connection: sqlite3.Connection) -> None:
+    now = utc_now()
+    connection.execute(
+        """
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES (?, '1', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+            updated_at = excluded.updated_at
+        """,
+        (_ROBOTS_SOURCE_TREE_SYNCED_KEY, now),
+    )
+
+
+def robots_source_tree_synced() -> bool:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_ROBOTS_SOURCE_TREE_SYNCED_KEY,),
+        ).fetchone()
+    return row is not None and str(row["value"]) == "1"
+
+
+def reconcile_robots_with_source_tree(robot_names: list[str]) -> dict[str, list[str]]:
+    """Make robot metadata exactly match Worker raw/sources folders."""
+    normalized_names = sorted(
+        {
+            normalize_team_name(str(name), allow_reserved=False)
+            for name in robot_names
+        }
+    )
+    desired = set(normalized_names)
+    now = utc_now()
+
+    with _DB_LOCK, _connect() as connection:
+        existing_rows = connection.execute(
+            "SELECT id, name FROM robots ORDER BY name"
+        ).fetchall()
+        existing = {str(row["name"]): int(row["id"]) for row in existing_rows}
+        added = sorted(desired - set(existing))
+        removed = sorted(set(existing) - desired)
+
+        for name in added:
+            connection.execute(
+                """
+                INSERT INTO robots (name, description, storage_path, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (name, "Discovered from Worker source tree", name, now),
+            )
+
+        affected_editor_ids: set[int] = set()
+        if removed:
+            placeholders = ",".join("?" for _ in removed)
+            rows = connection.execute(
+                "SELECT DISTINCT re.user_id FROM robot_editors re "
+                "JOIN robots r ON r.id = re.robot_id "
+                f"WHERE r.name IN ({placeholders})",
+                removed,
+            ).fetchall()
+            affected_editor_ids = {int(row["user_id"]) for row in rows}
+            connection.execute(
+                f"DELETE FROM robots WHERE name IN ({placeholders})",
+                removed,
+            )
+
+        for user_id in affected_editor_ids:
+            _sync_user_team_names(connection, user_id)
+        _mark_robot_source_tree_synced(connection)
+
+    return {
+        "robots": normalized_names,
+        "added": added,
+        "removed": removed,
+    }
+
+
+def delete_robot(robot_id: int) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM robots WHERE id = ?", (robot_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        editor_rows = connection.execute(
+            "SELECT user_id FROM robot_editors WHERE robot_id = ?",
+            (robot_id,),
+        ).fetchall()
+        connection.execute("DELETE FROM robots WHERE id = ?", (robot_id,))
+        for editor_row in editor_rows:
+            _sync_user_team_names(connection, int(editor_row["user_id"]))
+        _mark_robot_source_tree_synced(connection)
+    return dict(row)
+
+
+def assign_robot_editor(robot_id: int, user_id: int) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        robot = connection.execute(
+            "SELECT id FROM robots WHERE id = ?", (robot_id,)
+        ).fetchone()
+        if robot is None:
+            raise ValueError("Robot not found")
+        user = connection.execute(
+            "SELECT role, is_active FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if user is None:
+            raise ValueError("User not found")
+        if str(user["role"]) != "editor":
+            raise ValueError("Only editor accounts can be assigned to robots")
+        if not bool(user["is_active"]):
+            raise ValueError("Inactive editors cannot be assigned to robots")
+        connection.execute(
+            "INSERT OR IGNORE INTO robot_editors (robot_id, user_id, assigned_at) VALUES (?, ?, ?)",
+            (robot_id, user_id, now),
+        )
+        _sync_user_team_names(connection, user_id)
 
 
 def remove_robot_editor(robot_id: int, user_id: int) -> None:
@@ -550,6 +680,7 @@ def remove_robot_editor(robot_id: int, user_id: int) -> None:
             "DELETE FROM robot_editors WHERE robot_id = ? AND user_id = ?",
             (robot_id, user_id)
         )
+        _sync_user_team_names(connection, user_id)
 
 
 def get_user_robots(user_id: int) -> list[dict[str, Any]]:
@@ -1049,3 +1180,42 @@ def reconcile_existing_uploads(uploads_on_disk: list[dict[str, str]]) -> None:
     for uid in updated_upload_ids:
         refresh_upload_aggregate(uid)
 
+
+def add_wiki_contradiction(team: str, details: str) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "INSERT INTO wiki_contradictions (team, details, created_at) VALUES (?, ?, ?)",
+            (team, details, now),
+        )
+
+
+def get_recent_wiki_contradictions(days: int = 7) -> list[dict[str, Any]]:
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM wiki_contradictions WHERE created_at >= ? ORDER BY created_at DESC",
+            (cutoff,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_allowed_teams() -> list[str]:
+    database_names: list[str] = []
+    try:
+        for robot in get_all_robots():
+            name = str(robot.get("name") or "")
+            if name and name not in database_names:
+                database_names.append(name)
+    except Exception:
+        return list(ALLOWED_TEAMS)
+
+    if robots_source_tree_synced():
+        return database_names
+
+    names = list(ALLOWED_TEAMS)
+    for name in database_names:
+        if name not in names:
+            names.append(name)
+    return names

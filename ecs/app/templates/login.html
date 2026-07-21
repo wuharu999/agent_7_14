@@ -189,7 +189,8 @@
 </head>
 <body>
 
-<div class="lang-selector">
+<div class="lang-selector" style="display: flex; gap: 8px; align-items: center;">
+  <a href="/" class="back-link" data-i18n="backLink" style="font-size: 14px; font-weight: 600; text-decoration: none; color: var(--primary); margin-right: 16px;">返回公共提问页面</a>
   <button class="lang-btn" id="btn-zh" onclick="setLanguage('zh')">简</button>
   <button class="lang-btn" id="btn-en" onclick="setLanguage('en')">EN</button>
 </div>
@@ -221,7 +222,6 @@
     </form>
   </div>
   
-  <a href="/" class="back-link" data-i18n="backLink">返回公共提问页面</a>
 </div>
 
 <script>

@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from worker.config import (
-    ALLOWED_TEAMS,
+    get_allowed_teams,
     AUTHORING_MAX_ARTICLE_BYTES,
     SUPPORTED_SOURCE_SUFFIXES,
     TEAM_MAX_EXTRACTED_BYTES,
@@ -83,7 +83,7 @@ def prepare_single_file(downloaded_file: Path, publish_directory: Path) -> list[
 
 
 def publish_authoring_article(article_id: str, team: str, title: str, markdown: str) -> str:
-    if team not in ALLOWED_TEAMS:
+    if team not in get_allowed_teams():
         raise ValueError("Invalid authoring team")
     if not markdown.strip():
         raise ValueError("Article Markdown cannot be empty")

@@ -7,18 +7,15 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from worker.config import (
-    ALLOWED_TEAMS,
+    get_allowed_teams,
     LLM_WIKI_MONITOR_TIMEOUT,
     LLM_WIKI_POLL_SECONDS,
-    LLM_WIKI_PROJECT_ID,
-    LLM_WIKI_API_TOKEN,
     get_team_config,
 )
 
 EventCallback = Callable[[dict[str, Any]], Awaitable[None]]
+_LLM_WIKI_DEFAULT_MAX_RETRIES = 3
 
 
 def _read_json(path: Path) -> Any:
@@ -31,22 +28,57 @@ def _read_json(path: Path) -> Any:
 
 
 def _normalize(value: str) -> str:
-    return value.replace("\\", "/").lstrip("./")
+    normalized = value.replace("\\", "/").strip()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.strip("/")
 
 
-async def request_rescan(team: str) -> None:
-    if not LLM_WIKI_API_TOKEN or not LLM_WIKI_PROJECT_ID:
-        return
-    tc = get_team_config(team)
-    url = f"{tc.llm_wiki_api_url}/projects/{LLM_WIKI_PROJECT_ID}/sources/rescan"
-    headers = {"Authorization": f"Bearer {LLM_WIKI_API_TOKEN}"}
+def _without_sources_prefix(value: str) -> str:
+    normalized = _normalize(value)
+    prefix = "raw/sources/"
+    return normalized[len(prefix):] if normalized.startswith(prefix) else normalized
+
+
+def _identity_candidates(team: str, source_identity: str) -> tuple[list[str], set[str]]:
+    relative = _without_sources_prefix(source_identity)
+    team_prefix = f"{team}/"
+    if relative.startswith(team_prefix):
+        full_identity = relative
+        internal_identity = relative[len(team_prefix):]
+    else:
+        full_identity = f"{team}/{relative}"
+        internal_identity = relative
+
+    cache_candidates = [
+        full_identity,
+        internal_identity,
+        f"raw/sources/{full_identity}",
+        f"raw/sources/{internal_identity}",
+    ]
+    return cache_candidates, set(cache_candidates)
+
+
+def _integer(value: Any, default: int = 0) -> int:
     try:
-        async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
-            response = await client.post(url, headers=headers)
-            response.raise_for_status()
-    except Exception:
-        # Auto-watch is still the primary mechanism. Rescan is best effort.
-        return
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _retry_values(task: dict[str, Any]) -> tuple[int, int]:
+    retry_count = max(0, _integer(task.get("retryCount")))
+    raw_max_retries = task.get("maxRetries")
+    max_retries = max(
+        0,
+        _integer(
+            raw_max_retries,
+            _LLM_WIKI_DEFAULT_MAX_RETRIES,
+        ),
+    )
+    if raw_max_retries is None or raw_max_retries == "":
+        max_retries = _LLM_WIKI_DEFAULT_MAX_RETRIES
+    return retry_count, max_retries
 
 
 async def monitor_source(
@@ -57,22 +89,9 @@ async def monitor_source(
     published_at_ms: int,
     emit: EventCallback,
 ) -> None:
-    expected_queue_path = f"raw/sources/{_normalize(source_identity)}"
-    # With the new file_manager, source_identity might be something like "team/upload_id/file"
-    # But wait, source_identity passed here was generated in publisher: `f"{team}/{path.relative_to(tc.raw_sources_dir).as_posix()}"`
-    # However, inside LLM Wiki, the path it watches starts at the root of `raw/sources/`.
-    # Thus, LLM Wiki will see `raw/sources/upload_id/file`, NOT `raw/sources/team/upload_id/file`.
-    # Let's extract the path relative to raw_sources_dir.
-    prefix = f"{team}/"
-    if source_identity.startswith(prefix):
-        internal_identity = source_identity[len(prefix):]
-    else:
-        internal_identity = source_identity
-        
-    expected_queue_path = f"raw/sources/{_normalize(internal_identity)}"
+    cache_candidates, queue_candidates = _identity_candidates(team, source_identity)
     last_state = ()
     started = time.monotonic()
-    
     tc = get_team_config(team)
 
     while True:
@@ -83,7 +102,14 @@ async def monitor_source(
         queue_tasks = queue_data if isinstance(queue_data, list) else []
         cache_entries = cache_data.get("entries", {}) if isinstance(cache_data, dict) else {}
 
-        cache_entry = cache_entries.get(internal_identity)
+        cache_entry = next(
+            (
+                cache_entries.get(identity)
+                for identity in cache_candidates
+                if isinstance(cache_entries.get(identity), dict)
+            ),
+            None,
+        )
         if isinstance(cache_entry, dict) and int(cache_entry.get("timestamp", 0)) >= published_at_ms:
             state = "completed"
             event = {
@@ -98,8 +124,8 @@ async def monitor_source(
             matching_tasks = [
                 item
                 for item in queue_tasks
-                if _normalize(str(item.get("sourcePath") or ""))
-                in {expected_queue_path, _normalize(internal_identity)}
+                if isinstance(item, dict)
+                and _normalize(str(item.get("sourcePath") or "")) in queue_candidates
             ]
             
             active_queue_count = len(matching_tasks)
@@ -111,8 +137,10 @@ async def monitor_source(
             for task in matching_tasks:
                 task_status = task.get("status")
                 task_error = str(task.get("error") or "")
-                task_retries = int(task.get("retryCount") or 0)
-                task_max_retries = int(task.get("maxRetries") or 0)
+                task_retries, task_max_retries = _retry_values(task)
+                permanently_failed = task_status == "failed" and (
+                    task_max_retries <= 0 or task_retries >= task_max_retries
+                )
                 
                 if task_status == "processing":
                     state = "processing"
@@ -120,6 +148,15 @@ async def monitor_source(
                     max_retries = task_max_retries
                     error = task_error
                     break
+                elif permanently_failed and state not in {
+                    "processing",
+                    "retrying",
+                    "queued",
+                }:
+                    state = "failed"
+                    retry_count = task_retries
+                    max_retries = task_max_retries
+                    error = task_error or "LLM Wiki ingestion failed"
                 elif task_error and task_retries > 0 and state not in {"processing"}:
                     state = "retrying"
                     retry_count = task_retries
@@ -168,7 +205,11 @@ async def monitor_source(
         await asyncio.sleep(LLM_WIKI_POLL_SECONDS)
 
 
-async def monitor_global_queue(emit: EventCallback) -> None:
+async def monitor_global_queue(
+    emit: EventCallback,
+    *,
+    refresh_event: asyncio.Event | None = None,
+) -> None:
     last_snapshot_str = ""
     while True:
         counts = {
@@ -178,33 +219,54 @@ async def monitor_global_queue(emit: EventCallback) -> None:
             "failed": 0,
             "total": 0,
         }
-        all_tasks = []
-        
-        for team in ALLOWED_TEAMS:
-            tc = get_team_config(team)
+        all_tasks: list[dict[str, Any]] = []
+        allowed_teams = get_allowed_teams()
+        queue_configs: dict[Path, tuple[str, Any]] = {}
+        for team in allowed_teams:
+            try:
+                tc = get_team_config(team)
+            except ValueError:
+                continue
+            queue_path = tc.llm_wiki_queue_file.resolve(strict=False)
+            queue_configs.setdefault(queue_path, (team, tc))
+
+        for fallback_team, tc in queue_configs.values():
             if not tc.llm_wiki_queue_file.exists():
                 continue
-                
+
             queue_data = await asyncio.to_thread(_read_json, tc.llm_wiki_queue_file)
             queue_tasks = queue_data if isinstance(queue_data, list) else []
-            
             counts["total"] += len(queue_tasks)
-            
-            for task in queue_tasks:
-                if isinstance(task, dict):
-                    # Add team context to sourcePath so UI knows which team it belongs to
-                    original_path = task.get("sourcePath", "")
-                    if original_path.startswith("raw/sources/"):
-                        task["sourcePath"] = f"raw/sources/{team}/{original_path[12:]}"
-                    elif original_path:
-                        task["sourcePath"] = f"{team}/{original_path}"
-                    task["team"] = team
-                
+
+            for original_task in queue_tasks:
+                if not isinstance(original_task, dict):
+                    continue
+                task = dict(original_task)
+                original_path = _normalize(str(task.get("sourcePath") or ""))
+                relative_path = _without_sources_prefix(original_path)
+                first_segment = relative_path.partition("/")[0]
+                task_team = (
+                    first_segment if first_segment in allowed_teams else fallback_team
+                )
+                if original_path.startswith("raw/sources/"):
+                    display_path = original_path
+                elif relative_path.startswith(f"{task_team}/"):
+                    display_path = f"raw/sources/{relative_path}"
+                else:
+                    display_path = f"raw/sources/{task_team}/{relative_path}"
+                task["sourcePath"] = display_path
+                task["team"] = task_team
+
                 status = task.get("status")
                 error = task.get("error")
-                retries = int(task.get("retryCount") or 0)
+                retries, max_retries = _retry_values(task)
+                permanently_failed = status == "failed" and (
+                    max_retries <= 0 or retries >= max_retries
+                )
                 if status == "processing":
                     counts["processing"] += 1
+                elif permanently_failed:
+                    counts["failed"] += 1
                 elif error and retries > 0:
                     counts["retrying"] += 1
                 elif status == "pending":
@@ -214,16 +276,22 @@ async def monitor_global_queue(emit: EventCallback) -> None:
                     
                 all_tasks.append(task)
                 
-        snapshot = {
-            "type": "llm_wiki_snapshot",
-            "generated_at": time.time(),
+        snapshot_state = {
             "counts": counts,
-            "tasks": all_tasks[:100]
+            "tasks": all_tasks[:100],
         }
         
-        snapshot_str = json.dumps(counts, sort_keys=True)
-        if snapshot_str != last_snapshot_str:
+        snapshot_str = json.dumps(snapshot_state, ensure_ascii=False, sort_keys=True)
+        refresh_requested = refresh_event is not None and refresh_event.is_set()
+        if snapshot_str != last_snapshot_str or refresh_requested:
+            snapshot = {
+                "type": "llm_wiki_snapshot",
+                "generated_at": time.time(),
+                **snapshot_state,
+            }
             await emit(snapshot)
             last_snapshot_str = snapshot_str
+            if refresh_requested:
+                refresh_event.clear()
             
         await asyncio.sleep(LLM_WIKI_POLL_SECONDS)

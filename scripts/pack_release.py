@@ -14,6 +14,8 @@ def pack_release():
         ".git",
         ".pytest_cache",
         ".github",
+        ".agents",
+        ".codex",
         ".vscode",
     }
     

@@ -3,14 +3,26 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 [ -f worker/.env ] || { echo "Missing worker/.env"; exit 1; }
-set -a; . worker/.env; set +a
 printf 'Claude: '; command -v claude || true
-printf 'BASE_DIR: %s\n' "$BASE_DIR"
-[ -d "$BASE_DIR" ] && echo 'BASE_DIR exists' || echo 'BASE_DIR MISSING'
-[ -d "$BASE_DIR/raw/sources" ] && echo 'raw/sources exists' || echo 'raw/sources will be created'
-printf 'Trash: %s\n' "${TRASH_DIR:-$BASE_DIR/.agent1-trash}"
-printf 'LLM Wiki queue: %s\n' "$LLM_WIKI_QUEUE_FILE"
-printf 'LLM Wiki cache: %s\n' "$LLM_WIKI_CACHE_FILE"
-[ -f "$LLM_WIKI_QUEUE_FILE" ] && echo 'queue file exists' || echo 'queue file not present yet'
-[ -f "$LLM_WIKI_CACHE_FILE" ] && echo 'cache file exists' || echo 'cache file not present yet'
-printf 'LLM Wiki rescan after publish: %s\n' "${LLM_WIKI_RESCAN_AFTER_PUBLISH:-false}"
+PYTHON_BIN="$ROOT/.venv-worker/bin/python"
+[ -x "$PYTHON_BIN" ] || PYTHON_BIN="$(command -v python3)"
+"$PYTHON_BIN" - <<'PY'
+from worker.config import (
+    LLM_WIKI_CACHE_FILE,
+    LLM_WIKI_QUEUE_FILE,
+    LLM_WIKI_RESCAN_AFTER_PUBLISH,
+    TRASH_DIR,
+    WORKER_ROOT_DIR,
+)
+
+print(f"BASE_DIR: {WORKER_ROOT_DIR}")
+print("BASE_DIR exists" if WORKER_ROOT_DIR.is_dir() else "BASE_DIR MISSING")
+raw_sources = WORKER_ROOT_DIR / "raw" / "sources"
+print("raw/sources exists" if raw_sources.is_dir() else "raw/sources will be created")
+print(f"Trash: {TRASH_DIR}")
+print(f"LLM Wiki queue: {LLM_WIKI_QUEUE_FILE}")
+print(f"LLM Wiki cache: {LLM_WIKI_CACHE_FILE}")
+print("queue file exists" if LLM_WIKI_QUEUE_FILE.is_file() else "queue file not present yet")
+print("cache file exists" if LLM_WIKI_CACHE_FILE.is_file() else "cache file not present yet")
+print(f"LLM Wiki rescan after publish: {str(LLM_WIKI_RESCAN_AFTER_PUBLISH).lower()}")
+PY

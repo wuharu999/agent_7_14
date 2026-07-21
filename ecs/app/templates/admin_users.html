@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>用户与文件夹权限管理 - Admin User Management</title>
+<link rel="stylesheet" href="/static/account_menu.css">
+<script src="/static/account_menu.js" defer></script>
 <style>
 body { font-family: system-ui, -apple-system, sans-serif; max-width: 1120px; margin: 40px auto; padding: 0 18px; background: #f5f7fb; color: #172033; }
 .top { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 20px; }
@@ -52,10 +54,30 @@ th { background: #f8fafc; font-weight: 600; color: #475569; border-top: 1px soli
     <h1>用户与文件夹权限管理</h1>
     <p style="margin:4px 0;color:#64748b;font-size:14px;">当前登录管理员：<strong>__USERNAME__</strong></p>
   </div>
-  <div class="nav-links">
-    <a href="/manage">文件管理</a>
-    <a href="/upload">文档上传与AI编写</a>
-    <a href="/logout" style="color:#dc2626;">退出登录</a>
+  <div class="actions" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <a class="button secondary" href="/" style="background:#475569; text-decoration:none; padding:0 16px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; color:#fff; font-weight:700; font-size:14px;">提问 (Questions)</a>
+    <a class="button secondary" href="/wecom-ask" style="background:#475569; text-decoration:none; padding:0 16px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; color:#fff; font-weight:700; font-size:14px;">WeCom</a>
+    <div data-account-menu data-account-return="/admin/users"></div>
+  </div>
+</div>
+
+<!-- Info Banner explaining email and conflict checker -->
+<div class="card" style="background: #eff6ff; border: 1px solid #bfdbfe; margin-bottom: 24px; padding: 18px 22px;">
+  <h3 style="margin-top: 0; margin-bottom: 10px; color: #1e40af; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20" style="color: #3b82f6;"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+    系统说明：电子邮箱与后台冲突检测机制 (System Notice: Emails & Conflict Detection)
+  </h3>
+  <div style="font-size: 13.5px; line-height: 1.6; color: #1e3a8a;">
+    <p style="margin: 6px 0;">
+      <strong>📧 电子邮箱的用途：</strong>用户的电子邮箱用于接收系统自动预警。当后台检测到任何知识库文档内容冲突时，系统会实时向所有<strong>管理员角色 (Admin)</strong> 账户的注册邮箱发送冲突提醒邮件（不依赖特定的团队负责人）。
+    </p>
+    <p style="margin: 6px 0;">
+      <strong>⚙️ 后台冲突检测机制：</strong>当编辑者上传新源文件或发布文章时，后台 Worker 会自动运行 LLM Wiki 冲突审查任务。如果发现不同文档之间存在规格矛盾、逻辑冲突或陈述不一致，系统会：
+      <span style="display: block; padding-left: 16px; margin-top: 4px;">
+        1. 自动将冲突详情记录至数据库，并在 <a href="/manage" style="color: #2563eb; text-decoration: underline; font-weight: 600;">文件管理页面</a> 顶部显示醒目的<strong>红色预警横幅</strong>（仅保留最近 7 天的记录，支持展开查看详细冲突）。<br>
+        2. 实时触发邮件通知，向所有系统管理员的注册邮箱发送预警信息。
+      </span>
+    </p>
   </div>
 </div>
 

@@ -3,8 +3,13 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title data-i18n="title">Knowledge source manager</title>
+<link rel="stylesheet" href="/static/account_menu.css">
+<script src="/static/account_menu.js" defer></script>
 <style>
-body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 8px 30px #1f293711}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,.button{padding:9px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;text-decoration:none}.secondary{background:#475569}.danger{background:#b91c1c}.danger:disabled{background:#94a3b8;cursor:not-allowed}.muted{color:#64748b}.status{padding:3px 8px;border-radius:999px;background:#e2e8f0;font-size:12px}.processing{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.failed,.partially_failed{background:#fee2e2;color:#991b1b}.queued{background:#dbeafe;color:#1e40af}.tree{list-style:none;padding-left:0}.tree ul{list-style:none;margin:6px 0 6px 22px;padding-left:12px;border-left:1px solid #cbd5e1}.item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px;border-radius:8px}.item:hover{background:#f8fafc}.name{min-width:0;overflow-wrap:anywhere}.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}code{overflow-wrap:anywhere}form{display:inline;margin:0}summary{list-style:none;outline:none;cursor:pointer}summary::-webkit-details-marker{display:none}summary .name::before{content:'▶ ';font-size:11px;color:#94a3b8;transition:transform .15s}details[open]>summary .name::before{content:'▼ ';color:#64748b}</style>
+body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 8px 30px #1f293711}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,.button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;text-decoration:none;box-sizing:border-box;font-size:14px}.secondary{background:#475569}.danger{background:#b91c1c}.danger:disabled{background:#94a3b8;cursor:not-allowed}.muted{color:#64748b}.status{padding:3px 8px;border-radius:999px;background:#e2e8f0;font-size:12px}.processing{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.failed,.partially_failed{background:#fee2e2;color:#991b1b}.queued{background:#dbeafe;color:#1e40af}.tree{list-style:none;padding-left:0}.tree ul{list-style:none;margin:6px 0 6px 22px;padding-left:12px;border-left:1px solid #cbd5e1}.item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px;border-radius:8px}.item:hover{background:#f8fafc}.name{min-width:0;overflow-wrap:anywhere}.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}code{overflow-wrap:anywhere}form{display:inline;margin:0}summary{list-style:none;outline:none;cursor:pointer}summary::-webkit-details-marker{display:none}summary .name::before{content:'▶ ';font-size:11px;color:#94a3b8;transition:transform .15s}details[open]>summary .name::before{content:'▼ ';color:#64748b}</style>
+<style>
+.admin-create{max-width:420px;margin-bottom:20px}.assignment-board{display:grid;grid-template-columns:minmax(220px,1fr) minmax(360px,2fr);gap:18px;align-items:start}.editor-pool-panel,.robots-panel{border:1px solid #dbe2ee;border-radius:12px;background:#f8fafc;padding:14px}.editor-pool{display:flex;flex-direction:column;gap:8px;min-height:90px}.editor-chip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:650;cursor:grab}.editor-chip:active{cursor:grabbing}.editor-chip small{color:#64748b;font-weight:500}.assigned-editor{display:inline-flex;width:auto;margin:4px 6px 4px 0;cursor:grab}.assigned-editor button{height:auto;padding:0 2px;background:none;color:#b91c1c;font-size:17px;line-height:1}.robot-card{margin-bottom:12px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;transition:border-color .15s,background .15s}.robot-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.robot-card-header .danger{height:32px;padding:0 11px;font-size:12px}.robot-card.drag-over{border-color:#2563eb;background:#eff6ff}.robot-drop-hint{font-size:12px;color:#64748b;margin:6px 0}.robot-editors{min-height:35px;padding-top:4px}@media(max-width:760px){.assignment-board{grid-template-columns:1fr}.editor-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
+</style>
 </head>
 <body>
 <div class="top">
@@ -13,33 +18,42 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
     <p><span data-i18n="signedInAs">Signed in as </span><strong>__USERNAME__</strong> · <span data-i18n="role">role </span><strong><span id="user-role">__ROLE__</span></strong></p>
   </div>
   <div class="actions">
-    <a class="button admin-only-btn" href="/admin/users" style="display:none;background:#7c3aed;" data-i18n="userManagement">User Management</a>
-    <a class="button" href="/upload" data-i18n="upload">Upload</a>
     <a class="button secondary" href="/" data-i18n="questions">Questions</a>
-    <form method="post" action="/logout">
-      <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
-      <button class="secondary" type="submit" data-i18n="logout">Log out</button>
-    </form>
-    <select id="ui-language" aria-label="Interface language" style="padding: 9px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-weight: 700; cursor: pointer;">
+    <select id="ui-language" aria-label="Interface language" style="height: 38px; padding: 0 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-weight: 700; cursor: pointer; box-sizing: border-box; font-size: 14px;">
       <option value="en">English</option>
       <option value="zh-CN">简体中文</option>
     </select>
+    <div data-account-menu data-account-return="/manage"></div>
   </div>
+</div>
+
+<!-- Contradictions Warning Banner -->
+<div id="contradictions-banner" style="display: none; background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; padding: 20px; border-radius: 14px; margin: 14px 0; box-shadow: 0 8px 30px rgba(239, 68, 68, 0.08);">
+  <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px; color: #991b1b; font-size: 18px;">
+    <span style="font-size: 20px;">⚠️</span>
+    <span data-i18n="contradictionWarningTitle">Wiki Contradictions Detected (Last 7 Days)</span>
+  </h3>
+  <div id="contradictions-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
 </div>
 
 <div class="card" id="admin-panel" style="display: none;">
     <h2 data-i18n="adminTitle">Admin Panel: Robots & Editors</h2>
-    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 300px;">
-            <h3 data-i18n="createRobot">Create Robot</h3>
-            <form id="create-robot-form" style="display: flex; flex-direction: column; gap: 10px;">
-                <input type="text" id="robot-name" data-i18n="robotNamePlaceholder" placeholder="Robot Name" required style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <button type="submit" class="button" data-i18n="createRobotBtn">Create Robot</button>
-                <p id="create-robot-msg" class="muted"></p>
-            </form>
+    <div class="admin-create">
+        <h3 data-i18n="createRobot">Create Robot</h3>
+        <form id="create-robot-form" style="display: flex; flex-direction: column; gap: 10px;">
+            <input type="text" id="robot-name" data-i18n="robotNamePlaceholder" placeholder="Robot Name" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+            <button type="submit" class="button" data-i18n="createRobotBtn">Create Robot</button>
+            <p id="create-robot-msg" class="muted"></p>
+        </form>
+    </div>
+    <div class="assignment-board">
+        <div class="editor-pool-panel">
+            <h3 data-i18n="editorPool">Editor Pool</h3>
+            <p class="muted" data-i18n="editorPoolHint">Drag an active editor onto a robot.</p>
+            <div id="editor-pool" class="editor-pool" data-i18n="loadingEditors">Loading editors...</div>
         </div>
-        <div style="flex: 2; min-width: 300px;">
-            <h3 data-i18n="robotsAndEditors">Robots & Editors</h3>
+        <div class="robots-panel">
+            <h3 id="robots-heading" data-i18n="robotsAndEditors">Robots & Editors</h3>
             <div id="robots-list" data-i18n="loadingRobots">Loading robots...</div>
         </div>
     </div>
@@ -52,7 +66,7 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
         <button id="generate-report" class="button" data-i18n="generateReportBtn">Generate User Activity Report</button>
     </div>
     <div id="audit-log" style="max-height: 300px; overflow-y: auto; overflow-x: hidden; word-break: break-all; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 15px;"></div>
-    
+
     <div id="report-section" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
         <h4 data-i18n="reportTitle" style="margin-top: 0;">User Activity & Geolocation Report</h4>
         <textarea id="report-content" rows="12" style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 13px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; padding: 8px;" readonly></textarea>
@@ -80,16 +94,17 @@ const translations = {
     header: 'Knowledge source manager',
     signedInAs: 'Signed in as ',
     role: 'role ',
-    upload: 'Upload',
     questions: 'Questions',
-    logout: 'Log out',
-    userManagement: 'User Management',
     adminTitle: 'Admin Panel: Robots & Editors',
     createRobot: 'Create Robot',
     robotNamePlaceholder: 'Robot Name',
     robotDescPlaceholder: 'Description',
     robotPathPlaceholder: 'Storage Path (optional)',
     createRobotBtn: 'Create Robot',
+    editorPool: 'Editor Pool',
+    editorPoolHint: 'Drag an active editor onto a robot. Use × to remove an assignment.',
+    noActiveEditors: 'No active editor accounts.',
+    dropEditorHere: 'Drop an editor here to assign access.',
     robotsAndEditors: 'Robots & Editors',
     recentAuditLog: 'Recent Audit Log',
     refreshAudit: 'Refresh Log',
@@ -107,8 +122,11 @@ const translations = {
     entriesUnder: '{count} entries under {root}',
     unableToList: 'Unable to list sources',
     loadingRobots: 'Loading robots...',
-    addEditor: 'Add Editor',
-    userIdPlaceholder: 'User ID',
+    noRobots: 'No robot folders were returned by the source tree.',
+    removeRobot: 'Remove robot',
+    removingRobot: 'Removing...',
+    confirmRemoveRobot: 'Remove robot {robotName} and all source files inside it?\n\nThe folder will be moved to .agent1-trash and editor assignments will be removed.',
+    removeRobotFailed: 'Failed to remove robot.',
     noEditorsAssigned: 'No editors assigned.',
     confirmRemoveEditor: 'Remove {username} from {robotName}?',
     creating: 'Creating...',
@@ -126,23 +144,26 @@ const translations = {
     closeReportBtn: 'Close Report',
     generatingReport: 'Generating Report...',
     failedToGenerateReport: 'Failed to generate report.',
-    addEditorFailed: 'Failed to add editor. Please check the user ID.'
+    addEditorFailed: 'Failed to assign editor.',
+    removeEditorFailed: 'Failed to remove editor.',
+    contradictionWarningTitle: 'Wiki Contradictions Detected (Last 7 Days)'
   },
   'zh-CN': {
     title: '知识源管理器',
     header: '知识源管理器',
     signedInAs: '当前登录：',
     role: '角色：',
-    upload: '上传文件',
     questions: '返回问答',
-    logout: '注销登录',
-    userManagement: '用户与权限管理',
     adminTitle: '管理员面板：机器人与编辑者',
     createRobot: '创建机器人',
     robotNamePlaceholder: '机器人名称',
     robotDescPlaceholder: '描述信息',
     robotPathPlaceholder: '存储路径 (可选)',
     createRobotBtn: '创建机器人',
+    editorPool: '编辑者池',
+    editorPoolHint: '将启用的编辑者拖到机器人上；点击 × 可移除分配。',
+    noActiveEditors: '没有启用的编辑者账户。',
+    dropEditorHere: '将编辑者拖到此处以分配访问权限。',
     robotsAndEditors: '机器人与编辑者列表',
     recentAuditLog: '最近审计日志',
     refreshAudit: '刷新日志',
@@ -160,8 +181,11 @@ const translations = {
     entriesUnder: '{root} 下共有 {count} 个条目',
     unableToList: '无法获取源文件树',
     loadingRobots: '正在加载机器人列表……',
-    addEditor: '添加编辑者',
-    userIdPlaceholder: '用户 ID',
+    noRobots: '源文件树中没有机器人文件夹。',
+    removeRobot: '移除机器人',
+    removingRobot: '正在移除……',
+    confirmRemoveRobot: '确认移除机器人 {robotName} 及其全部源文件吗？\n\n文件夹将移至 .agent1-trash，相关编辑者分配也会移除。',
+    removeRobotFailed: '移除机器人失败。',
     noEditorsAssigned: '未分配编辑者。',
     confirmRemoveEditor: '确认从 {robotName} 中移除用户 {username} 吗？',
     creating: '正在创建……',
@@ -179,7 +203,9 @@ const translations = {
     closeReportBtn: '关闭报告',
     generatingReport: '正在生成报告……',
     failedToGenerateReport: '生成报告失败。',
-    addEditorFailed: '添加编辑者失败，请检查用户 ID 是否正确。'
+    addEditorFailed: '分配编辑者失败。',
+    removeEditorFailed: '移除编辑者失败。',
+    contradictionWarningTitle: '检测到 Wiki 内容冲突（最近 7 天）'
   }
 };
 
@@ -197,10 +223,10 @@ function applyLanguage(){
     }
   });
   uiLanguage.setAttribute('aria-label',uiLanguage.value==='zh-CN'?'界面语言':'Interface language');
-  
+
   // Refresh UI data
   loadTree();
-  if (window.loadRobots) loadRobots();
+  loadContradictions();
   if (window.loadAuditLog) loadAuditLog();
 }
 
@@ -240,7 +266,8 @@ function buildItem(item){
     size.textContent=formatBytes(item.size_bytes);
     meta.appendChild(size);
   }
-  if(canDelete&&item.type!=='symlink'){
+  const isRobotRoot=item.type==='directory'&&!String(item.path||'').includes('/');
+  if(canDelete&&item.type!=='symlink'&&!isRobotRoot){
     const button=document.createElement('button');
     button.className='danger';
     button.textContent=item.type==='directory'?tr('removeFolder'):tr('removeFile');
@@ -294,9 +321,83 @@ async function loadTree(){
     const tree=d.tree||{};
     message.textContent=tr('entriesUnder').replace('{count}', tree.entry_count||0).replace('{root}', tree.root||'raw/sources');
     renderTree(tree);
+    if(role==='admin'&&window.loadRobots) await window.loadRobots();
   }catch(e){
     message.textContent='';
     errorBox.textContent=String(e);
+  }
+}
+
+async function loadContradictions() {
+  const banner = document.getElementById('contradictions-banner');
+  const list = document.getElementById('contradictions-list');
+  try {
+    const r = await fetch('/api/manage/contradictions');
+    if (!r.ok) return;
+    const d = await r.json();
+    const items = d.contradictions || [];
+    if (!items.length) {
+      banner.style.display = 'none';
+      return;
+    }
+    list.innerHTML = '';
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    items.forEach(item => {
+      const detailsEl = document.createElement('details');
+      detailsEl.style.background = 'rgba(255, 255, 255, 0.6)';
+      detailsEl.style.border = '1px solid rgba(153, 27, 27, 0.2)';
+      detailsEl.style.borderRadius = '8px';
+      detailsEl.style.padding = '10px';
+
+      const summaryEl = document.createElement('summary');
+      summaryEl.style.fontWeight = 'bold';
+      summaryEl.style.outline = 'none';
+      summaryEl.style.cursor = 'pointer';
+      summaryEl.style.display = 'flex';
+      summaryEl.style.alignItems = 'center';
+      summaryEl.style.gap = '6px';
+
+      const arrowSpan = document.createElement('span');
+      arrowSpan.textContent = '▶';
+      arrowSpan.style.transition = 'transform 0.15s';
+
+      const titleSpan = document.createElement('span');
+      titleSpan.innerHTML = `Team: <strong>${escapeHtml(item.team)}</strong> (${escapeHtml(item.created_at)})`;
+
+      summaryEl.appendChild(arrowSpan);
+      summaryEl.appendChild(titleSpan);
+      detailsEl.appendChild(summaryEl);
+
+      const contentDiv = document.createElement('div');
+      contentDiv.style.whiteSpace = 'pre-wrap';
+      contentDiv.style.fontFamily = 'monospace';
+      contentDiv.style.fontSize = '13px';
+      contentDiv.style.marginTop = '8px';
+      contentDiv.style.color = '#1f2937';
+      contentDiv.style.paddingTop = '8px';
+      contentDiv.style.borderTop = '1px dashed rgba(153, 27, 27, 0.1)';
+      contentDiv.textContent = item.details;
+
+      detailsEl.appendChild(contentDiv);
+
+      detailsEl.ontoggle = () => {
+        arrowSpan.textContent = detailsEl.open ? '▼' : '▶';
+      };
+
+      list.appendChild(detailsEl);
+    });
+    banner.style.display = 'block';
+  } catch (e) {
+    console.error('Failed to load contradictions:', e);
   }
 }
 
@@ -320,88 +421,197 @@ async function removeItem(item,button){
   }
 }
 
-document.getElementById('refresh').onclick=loadTree;
+document.getElementById('refresh').onclick = async () => {
+  await loadTree();
+  await loadContradictions();
+};
 
 // Admin Panel Logic
 const role = document.getElementById('user-role').textContent.trim();
 if (role === 'admin') {
-    document.querySelectorAll('.admin-only-btn').forEach(btn => btn.style.display = 'inline-flex');
     document.getElementById('admin-panel').style.display = 'block';
-    
+
+    function makeEditorChip(editor, assignedRobot = null) {
+        const chip = document.createElement('div');
+        chip.className = 'editor-chip' + (assignedRobot ? ' assigned-editor' : '');
+        chip.draggable = true;
+        chip.dataset.userId = String(editor.id);
+        chip.title = editor.email || editor.username;
+
+        const label = document.createElement('span');
+        label.textContent = editor.username;
+        const id = document.createElement('small');
+        id.textContent = `ID ${editor.id}`;
+        chip.append(label, id);
+
+        chip.addEventListener('dragstart', event => {
+            event.dataTransfer.setData('text/plain', String(editor.id));
+            event.dataTransfer.effectAllowed = 'copy';
+        });
+
+        if (assignedRobot) {
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.textContent = '×';
+            removeButton.title = tr('confirmRemoveEditor')
+                .replace('{username}', editor.username)
+                .replace('{robotName}', assignedRobot.name);
+            removeButton.addEventListener('click', async () => {
+                if (!confirm(removeButton.title)) return;
+                try {
+                    const response = await fetch(
+                        `/api/manage/robots/${assignedRobot.id}/editors/${editor.id}`,
+                        {method: 'DELETE', headers: {'X-CSRF-Token': csrfToken}}
+                    );
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || tr('removeEditorFailed'));
+                    await loadRobots();
+                } catch (error) {
+                    alert(String(error));
+                }
+            });
+            chip.appendChild(removeButton);
+        }
+        return chip;
+    }
+
+    async function assignEditor(robot, userId) {
+        const response = await fetch(`/api/manage/robots/${robot.id}/editors`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+            body: JSON.stringify({user_id: Number(userId)})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || tr('addEditorFailed'));
+        await loadRobots();
+    }
+
+    async function removeRobot(robot, button) {
+        const confirmation = tr('confirmRemoveRobot').replace('{robotName}', robot.name);
+        if (!confirm(confirmation)) return;
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = tr('removingRobot');
+        try {
+            const response = await fetch(`/api/manage/robots/${robot.id}`, {
+                method: 'DELETE',
+                headers: {'X-CSRF-Token': csrfToken}
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || tr('removeRobotFailed'));
+            await loadTree();
+        } catch (error) {
+            alert(String(error));
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+
     async function loadRobots() {
         try {
-            const r = await fetch('/api/manage/robots');
-            const d = await r.json();
+            const [robotsResponse, editorsResponse] = await Promise.all([
+                fetch('/api/manage/robots'),
+                fetch('/api/manage/editors')
+            ]);
+            const robotsData = await robotsResponse.json();
+            const editorsData = await editorsResponse.json();
+            if (!robotsResponse.ok) throw new Error(robotsData.error || tr('loadingRobots'));
+            if (!editorsResponse.ok) throw new Error(editorsData.error || tr('loadingEditors'));
+
+            const pool = document.getElementById('editor-pool');
+            pool.innerHTML = '';
+            const editors = editorsData.editors || [];
+            if (!editors.length) {
+                const empty = document.createElement('span');
+                empty.className = 'muted';
+                empty.textContent = tr('noActiveEditors');
+                pool.appendChild(empty);
+            } else {
+                editors.forEach(editor => pool.appendChild(makeEditorChip(editor)));
+            }
+
             const list = document.getElementById('robots-list');
             list.innerHTML = '';
-            for (const robot of d.robots) {
+            const robots = robotsData.robots || [];
+            document.getElementById('robots-heading').textContent = `${tr('robotsAndEditors')} (${robots.length})`;
+            if (!robots.length) {
+                const empty = document.createElement('span');
+                empty.className = 'muted';
+                empty.textContent = tr('noRobots');
+                list.appendChild(empty);
+            }
+            for (const robot of robots) {
                 const div = document.createElement('div');
-                div.style.marginBottom = '15px';
-                div.style.padding = '10px';
-                div.style.border = '1px solid #cbd5e1';
-                div.style.borderRadius = '8px';
-                div.innerHTML = `<strong>${robot.name}</strong>`;
-                
-                const edDiv = document.createElement('div');
-                edDiv.style.marginTop = '8px';
-                edDiv.innerHTML = `<span class="muted" style="font-size:12px;">${tr('loadingEditors')}</span>`;
-                div.appendChild(edDiv);
-                
-                const form = document.createElement('form');
-                form.style.marginTop = '8px';
-                form.innerHTML = `<input type="number" placeholder="${tr('userIdPlaceholder')}" required style="padding:4px;width:80px;border:1px solid #ccc;border-radius:4px;"> <button type="submit" class="button" style="padding:4px 8px;font-size:12px;">${tr('addEditor')}</button>`;
-                form.onsubmit = async (e) => {
-                    e.preventDefault();
-                    const inp = form.querySelector('input');
-                    const uid = inp.value.trim();
-                    if (!uid) return;
-                    try {
-                        const res = await fetch(`/api/manage/robots/${robot.id}/editors`, {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
-                            body: JSON.stringify({user_id: parseInt(uid)})
-                        });
-                        const data = await res.json();
-                        if (!res.ok) {
-                            alert(data.error || tr('addEditorFailed'));
-                            return;
-                        }
-                        inp.value = '';
-                        loadRobots();
-                    } catch (err) {
-                        alert(tr('addEditorFailed'));
-                    }
-                };
-                div.appendChild(form);
-                list.appendChild(div);
+                div.className = 'robot-card';
+                const header = document.createElement('div');
+                header.className = 'robot-card-header';
+                const heading = document.createElement('strong');
+                heading.textContent = robot.name;
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'danger';
+                removeButton.textContent = tr('removeRobot');
+                removeButton.addEventListener('click', event => {
+                    event.stopPropagation();
+                    removeRobot(robot, removeButton);
+                });
+                header.append(heading, removeButton);
+                div.appendChild(header);
 
-                // Fetch editors
-                fetch(`/api/manage/robots/${robot.id}/editors`).then(res => res.json()).then(edData => {
-                    edDiv.innerHTML = '';
-                    if (!edData.editors.length) {
-                        edDiv.innerHTML = `<span class="muted" style="font-size:12px;">${tr('noEditorsAssigned')}</span>`;
-                    } else {
-                        edData.editors.forEach(ed => {
-                            const edSpan = document.createElement('span');
-                            edSpan.className = 'status';
-                            edSpan.style.marginRight = '5px';
-                            edSpan.innerHTML = `${ed.username} (ID: ${ed.id}) <button type="button" style="background:none;border:none;color:red;cursor:pointer;padding:0 2px;" title="Remove">x</button>`;
-                            edSpan.querySelector('button').onclick = async () => {
-                                const confirmEdMsg = tr('confirmRemoveEditor').replace('{username}', ed.username).replace('{robotName}', robot.name);
-                                if(confirm(confirmEdMsg)) {
-                                    await fetch(`/api/manage/robots/${robot.id}/editors/${ed.id}`, {
-                                        method: 'DELETE',
-                                        headers: {'X-CSRF-Token': csrfToken}
-                                    });
-                                    loadRobots();
-                                }
-                            };
-                            edDiv.appendChild(edSpan);
-                        });
+                const hint = document.createElement('p');
+                hint.className = 'robot-drop-hint';
+                hint.textContent = tr('dropEditorHere');
+                div.appendChild(hint);
+
+                const edDiv = document.createElement('div');
+                edDiv.className = 'robot-editors';
+                const loading = document.createElement('span');
+                loading.className = 'muted';
+                loading.textContent = tr('loadingEditors');
+                edDiv.appendChild(loading);
+                div.appendChild(edDiv);
+
+                div.addEventListener('dragover', event => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                    div.classList.add('drag-over');
+                });
+                div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+                div.addEventListener('drop', async event => {
+                    event.preventDefault();
+                    div.classList.remove('drag-over');
+                    const userId = event.dataTransfer.getData('text/plain');
+                    if (!userId) return;
+                    try {
+                        await assignEditor(robot, userId);
+                    } catch (error) {
+                        alert(String(error));
                     }
                 });
+                list.appendChild(div);
+
+                const assignedResponse = await fetch(`/api/manage/robots/${robot.id}/editors`);
+                const assignedData = await assignedResponse.json();
+                if (!assignedResponse.ok) {
+                    throw new Error(assignedData.error || tr('loadingEditors'));
+                }
+                edDiv.innerHTML = '';
+                const assignedEditors = assignedData.editors || [];
+                if (!assignedEditors.length) {
+                    const empty = document.createElement('span');
+                    empty.className = 'muted';
+                    empty.textContent = tr('noEditorsAssigned');
+                    edDiv.appendChild(empty);
+                } else {
+                    assignedEditors.forEach(editor => {
+                        edDiv.appendChild(makeEditorChip(editor, robot));
+                    });
+                }
             }
-        } catch (e) { console.error(e); }
+        } catch (error) {
+            console.error(error);
+            document.getElementById('robots-list').textContent = String(error);
+        }
     }
 
     document.getElementById('create-robot-form').onsubmit = async (e) => {
@@ -423,19 +633,19 @@ if (role === 'admin') {
             if(!r.ok) throw new Error(d.error || tr('failedToCreate'));
             msg.textContent = tr('createdSuccess');
             document.getElementById('create-robot-form').reset();
-            loadRobots();
+            await loadTree();
         } catch (err) {
             msg.textContent = String(err);
             msg.style.color = 'red';
         }
     };
-    
+
     window.loadRobots = loadRobots;
 }
 
 if (role === 'admin' || role === 'editor') {
     document.getElementById('activity-panel').style.display = 'block';
-    
+
     async function loadAuditLog() {
         const div = document.getElementById('audit-log');
         div.innerHTML = tr('loading');
@@ -454,13 +664,13 @@ if (role === 'admin' || role === 'editor') {
             div.textContent = tr('failedToLoadAudit');
         }
     }
-    
+
     document.getElementById('refresh-audit').onclick = loadAuditLog;
-    
+
     const generateBtn = document.getElementById('generate-report');
     const reportSection = document.getElementById('report-section');
     const reportContent = document.getElementById('report-content');
-    
+
     generateBtn.onclick = async () => {
         generateBtn.disabled = true;
         const originalText = generateBtn.textContent;
@@ -485,12 +695,12 @@ if (role === 'admin' || role === 'editor') {
             generateBtn.textContent = originalText;
         }
     };
-    
+
     document.getElementById('close-report').onclick = () => {
         reportSection.style.display = 'none';
         reportContent.value = '';
     };
-    
+
     window.loadAuditLog = loadAuditLog;
 }
 

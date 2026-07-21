@@ -14,5 +14,5 @@ python3 -m pip install \
 mkdir -p ecs-data
 printf '\nECS bootstrap complete.\n'
 printf '1. Edit %s/ecs/.env\n' "$ROOT"
-printf '2. Create the first admin:\n   source .venv-ecs/bin/activate && python3 scripts/create_user.py --username admin --role admin\n'
-printf '3. Start with scripts/run_ecs.sh\n'
+printf '2. Start with scripts/run_ecs.sh\n'
+printf '3. Sign in as admin and change the seeded password at /admin/users\n'

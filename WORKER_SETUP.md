@@ -23,6 +23,8 @@ LLM_WIKI_RESCAN_AFTER_PUBLISH=false
 ```
 
 Keep LLM Wiki open with Source Watch and Auto Ingest enabled.
+The Worker never calls `/sources/rescan`; Source Watch is the only ingestion trigger.
+In Source Watch settings, include every format accepted by the website that you plan to use (especially `json`, `xml`, `yaml`, and `yml`, which are ingestable but are not selected in LLM Wiki's current defaults). Also set the Source Watch file-size limit high enough for the individual source files you upload.
 
 Different authoring sessions can run concurrently, while commands for the same
 session are serialized to preserve message order. Each authoring worker starts at

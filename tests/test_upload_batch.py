@@ -84,7 +84,7 @@ class SharedSourceTypeTests(unittest.TestCase):
             "机器人说明.DOCX",
             "slides.pptx",
             "table.XLSX",
-            "readme.MarkDown",
+            "readme.MDX",
             "配置.YAML",
             "sources.ZIP",
         ):
@@ -104,7 +104,7 @@ class UploadEndpointTests(unittest.TestCase):
             uploads, "UPLOAD_ROOT", self.root / "uploads"
         )
         self.teams_patch = patch.object(
-            uploads, "ALLOWED_TEAMS", ("tian_gong", "walker_s2", "walker_c1")
+            uploads, "get_allowed_teams", return_value=["tian_gong", "walker_s2", "walker_c1"]
         )
         # Python 3.14's executor wake-up pipe is unavailable in this sandbox.
         # Keep this route unit test synchronous at the filesystem boundary.

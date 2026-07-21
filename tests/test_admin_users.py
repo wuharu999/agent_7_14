@@ -6,6 +6,13 @@ from ecs.app.main import app
 from ecs.app import config, auth, database
 
 
+@pytest.fixture(autouse=True)
+def isolated_database(tmp_path, monkeypatch):
+    database_path = tmp_path / "agent_jobs.db"
+    monkeypatch.setattr(database, "DATABASE_PATH", database_path)
+    database.initialize_database()
+
+
 def _create_user(role="admin", teams="tian_gong,walker_s2"):
     uid = uuid.uuid4().hex[:6]
     user_id = database.create_user_record(
@@ -20,10 +27,17 @@ def _create_user(role="admin", teams="tian_gong,walker_s2"):
     return user_id, f"user_{uid}", token, csrf
 
 
-def test_admin_users_unauthenticated():
+@pytest.mark.parametrize(
+    "page_path",
+    ["/admin/users", "/manage", "/upload", "/uploads/example-upload"],
+)
+def test_protected_pages_redirect_unauthenticated_users_to_login(page_path: str):
     client = TestClient(app)
-    response = client.get("/admin/users")
-    assert response.status_code == 401
+    response = client.get(page_path)
+    assert response.status_code == 200
+    assert response.url.path == "/login"
+    assert response.url.params.get("next") == page_path
+    assert response.history[0].status_code == 303
 
 
 def test_admin_users_forbidden_for_editor():

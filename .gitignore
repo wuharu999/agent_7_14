@@ -33,6 +33,8 @@ ecs-data/
 # Editor and IDE runtime state
 .vscode/
 .idea/
+.agents/
+.codex/
 
 # Live knowledge-base and Worker runtime data
 agent1/agent/.llm-wiki/

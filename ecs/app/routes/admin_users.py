@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import json
+import html
 from typing import Any
-from fastapi import APIRouter, Header, Request, HTTPException, status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Header, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from ecs.app.auth import (
     create_or_update_user,
+    current_session,
     hash_password,
     normalize_email,
     normalize_username,
     require_roles,
     verify_csrf,
 )
-from ecs.app.config import ALLOWED_TEAMS
 from ecs.app.database import (
+    get_allowed_teams,
     get_user_by_id,
     get_user_by_username,
     get_user_by_email,
@@ -51,11 +53,15 @@ def _template(name: str) -> str:
 
 @router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users_page(request: Request):
-    session = require_roles(request, {"admin"})
+    session = current_session(request)
+    if session is None:
+        return RedirectResponse("/login?next=/admin/users", status_code=303)
+    if session["role"] != "admin":
+        return HTMLResponse("Administrator permission required", status_code=403)
     page = _template("admin_users.html")
-    page = page.replace("__CSRF_TOKEN__", str(session["csrf_token"]))
-    page = page.replace("__USERNAME__", str(session["username"]))
-    page = page.replace("__ALLOWED_TEAMS__", json.dumps(ALLOWED_TEAMS, ensure_ascii=False))
+    page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
+    page = page.replace("__USERNAME__", html.escape(str(session["username"])))
+    page = page.replace("__ALLOWED_TEAMS__", json.dumps(get_allowed_teams(), ensure_ascii=False))
     return HTMLResponse(page)
 
 
@@ -63,7 +69,7 @@ async def admin_users_page(request: Request):
 async def api_list_users(request: Request):
     session = require_roles(request, {"admin"})
     users = list_users()
-    return JSONResponse({"status": "ok", "users": users, "allowed_teams": ALLOWED_TEAMS})
+    return JSONResponse({"status": "ok", "users": users, "allowed_teams": get_allowed_teams()})
 
 
 @router.post("/api/admin/users/create")
@@ -86,8 +92,8 @@ async def api_create_user(
     if get_user_by_email(email):
         return JSONResponse({"error": "Email already registered"}, status_code=400)
 
-    # Validate team choices against ALLOWED_TEAMS
-    valid_teams = [t for t in payload.teams if t in ALLOWED_TEAMS]
+    # Validate team choices against database robots
+    valid_teams = [t for t in payload.teams if t in get_allowed_teams()]
     teams_str = ",".join(valid_teams)
 
     user_id = create_or_update_user(
@@ -123,7 +129,7 @@ async def api_update_user(
     if not target_user:
         return JSONResponse({"error": "User not found"}, status_code=404)
 
-    valid_teams = [t for t in payload.teams if t in ALLOWED_TEAMS]
+    valid_teams = [t for t in payload.teams if t in get_allowed_teams()]
     teams_str = ",".join(valid_teams)
 
     update_user_details(user_id, role=payload.role, teams=teams_str)

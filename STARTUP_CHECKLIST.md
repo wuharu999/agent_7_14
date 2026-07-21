@@ -6,11 +6,12 @@
 cd /root/agent_7_14
 ./scripts/bootstrap_ecs.sh
 nvim ecs/.env
-source .venv-ecs/bin/activate
-python3 scripts/create_user.py --username admin --role admin
 tmux new -s agent-7-14-ecs
 ./scripts/run_ecs.sh
 ```
+
+On a fresh database, sign in as `admin` with `DEFAULT_ADMIN_PASSWORD` (or the
+documented default) and change the password immediately at `/admin/users`.
 
 ## LLM Wiki computer
 
