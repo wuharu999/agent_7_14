@@ -35,6 +35,7 @@ ecs-data/
 .idea/
 .agents/
 .codex/
+.agent1-deploy-backups/
 
 # Live knowledge-base and Worker runtime data
 agent1/agent/.llm-wiki/

@@ -2,6 +2,26 @@
 
 Agent1 is a public ECS gateway plus a private Worker for a robot-documentation knowledge base.
 
+## Git-based cloud updates
+
+After the one-time private GitHub clone and machine configuration, deploy code
+updates without copying ZIP files:
+
+```bash
+# ECS
+cd /root/agent_7_14
+./scripts/pull_and_restart_ecs.sh
+
+# Worker
+cd "$HOME/Documents/agent_7_14"
+./scripts/pull_and_restart_worker.sh
+```
+
+Both scripts pull `origin/main` with a fast-forward-only merge, preserve local
+environment files and ignored runtime data, create deployment backups, update
+Python dependencies, restart the expected tmux session, and run machine-level
+checks. Override the branch with `DEPLOY_BRANCH` when required.
+
 ## Included
 
 - Public question page and WeCom callback.
