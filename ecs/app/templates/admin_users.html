@@ -212,7 +212,7 @@ async function loadUsers() {
     tbody.innerHTML = '';
     if (!allUsers.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;">暂无用户记录。</td></tr>';
-      return;
+      return true;
     }
     for (const u of allUsers) {
       const tr = document.createElement('tr');
@@ -240,13 +240,16 @@ async function loadUsers() {
       `;
       tbody.appendChild(tr);
     }
+    return true;
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" style="color:#dc2626;text-align:center;">错误: ${err.message}</td></tr>`;
+    return false;
   }
 }
 
 document.getElementById('create-user-form').onsubmit = async (e) => {
   e.preventDefault();
+  const submitButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
   const statusDiv = document.getElementById('create-status');
   statusDiv.hidden = true;
   const username = document.getElementById('new-username').value.trim();
@@ -254,6 +257,8 @@ document.getElementById('create-user-form').onsubmit = async (e) => {
   const password = document.getElementById('new-password').value;
   const role = document.getElementById('new-role').value;
   const checkedChks = Array.from(document.querySelectorAll('#new-teams-checkboxes input:checked')).map(c => c.value);
+  let responseWasSuccessful = false;
+  submitButton.disabled = true;
 
   try {
     const res = await fetch('/api/admin/users/create', {
@@ -261,6 +266,7 @@ document.getElementById('create-user-form').onsubmit = async (e) => {
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
       body: JSON.stringify({ username, email, password, role, teams: checkedChks })
     });
+    responseWasSuccessful = res.ok;
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '创建用户失败');
     statusDiv.className = 'status-msg success';
@@ -268,11 +274,25 @@ document.getElementById('create-user-form').onsubmit = async (e) => {
     statusDiv.hidden = false;
     document.getElementById('create-user-form').reset();
     renderTeamsCheckboxes('new-teams-checkboxes', allowedTeams);
-    loadUsers();
+    await loadUsers();
   } catch (err) {
-    statusDiv.className = 'status-msg error';
-    statusDiv.textContent = '错误: ' + err.message;
+    const responseWasDropped = err instanceof TypeError || responseWasSuccessful;
+    const listRefreshed = responseWasDropped ? await loadUsers() : false;
+    const committedUser = listRefreshed && allUsers.find(user =>
+      user.username === username && String(user.email || '').toLowerCase() === email.toLowerCase()
+    );
+    if (committedUser) {
+      statusDiv.className = 'status-msg success';
+      statusDiv.textContent = `账户 ${username} 已创建；网络回执中断，系统已从用户列表核实。`;
+      document.getElementById('create-user-form').reset();
+      renderTeamsCheckboxes('new-teams-checkboxes', allowedTeams);
+    } else {
+      statusDiv.className = 'status-msg error';
+      statusDiv.textContent = '错误: ' + err.message;
+    }
     statusDiv.hidden = false;
+  } finally {
+    submitButton.disabled = false;
   }
 };
 

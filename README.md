@@ -106,6 +106,19 @@ The local LLM Wiki API token is not required for queue/cache monitoring or Auto 
 
 Read [FINAL_SETUP.md](FINAL_SETUP.md) for full first-run and upgrade instructions.
 
+For a Worker computer that receives the release manually, download the newest
+`release.zip` into `~/Downloads`, then run:
+
+```bash
+cd "$HOME/Documents/agent_7_14"
+./scripts/deploy_worker_from_downloads.sh
+```
+
+The script backs up `worker/.env` and the live LLM Wiki data, preserves the
+virtual environment and complete `agent1/agent` project, installs any Worker
+requirements, restarts the single Worker tmux session, and verifies the ECS
+connection. An explicit ZIP path may be passed as its only argument.
+
 ## Conversation-aware multilingual QA
 
 The public question page keeps a random conversation ID in the browser. Requests from that conversation are routed to the same QA lane and include a bounded recent history, so follow-up questions retain context without dedicating a permanent Claude process to one user. Selectable answer languages are Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.

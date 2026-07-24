@@ -1,4 +1,8 @@
+import json
+import re
+import subprocess
 import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -55,6 +59,29 @@ def test_admin_users_page_success():
     response = client.get("/admin/users")
     assert response.status_code == 200
     assert "用户与文件夹权限管理" in response.text
+
+
+def test_admin_user_creation_recovers_a_dropped_success_response():
+    client = TestClient(app)
+    _, _, token, _ = _create_user(role="admin")
+    client.cookies.set(config.SESSION_COOKIE_NAME, token)
+
+    page = client.get("/admin/users").text
+
+    assert "responseWasDropped" in page
+    assert "系统已从用户列表核实" in page
+    assert "submitButton.disabled = true" in page
+    scripts = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)
+    assert scripts
+    for script in scripts:
+        result = subprocess.run(
+            ["node", "-e", f"new Function({json.dumps(script)})"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, result.stderr
 
 
 def test_api_create_and_update_user():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import html
 from typing import Any
@@ -96,7 +97,11 @@ async def api_create_user(
     valid_teams = [t for t in payload.teams if t in get_allowed_teams()]
     teams_str = ",".join(valid_teams)
 
-    user_id = create_or_update_user(
+    # Password hashing is deliberately expensive. Keep it off the single
+    # Uvicorn event loop so the public HTTP connection and Worker WebSocket
+    # remain responsive while an account is created.
+    user_id = await asyncio.to_thread(
+        create_or_update_user,
         username=username,
         email=email,
         password=payload.password,
@@ -104,12 +109,20 @@ async def api_create_user(
         teams=teams_str,
     )
 
-    write_audit(
+    await asyncio.to_thread(
+        write_audit,
         action="create_user",
         user_id=int(session["user_id"]),
         username=str(session.get("username", "")),
         result="ok",
-        details=json.dumps({"created_user_id": user_id, "username": username, "role": payload.role, "teams": teams_str}),
+        details=json.dumps(
+            {
+                "created_user_id": user_id,
+                "username": username,
+                "role": payload.role,
+                "teams": teams_str,
+            }
+        ),
     )
 
     return JSONResponse({"status": "ok", "user_id": user_id, "username": username})
@@ -135,8 +148,10 @@ async def api_update_user(
     update_user_details(user_id, role=payload.role, teams=teams_str)
 
     if payload.password and len(payload.password) >= 10:
-        pwd_hash, pwd_salt = hash_password(payload.password)
-        update_user_password(user_id, pwd_hash, pwd_salt)
+        pwd_hash, pwd_salt = await asyncio.to_thread(hash_password, payload.password)
+        await asyncio.to_thread(
+            update_user_password, user_id, pwd_hash, pwd_salt
+        )
 
     write_audit(
         action="update_user",

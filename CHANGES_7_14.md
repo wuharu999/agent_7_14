@@ -35,6 +35,13 @@
 - Robot removal is blocked while one of that robot's sources is actively ingesting.
 - Worker startup creates only the shared `raw/sources/` root and no longer recreates a deleted configured robot folder.
 
+## Reliable administrator account creation
+
+- Expensive password hashing now runs outside the ECS event loop so user creation does not pause HTTP and Worker WebSocket handling.
+- If a successful create response is lost in transit, the administrator page refreshes the user list and reports verified success when the account was committed.
+- The create button is disabled while a request is in progress to prevent accidental duplicate submissions.
+- Added `scripts/deploy_worker_from_downloads.sh` for safe ZIP deployment directly on the Worker computer without ECS SSH access.
+
 ## Account settings menu
 
 - Added one shared ChatGPT-style account control with a circular initial avatar and username across the QA, WeCom QA, source manager, upload, upload-status, and administrator pages.
