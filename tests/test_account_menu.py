@@ -36,13 +36,13 @@ def test_login_page_does_not_show_an_account_menu() -> None:
     assert "data-account-menu" not in page
 
 
-def test_login_page_uses_youbida_branding_in_chinese() -> None:
+def test_login_page_uses_youbida_only_for_the_chinese_browser_title() -> None:
     page = (TEMPLATE_ROOT / "login.html").read_text(encoding="utf-8")
     assert '<title data-i18n="title">优必答登录</title>' in page
-    assert '<h1 data-i18n="header">优必答登录</h1>' in page
     assert 'title: "优必答登录"' in page
-    assert 'header: "优必答登录"' in page
-    assert "Uchat 登录" not in page
+    assert '<h1 data-i18n="header">Uchat 登录</h1>' in page
+    assert 'header: "Uchat 登录"' in page
+    assert 'title: "Uchat Sign In"' in page
 
 
 def test_account_actions_are_not_duplicated_in_page_templates() -> None:
