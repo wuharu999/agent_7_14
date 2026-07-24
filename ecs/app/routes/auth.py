@@ -15,6 +15,7 @@ from ecs.app.auth import (
     current_session,
     logout_session,
     safe_next_url,
+    safe_next_url_for_role,
     set_session_cookie,
     verify_csrf,
 )
@@ -86,7 +87,12 @@ async def login(
 
     _login_failures.pop(key, None)
     token, _csrf = create_login_session(int(user["id"]))
-    response = RedirectResponse(safe_next, status_code=303)
+    destination = safe_next_url_for_role(
+        safe_next,
+        str(user["role"]),
+        "/manage",
+    )
+    response = RedirectResponse(destination, status_code=303)
     set_session_cookie(response, token)
     write_audit(
         user_id=int(user["id"]),

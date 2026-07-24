@@ -199,6 +199,19 @@ def safe_next_url(value: str | None, default: str = "/manage") -> str:
     return value
 
 
+def safe_next_url_for_role(
+    value: str | None,
+    role: str,
+    default: str = "/manage",
+) -> str:
+    destination = safe_next_url(value, default)
+    if role != "admin" and (
+        destination == "/admin" or destination.startswith("/admin/")
+    ):
+        return default
+    return destination
+
+
 def check_robot_access(session: dict[str, Any], robot_path: str) -> bool:
     if session.get("role") == "admin":
         return True
@@ -212,4 +225,3 @@ def check_robot_access(session: dict[str, Any], robot_path: str) -> bool:
             """, (robot_path, session["user_id"])
         ).fetchone()
         return bool(row)
-

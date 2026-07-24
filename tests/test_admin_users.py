@@ -44,12 +44,47 @@ def test_protected_pages_redirect_unauthenticated_users_to_login(page_path: str)
     assert response.history[0].status_code == 303
 
 
-def test_admin_users_forbidden_for_editor():
+def test_admin_users_redirects_editor_to_manage_but_api_stays_forbidden():
     client = TestClient(app)
     _, _, token, _ = _create_user(role="editor")
     client.cookies.set(config.SESSION_COOKIE_NAME, token)
-    response = client.get("/admin/users")
-    assert response.status_code == 403
+    response = client.get("/admin/users", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/manage"
+
+    api_response = client.get("/api/admin/users")
+    assert api_response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_destination"),
+    [("editor", "/manage"), ("admin", "/admin/users")],
+)
+def test_login_destination_respects_role(role: str, expected_destination: str):
+    client = TestClient(app)
+    suffix = uuid.uuid4().hex[:8]
+    username = f"login_{suffix}"
+    password = "SecureLoginPassword123!"
+    auth.create_or_update_user(
+        username=username,
+        email=f"{username}@example.com",
+        password=password,
+        role=role,
+        teams="tian_gong" if role == "editor" else "",
+    )
+
+    response = client.post(
+        "/login",
+        data={
+            "username": username,
+            "password": password,
+            "next_url": "/admin/users",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == expected_destination
 
 
 def test_admin_users_page_success():

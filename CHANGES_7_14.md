@@ -40,6 +40,7 @@
 - Expensive password hashing now runs outside the ECS event loop so user creation does not pause HTTP and Worker WebSocket handling.
 - If a successful create response is lost in transit, the administrator page refreshes the user list and reports verified success when the account was committed.
 - The create button is disabled while a request is in progress to prevent accidental duplicate submissions.
+- Editors sent to an administrator-only URL during login now land on `/manage`; the administrator APIs remain inaccessible to them.
 - Added `scripts/deploy_worker_from_downloads.sh` for safe ZIP deployment directly on the Worker computer without ECS SSH access.
 
 ## Account settings menu

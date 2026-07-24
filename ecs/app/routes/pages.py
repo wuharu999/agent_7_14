@@ -8,7 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ecs.app.auth import current_session, safe_next_url
+from ecs.app.auth import current_session, safe_next_url, safe_next_url_for_role
 from ecs.app.database import get_allowed_teams
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, UPLOAD_ACCEPT
 
@@ -49,8 +49,16 @@ async def login_page(
     error: int = Query(default=0),
     next_url: str = Query(default="/manage", alias="next"),
 ):
-    if current_session(request) is not None:
-        return RedirectResponse(safe_next_url(next_url, "/manage"), status_code=303)
+    session = current_session(request)
+    if session is not None:
+        return RedirectResponse(
+            safe_next_url_for_role(
+                next_url,
+                str(session["role"]),
+                "/manage",
+            ),
+            status_code=303,
+        )
     page = _template("login.html")
     page = page.replace("__NEXT_URL__", html.escape(safe_next_url(next_url, "/manage"), quote=True))
     page = page.replace("__LOGIN_ERROR_CODE__", str(error))

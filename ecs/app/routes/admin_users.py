@@ -58,7 +58,7 @@ async def admin_users_page(request: Request):
     if session is None:
         return RedirectResponse("/login?next=/admin/users", status_code=303)
     if session["role"] != "admin":
-        return HTMLResponse("Administrator permission required", status_code=403)
+        return RedirectResponse("/manage", status_code=303)
     page = _template("admin_users.html")
     page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
     page = page.replace("__USERNAME__", html.escape(str(session["username"])))
