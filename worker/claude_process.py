@@ -7,7 +7,12 @@ import shlex
 from collections.abc import Sequence
 from typing import Any
 
-from worker.config import CLAUDE_EXTRA_ARGS, CLAUDE_TIMEOUT, get_team_config
+from worker.config import (
+    CLAUDE_EXTRA_ARGS,
+    CLAUDE_STREAM_BUFFER_LIMIT,
+    CLAUDE_TIMEOUT,
+    get_team_config,
+)
 
 READ_ONLY_TOOLS = ("Read", "Glob", "Grep")
 READ_ONLY_ALLOW_RULES = (
@@ -157,6 +162,7 @@ async def run_claude_process(
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=CLAUDE_STREAM_BUFFER_LIMIT,
         )
     except FileNotFoundError as exc:
         raise ClaudeProcessError("本地未找到 claude 命令") from exc
@@ -212,6 +218,7 @@ async def run_claude_process_stream(
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=CLAUDE_STREAM_BUFFER_LIMIT,
         )
     except FileNotFoundError as exc:
         raise ClaudeProcessError("本地未找到 claude 命令") from exc
@@ -299,6 +306,20 @@ async def run_claude_process_stream(
         raise ClaudeProcessError(
             f"Claude 调用超时 ({timeout or CLAUDE_TIMEOUT}s)"
         ) from exc
+    except (asyncio.LimitOverrunError, ValueError) as exc:
+        detail = str(exc).lower()
+        if not any(
+            marker in detail
+            for marker in (
+                "chunk is longer than limit",
+                "chunk exceed the limit",
+            )
+        ):
+            raise
+        await stop_process(process)
+        raise ClaudeProcessError(
+            "Claude stream event exceeded the configured buffer limit"
+        ) from exc
     except asyncio.CancelledError:
         await stop_process(process)
         raise
@@ -317,4 +338,3 @@ async def run_claude_process_stream(
         raise ClaudePolicyViolation("Claude response violated the disclosure policy")
 
     return full_result
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,33 @@ class HangingClaudeProcess:
 
     async def wait(self) -> int:
         return self.returncode or 0
+
+
+class FakeStreamInput:
+    def __init__(self) -> None:
+        self.data = b""
+        self.closed = False
+
+    def write(self, data: bytes) -> None:
+        self.data += data
+
+    async def drain(self) -> None:
+        return None
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeStreamingClaudeProcess:
+    def __init__(self, stdout: asyncio.StreamReader) -> None:
+        self.stdin = FakeStreamInput()
+        self.stdout = stdout
+        self.stderr = asyncio.StreamReader()
+        self.stderr.feed_eof()
+        self.returncode = 0
+
+    async def wait(self) -> int:
+        return self.returncode
 
 
 class PromptGuardTests(unittest.IsolatedAsyncioTestCase):
@@ -166,6 +194,41 @@ class PromptGuardTests(unittest.IsolatedAsyncioTestCase):
 
 
 class HardenedProcessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stream_json_line_larger_than_default_asyncio_limit(self) -> None:
+        answer = "x" * (70 * 1024)
+        event = {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": answer}]},
+        }
+        stdout = asyncio.StreamReader(limit=claude_process.CLAUDE_STREAM_BUFFER_LIMIT)
+        stdout.feed_data(json.dumps(event).encode("utf-8") + b"\n")
+        stdout.feed_eof()
+        process = FakeStreamingClaudeProcess(stdout)
+        chunks: list[str] = []
+
+        async def create(*_command: str, **kwargs: object) -> FakeStreamingClaudeProcess:
+            self.assertEqual(
+                kwargs["limit"], claude_process.CLAUDE_STREAM_BUFFER_LIMIT
+            )
+            return process
+
+        async def on_chunk(text: str, _thinking: str, _tokens: int) -> None:
+            chunks.append(text)
+
+        with patch(
+            "worker.claude_process.asyncio.create_subprocess_exec",
+            side_effect=create,
+        ):
+            result = await claude_process.run_claude_process_stream(
+                "benign question",
+                team="tian_gong",
+                system_prompt="private policy",
+                on_chunk=on_chunk,
+            )
+
+        self.assertEqual(result, answer)
+        self.assertEqual(chunks, [answer])
+
     async def test_disclosure_canary_is_rejected(self) -> None:
         async def create(*command: str, **_kwargs: object) -> FakeClaudeProcess:
             system_prompt = command[command.index("--append-system-prompt") + 1]

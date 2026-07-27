@@ -70,24 +70,22 @@ should return to the default `main` branch after the pull request is merged.
 
 ### Why `Separator is found, but chunk is longer than limit` appeared
 
-This message is an internal document/context splitting failure. A separator was
-recognized, but at least one resulting section—commonly an unbroken paragraph,
-large table, exported chat, or log block—still exceeded the upstream chunk-size
-limit. It appeared only sometimes because the failure depended on which source
-and conversation context Claude retrieved for that request.
+This message comes from Python's asynchronous subprocess stream reader, not
+from LLM Wiki splitting a Markdown document. The Worker reads Claude CLI's
+newline-delimited `stream-json` output with `readline()`. One JSON event could
+exceed Python's default 64 KiB stream limit even when every individual Markdown
+file was small. Tool results, image data, JSON escaping, and accumulated answer
+content can all make a single transport line much larger than its source file.
+It appeared only sometimes because the failure depended on what Claude read for
+that request and the size of the resulting JSON event.
 
-The immediate application bug was in the Worker response boundary: the Claude
-subprocess could return this text with a successful process exit, and the
-streaming path forwarded it as ordinary answer text. Exception handling did not
-run because no `ClaudeProcessError` was raised. A similar phrase check existed
-only for user questions, not Claude output.
-
-The fix now checks completed normal and streaming answers for known internal
-chunking failures before exposing them. Streaming output is withheld until this
-check completes, matching failures become localized generic errors, and old raw
-failures are omitted from later conversation history so they cannot be repeated
-through follow-up context. The technical event remains in the Worker log for
-diagnosis.
+The Worker now gives Claude's stream a bounded 8 MiB buffer, converts any larger
+event into a controlled `ClaudeProcessError`, and keeps a final manager-level
+boundary that never exposes raw exceptions. Streaming output is withheld until
+the completed answer passes safety checks, and old raw failures are omitted from
+later conversation history. The technical event remains in the Worker log for
+diagnosis. Override `CLAUDE_STREAM_BUFFER_LIMIT` only if a known deployment
+requires a different bounded value.
 
 ## Included
 
