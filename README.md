@@ -22,6 +22,73 @@ environment files and ignored runtime data, create deployment backups, update
 Python dependencies, restart the expected tmux session, and run machine-level
 checks. Override the branch with `DEPLOY_BRANCH` when required.
 
+### Updating the cloud computers for the chunking-error fix
+
+The recommended path is to merge the GitHub pull request into `main`, then
+update the ECS and Worker separately. Do not start the old Worker during this
+process; the ECS supports only one active Worker connection.
+
+On the existing ECS computer:
+
+```bash
+cd /root/agent_7_14
+git status --short
+./scripts/pull_and_restart_ecs.sh
+curl -fsS http://127.0.0.1:8000/health | python3 -m json.tool
+```
+
+On the new Worker computer, using its real login user:
+
+```bash
+cd "$HOME/Documents/agent_7_14"
+git status --short
+./scripts/pull_and_restart_worker.sh
+
+# Install the updated query template into the preserved live Wiki project.
+mkdir -p agent1/agent/wiki/queries
+cp agent1/wiki/queries/knowledge-base-query-template.md \
+  agent1/agent/wiki/queries/knowledge-base-query-template.md
+
+curl -fsS http://47.239.12.206:8000/health | python3 -m json.tool
+tmux capture-pane -pt agent-7-14-worker -S -80
+```
+
+The final health response must show `worker_online: true`. Then start a new
+browser conversation and test a normal `tian_gong` question in Simplified
+Chinese. The old raw error must not appear; if the upstream failure recurs, the
+page should show the localized temporary-unavailable message and the Worker log
+should contain `Suppressed internal document-chunking error in Claude output`.
+
+To validate the feature branch before merge, run either update script with:
+
+```bash
+DEPLOY_BRANCH=agent/upload-token-notice ./scripts/pull_and_restart_worker.sh
+```
+
+Use the equivalent ECS script on the ECS machine. Normal production updates
+should return to the default `main` branch after the pull request is merged.
+
+### Why `Separator is found, but chunk is longer than limit` appeared
+
+This message is an internal document/context splitting failure. A separator was
+recognized, but at least one resulting section—commonly an unbroken paragraph,
+large table, exported chat, or log block—still exceeded the upstream chunk-size
+limit. It appeared only sometimes because the failure depended on which source
+and conversation context Claude retrieved for that request.
+
+The immediate application bug was in the Worker response boundary: the Claude
+subprocess could return this text with a successful process exit, and the
+streaming path forwarded it as ordinary answer text. Exception handling did not
+run because no `ClaudeProcessError` was raised. A similar phrase check existed
+only for user questions, not Claude output.
+
+The fix now checks completed normal and streaming answers for known internal
+chunking failures before exposing them. Streaming output is withheld until this
+check completes, matching failures become localized generic errors, and old raw
+failures are omitted from later conversation history so they cannot be repeated
+through follow-up context. The technical event remains in the Worker log for
+diagnosis.
+
 ## Included
 
 - Public question page and WeCom callback.
