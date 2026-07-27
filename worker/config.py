@@ -97,6 +97,10 @@ AUTHORING_QUEUE_MAX = max(1, int(os.environ.get("AUTHORING_QUEUE_MAX", "8")))
 AUTHORING_LOCK_STRIPES = max(1, int(os.environ.get("AUTHORING_LOCK_STRIPES", "64")))
 FILE_MANAGER_MAX_ENTRIES = int(os.environ.get("FILE_MANAGER_MAX_ENTRIES", "10000"))
 CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "240"))
+CLAUDE_STREAM_BUFFER_LIMIT = max(
+    64 * 1024,
+    int(os.environ.get("CLAUDE_STREAM_BUFFER_LIMIT", str(8 * 1024**2))),
+)
 CLAUDE_ALLOWED_TOOLS = tuple(
     item.strip()
     for item in os.environ.get("CLAUDE_ALLOWED_TOOLS", "Read,Glob,Grep").split(",")

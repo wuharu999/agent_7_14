@@ -11,7 +11,12 @@ from typing import Any
 
 import websockets
 
-from worker.claude_runner import GAP_MARKER, run_claude, run_claude_stream
+from worker.claude_runner import (
+    GAP_MARKER,
+    generic_error_response,
+    run_claude,
+    run_claude_stream,
+)
 from worker.authoring import AuthoringError, chat as authoring_chat, create_session as create_authoring_session
 from worker.authoring import generate_article as generate_authoring_article, get_session as get_authoring_session
 from worker.conversation_store import ConversationStore
@@ -418,7 +423,7 @@ class WorkerManager:
                             "id": job.job_id,
                             "conversation_id": job.conversation_id,
                             "status": "error",
-                            "error": str(stream_exc),
+                            "error": generic_error_response(job.language),
                         })
                 else:
                     answer = await run_claude(
@@ -448,7 +453,7 @@ class WorkerManager:
                         "id": job.job_id,
                         "conversation_id": job.conversation_id,
                         "status": "error",
-                        "error": str(exc),
+                        "error": generic_error_response(job.language),
                     })
                 else:
                     await self.emit(

@@ -111,7 +111,7 @@ def is_internal_processing_error(text: str) -> bool:
     return any(marker in normalized for marker in _INTERNAL_CHUNK_ERROR_MARKERS)
 
 
-def _generic_error_response(language: str) -> str:
+def generic_error_response(language: str) -> str:
     return GENERIC_ERROR_RESPONSES.get(language, GENERIC_ERROR_RESPONSES["zh-CN"])
 
 
@@ -119,7 +119,7 @@ def _safe_answer(answer: str, language: str) -> str:
     if not is_internal_processing_error(answer):
         return answer
     log.error("Suppressed internal document-chunking error in Claude output")
-    return _generic_error_response(language)
+    return generic_error_response(language)
 
 
 def _history_text(history: Sequence[ConversationTurn]) -> str:
@@ -180,7 +180,7 @@ async def run_claude(
     except ClaudeProcessError as exc:
         detail = str(exc)
         log.error("Claude execution failed: %s", detail)
-        return _generic_error_response(language)
+        return generic_error_response(language)
 
 
 async def run_claude_stream(
@@ -235,6 +235,6 @@ async def run_claude_stream(
     except ClaudeProcessError as exc:
         detail = str(exc)
         log.error("Claude execution failed: %s", detail)
-        err_msg = _generic_error_response(language)
+        err_msg = generic_error_response(language)
         await on_chunk(err_msg, "", 0)
         return err_msg
