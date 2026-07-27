@@ -194,8 +194,8 @@ class PromptGuardTests(unittest.IsolatedAsyncioTestCase):
 
 
 class HardenedProcessTests(unittest.IsolatedAsyncioTestCase):
-    async def test_stream_json_line_larger_than_default_asyncio_limit(self) -> None:
-        answer = "x" * (70 * 1024)
+    async def test_large_image_sized_stream_event_exceeds_old_8_mib_limit(self) -> None:
+        answer = "x" * (9 * 1024**2)
         event = {
             "type": "assistant",
             "message": {"content": [{"type": "text", "text": answer}]},
