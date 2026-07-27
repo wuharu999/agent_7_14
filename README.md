@@ -79,7 +79,7 @@ content can all make a single transport line much larger than its source file.
 It appeared only sometimes because the failure depended on what Claude read for
 that request and the size of the resulting JSON event.
 
-The Worker now gives Claude's stream a bounded 8 MiB buffer, converts any larger
+The Worker now gives Claude's stream a bounded 32 MiB buffer, converts any larger
 event into a controlled `ClaudeProcessError`, and keeps a final manager-level
 boundary that never exposes raw exceptions. Streaming output is withheld until
 the completed answer passes safety checks, and old raw failures are omitted from
