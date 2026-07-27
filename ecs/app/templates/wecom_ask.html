@@ -68,6 +68,10 @@
   .thinking-dots span:nth-child(2){animation-delay:0.2s;}
   .thinking-dots span:nth-child(3){animation-delay:0.4s;}
   @keyframes thinkingDot{0%,80%,100%{opacity:0.2;transform:scale(0.8)}40%{opacity:1;transform:scale(1.2)}}
+  .answer-images{display:grid;gap:10px;margin-top:10px;}
+  .answer-image{margin:0;}
+  .answer-image img{display:block;max-width:100%;max-height:480px;width:auto;height:auto;border-radius:10px;border:1px solid var(--border-glass);background:#f8fafc;object-fit:contain;}
+  .answer-image figcaption{margin-top:4px;color:var(--text-muted);font-size:12px;}
   body::before {
     width: 400px; height: 400px;
     background: var(--accent-cyan);
@@ -816,6 +820,43 @@ async function doAsk() {
               const isZh = (typeof language !== 'undefined' && language.value === 'zh-CN') || (typeof uiLanguage !== 'undefined' && uiLanguage.value === 'zh-CN');
               const labelText = isZh ? '思考中' : 'Thinking';
               thinkingDiv.innerHTML = `${labelText} <span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>`;
+            }
+
+            if (typeof event.replace_text === 'string') {
+              let textContainer = botBubble.querySelector('.text-content');
+              if (!textContainer) {
+                textContainer = document.createElement('span');
+                textContainer.className = 'text-content';
+                botBubble.appendChild(textContainer);
+              }
+              textContainer.textContent = event.replace_text;
+              accumulatedText = event.replace_text;
+            }
+
+            if (event.image && typeof event.image.data === 'string') {
+              const allowedTypes = new Set(['image/png','image/jpeg','image/gif','image/webp']);
+              if (allowedTypes.has(event.image.mime_type)) {
+                let gallery = botBubble.querySelector('.answer-images');
+                if (!gallery) {
+                  gallery = document.createElement('div');
+                  gallery.className = 'answer-images';
+                  botBubble.appendChild(gallery);
+                }
+                const figure = document.createElement('figure');
+                figure.className = 'answer-image';
+                const img = document.createElement('img');
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.alt = String(event.image.alt || 'Knowledge-base image');
+                img.src = `data:${event.image.mime_type};base64,${event.image.data}`;
+                figure.appendChild(img);
+                if (event.image.alt) {
+                  const caption = document.createElement('figcaption');
+                  caption.textContent = String(event.image.alt);
+                  figure.appendChild(caption);
+                }
+                gallery.appendChild(figure);
+              }
             }
 
             if (event.text) {

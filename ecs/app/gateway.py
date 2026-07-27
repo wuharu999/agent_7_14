@@ -148,6 +148,8 @@ class WorkerGateway:
         ):
             if event.get("status") == "error":
                 raise RuntimeError(event.get("error") or "Unknown streaming error")
+            if isinstance(event.get("replace_text"), str):
+                full_text = [str(event["replace_text"])]
             if event.get("text"):
                 full_text.append(str(event["text"]))
         return "".join(full_text)
