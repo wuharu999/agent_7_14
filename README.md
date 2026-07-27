@@ -81,9 +81,10 @@ that request and the size of the resulting JSON event.
 
 The Worker now gives Claude's stream a bounded 32 MiB buffer, converts any larger
 event into a controlled `ClaudeProcessError`, and keeps a final manager-level
-boundary that never exposes raw exceptions. Streaming output is withheld until
-the completed answer passes safety checks, and old raw failures are omitted from
-later conversation history. The technical event remains in the Worker log for
+boundary that never exposes raw exceptions. Normal answer text streams through
+a short rolling safety buffer, while thinking-token progress remains live and
+raw chain-of-thought stays private. Old raw failures are omitted from later
+conversation history. The technical event remains in the Worker log for
 diagnosis. Override `CLAUDE_STREAM_BUFFER_LIMIT` only if a known deployment
 requires a different bounded value.
 

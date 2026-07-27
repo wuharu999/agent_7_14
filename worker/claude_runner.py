@@ -21,6 +21,7 @@ _INTERNAL_CHUNK_ERROR_MARKERS = (
     "separator is not found, but chunk is longer than limit",
     "chunk exceed the limit",
 )
+_STREAM_SAFETY_HOLDBACK = max(len(marker) for marker in _INTERNAL_CHUNK_ERROR_MARKERS) - 1
 
 LANGUAGE_NAMES = {
     "zh-CN": "Simplified Chinese (简体中文)",
@@ -213,9 +214,35 @@ async def run_claude_stream(
 
     from worker.claude_process import run_claude_process_stream
 
-    async def capture_chunk(_text: str, _thinking: str, _thinking_tokens: int) -> None:
-        """Withhold streamed output until the completed answer is safety-checked."""
-        return None
+    pending_text = ""
+    emitted_text = ""
+    blocked_stream = False
+
+    async def capture_chunk(text: str, thinking: str, thinking_tokens: int) -> None:
+        """Stream safe answer text and progress without exposing hidden reasoning."""
+        nonlocal pending_text, emitted_text, blocked_stream
+
+        if thinking or thinking_tokens:
+            # Preserve live progress telemetry, but never expose raw chain-of-thought.
+            await on_chunk("", "", thinking_tokens)
+
+        if not text or blocked_stream:
+            return
+
+        pending_text += text
+        if is_internal_processing_error(pending_text):
+            blocked_stream = True
+            pending_text = ""
+            return
+
+        safe_length = max(0, len(pending_text) - _STREAM_SAFETY_HOLDBACK)
+        if safe_length == 0:
+            return
+
+        safe_prefix = pending_text[:safe_length]
+        pending_text = pending_text[safe_length:]
+        emitted_text += safe_prefix
+        await on_chunk(safe_prefix, "", 0)
 
     try:
         answer = await run_claude_process_stream(
@@ -226,7 +253,17 @@ async def run_claude_stream(
             timeout=CLAUDE_TIMEOUT,
         )
         safe_answer = _safe_answer(answer, language)
-        await on_chunk(safe_answer, "", 0)
+        if blocked_stream or safe_answer != answer:
+            await on_chunk(safe_answer, "", 0)
+            return safe_answer
+
+        remaining_text = (
+            answer[len(emitted_text):]
+            if answer.startswith(emitted_text)
+            else pending_text
+        )
+        if remaining_text:
+            await on_chunk(remaining_text, "", 0)
         return safe_answer
     except ClaudePolicyViolation:
         err_text = refusal_text(language)

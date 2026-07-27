@@ -146,6 +146,46 @@ async def test_streaming_hides_internal_chunking_errors(monkeypatch):
     assert received == [(answer, "", 0)]
 
 
+@pytest.mark.anyio
+async def test_streaming_preserves_safe_text_and_thinking_progress(monkeypatch):
+    from worker import claude_process, claude_runner
+    from worker.prompt_security import GuardDecision
+
+    async def mock_guard(question):
+        return GuardDecision(blocked=False)
+
+    answer = "A" * 100
+
+    async def mock_run_claude_process_stream(
+        prompt, *, team, system_prompt, on_chunk, timeout=None
+    ):
+        await on_chunk(answer[:70], "private hidden reasoning", 12)
+        await on_chunk(answer[70:], "", 0)
+        return answer
+
+    received = []
+
+    async def receive_chunk(text, thinking, thinking_tokens):
+        received.append((text, thinking, thinking_tokens))
+
+    monkeypatch.setattr(claude_runner, "guard_user_input", mock_guard)
+    monkeypatch.setattr(
+        claude_process, "run_claude_process_stream", mock_run_claude_process_stream
+    )
+
+    result = await claude_runner.run_claude_stream(
+        "正常问题",
+        team="tian_gong",
+        on_chunk=receive_chunk,
+    )
+
+    assert result == answer
+    assert received[0] == ("", "", 12)
+    assert "".join(text for text, _, _ in received) == answer
+    assert all(thinking == "" for _, thinking, _ in received)
+    assert len(received) >= 3
+
+
 def test_history_omits_prior_internal_chunking_errors():
     from worker import claude_runner
 
