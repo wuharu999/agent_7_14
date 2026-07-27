@@ -12,6 +12,7 @@ from worker.config import CLAUDE_TIMEOUT
 from worker.conversation_store import ConversationTurn
 from worker.prompt_security import GuardDecision, guard_user_input, refusal_text
 from worker.qa_images import strip_qa_image_markdown
+from worker.terminology import TERMINOLOGY_HOLDBACK, canonicalize_product_names
 
 GAP_MARKER = "[KNOWLEDGE_GAP]"
 
@@ -22,7 +23,10 @@ _INTERNAL_CHUNK_ERROR_MARKERS = (
     "separator is not found, but chunk is longer than limit",
     "chunk exceed the limit",
 )
-_STREAM_SAFETY_HOLDBACK = max(len(marker) for marker in _INTERNAL_CHUNK_ERROR_MARKERS) - 1
+_STREAM_SAFETY_HOLDBACK = max(
+    max(len(marker) for marker in _INTERNAL_CHUNK_ERROR_MARKERS) - 1,
+    TERMINOLOGY_HOLDBACK,
+)
 
 LANGUAGE_NAMES = {
     "zh-CN": "Simplified Chinese (简体中文)",
@@ -55,6 +59,7 @@ Required retrieval procedure:
 
 Output requirements:
 - Output only the final answer; no tool commentary, permission request, preamble, or chain of thought.
+- Copy every product, project, platform, SDK, API, company, and brand name exactly as written in the knowledge-base source. Never translate, transliterate, localize, expand, or invent a Chinese/English version of a proper name. Translate only the surrounding description. For example, preserve `Thinkerstudio`, `Thinkercosmos`, `Walker S2 Edu`, and `ubt_robot SDK` verbatim in answers of every language.
 - When a relevant local picture materially improves the answer, read it first and add at most three Markdown image references in the exact form `![short description](wiki/media/path/to/image.png)`. Use only existing project-relative files under `wiki/media/`; never invent a path or use an external URL.
 - For procedures, troubleshooting, or safety questions, organize the answer as: conclusion, steps, status checks, cautions.
 - If the local knowledge base is insufficient, put [KNOWLEDGE_GAP] on the first line and then briefly state what information is missing.
@@ -171,11 +176,13 @@ async def run_claude(
         history=_history_text(history),
     )
     try:
-        answer = await run_claude_process(
-            prompt,
-            team=team,
-            system_prompt=SYSTEM_PROMPT,
-            timeout=CLAUDE_TIMEOUT,
+        answer = canonicalize_product_names(
+            await run_claude_process(
+                prompt,
+                team=team,
+                system_prompt=SYSTEM_PROMPT,
+                timeout=CLAUDE_TIMEOUT,
+            )
         )
         return _safe_answer(answer, language)
     except ClaudePolicyViolation:
@@ -244,7 +251,7 @@ async def run_claude_stream(
         if safe_length == 0:
             return
 
-        safe_prefix = pending_text[:safe_length]
+        safe_prefix = canonicalize_product_names(pending_text[:safe_length])
         pending_text = pending_text[safe_length:]
         emitted_text += safe_prefix
         await on_chunk(safe_prefix, "", 0)
@@ -257,8 +264,9 @@ async def run_claude_stream(
             on_chunk=capture_chunk,
             timeout=CLAUDE_TIMEOUT,
         )
-        safe_answer = _safe_answer(answer, language)
-        if blocked_stream or safe_answer != answer:
+        raw_safe_answer = _safe_answer(answer, language)
+        safe_answer = canonicalize_product_names(raw_safe_answer)
+        if blocked_stream or raw_safe_answer != answer:
             await on_chunk(safe_answer, "", 0)
             return safe_answer
 

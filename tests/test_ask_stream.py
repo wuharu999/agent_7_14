@@ -115,6 +115,25 @@ async def test_claude_runner_hides_internal_chunking_errors(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_nonstream_answer_corrects_known_product_translation(monkeypatch):
+    from worker import claude_runner
+    from worker.prompt_security import GuardDecision
+
+    async def mock_guard(question):
+        return GuardDecision(blocked=False)
+
+    async def mock_run_claude_process(prompt, *, team, system_prompt, timeout=None):
+        return "平台名称是慧思开物平台。"
+
+    monkeypatch.setattr(claude_runner, "guard_user_input", mock_guard)
+    monkeypatch.setattr(claude_runner, "run_claude_process", mock_run_claude_process)
+
+    answer = await claude_runner.run_claude("这是什么平台？", team="walker_s2")
+
+    assert answer == "平台名称是Thinkerstudio遥操数采平台。"
+
+
+@pytest.mark.anyio
 async def test_streaming_hides_internal_chunking_errors(monkeypatch):
     from worker import claude_process, claude_runner
     from worker.prompt_security import GuardDecision

@@ -98,6 +98,11 @@ through the existing authenticated Worker connection and rendered by the two QA
 pages; the private Worker filesystem is never exposed as a public path. Text-only
 consumers such as WeCom receive the cleaned answer without image-path markers.
 
+QA answers must preserve product, project, platform, SDK, API, company, and brand
+names exactly as written in the knowledge base. The Worker also corrects known
+generated translations of `Thinkerstudio` and `Thinkercosmos` before streaming
+them to users.
+
 ## Included
 
 - Public question page and WeCom callback.
