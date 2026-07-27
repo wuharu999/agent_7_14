@@ -200,6 +200,17 @@ class UploadBatchTemplateTests(unittest.TestCase):
         self.assertIn("pollUpload(item)", self.template)
         self.assertNotIn("location.href=data.status_page", self.template)
 
+    def test_upload_token_notice_is_available_in_both_interface_languages(self) -> None:
+        self.assertIn('data-i18n="uploadTokenNotice"', self.template)
+        self.assertIn(
+            "Each upload consumes processing tokens and may be published to the knowledge base.",
+            self.template,
+        )
+        self.assertIn(
+            "每次上传都会消耗处理 Token，并可能发布到知识库中。",
+            self.template,
+        )
+
     def test_bounded_queue_never_runs_more_than_two_workers(self) -> None:
         start = self.template.index("async function runBounded")
         end = self.template.index("function pollUpload", start)
