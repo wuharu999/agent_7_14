@@ -11,6 +11,7 @@ from worker.claude_process import (
 from worker.config import CLAUDE_TIMEOUT
 from worker.conversation_store import ConversationTurn
 from worker.prompt_security import GuardDecision, guard_user_input, refusal_text
+from worker.qa_images import strip_qa_image_markdown
 
 GAP_MARKER = "[KNOWLEDGE_GAP]"
 
@@ -54,6 +55,7 @@ Required retrieval procedure:
 
 Output requirements:
 - Output only the final answer; no tool commentary, permission request, preamble, or chain of thought.
+- When a relevant local picture materially improves the answer, read it first and add at most three Markdown image references in the exact form `![short description](wiki/media/path/to/image.png)`. Use only existing project-relative files under `wiki/media/`; never invent a path or use an external URL.
 - For procedures, troubleshooting, or safety questions, organize the answer as: conclusion, steps, status checks, cautions.
 - If the local knowledge base is insufficient, put [KNOWLEDGE_GAP] on the first line and then briefly state what information is missing.
 - If the queried term is an error message, error string, or code phrase (such as "Separator is not found" or "chunk exceed the limit") that is not found in the local wiki or raw sources, answer exactly: "整个知识库中未出现该错误信息字符串。"
@@ -236,6 +238,9 @@ async def run_claude_stream(
             return
 
         safe_length = max(0, len(pending_text) - _STREAM_SAFETY_HOLDBACK)
+        image_marker_start = pending_text.find("![")
+        if image_marker_start >= 0:
+            safe_length = min(safe_length, image_marker_start)
         if safe_length == 0:
             return
 
@@ -257,10 +262,11 @@ async def run_claude_stream(
             await on_chunk(safe_answer, "", 0)
             return safe_answer
 
+        visible_answer = strip_qa_image_markdown(safe_answer)
         remaining_text = (
-            answer[len(emitted_text):]
-            if answer.startswith(emitted_text)
-            else pending_text
+            visible_answer[len(emitted_text):]
+            if visible_answer.startswith(emitted_text)
+            else strip_qa_image_markdown(pending_text)
         )
         if remaining_text:
             await on_chunk(remaining_text, "", 0)

@@ -88,6 +88,16 @@ conversation history. The technical event remains in the Worker log for
 diagnosis. Override `CLAUDE_STREAM_BUFFER_LIMIT` only if a known deployment
 requires a different bounded value.
 
+### Knowledge-base images in QA answers
+
+Claude may include up to three relevant images that it has actually read from
+`wiki/media/`. The Worker accepts only project-relative Markdown references,
+rejects traversal and symlinks, permits PNG, JPEG, GIF, and WebP, and limits each
+image to 8 MiB and the total answer images to 12 MiB. Validated images are sent
+through the existing authenticated Worker connection and rendered by the two QA
+pages; the private Worker filesystem is never exposed as a public path. Text-only
+consumers such as WeCom receive the cleaned answer without image-path markers.
+
 ## Included
 
 - Public question page and WeCom callback.

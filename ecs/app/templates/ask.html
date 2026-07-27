@@ -25,6 +25,10 @@ body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#f5f7fb;colo
 .bubble.user{align-self:flex-end;background:#2563eb;color:#fff;border-bottom-right-radius:4px;}
 .bubble.bot{align-self:flex-start;background:#fff;border:1px solid #cbd5e1;color:#1e293b;border-bottom-left-radius:4px;}
 .bubble.system{align-self:center;background:transparent;color:#64748b;font-size:13px;padding:4px 8px;border:none;}
+.answer-images{display:grid;gap:10px;margin-top:10px;}
+.answer-image{margin:0;}
+.answer-image img{display:block;max-width:min(100%,680px);max-height:520px;width:auto;height:auto;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;object-fit:contain;}
+.answer-image figcaption{margin-top:4px;color:#64748b;font-size:12px;}
 
 textarea{width:100%;min-height:60px;max-height:150px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;box-sizing:border-box;font:inherit;resize:vertical;}
 .controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;}
@@ -407,6 +411,43 @@ async function submitQuestion(){
               const isZh = (typeof language !== 'undefined' && language.value === 'zh-CN') || (typeof uiLanguage !== 'undefined' && uiLanguage.value === 'zh-CN');
               const labelText = isZh ? '思考中' : 'Thinking';
               thinkingDiv.innerHTML = `${labelText} <span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>`;
+            }
+
+            if (typeof event.replace_text === 'string') {
+              let textContainer = botBubble.querySelector('.text-content');
+              if (!textContainer) {
+                textContainer = document.createElement('span');
+                textContainer.className = 'text-content';
+                botBubble.appendChild(textContainer);
+              }
+              textContainer.textContent = event.replace_text;
+              accumulatedText = event.replace_text;
+            }
+
+            if (event.image && typeof event.image.data === 'string') {
+              const allowedTypes = new Set(['image/png','image/jpeg','image/gif','image/webp']);
+              if (allowedTypes.has(event.image.mime_type)) {
+                let gallery = botBubble.querySelector('.answer-images');
+                if (!gallery) {
+                  gallery = document.createElement('div');
+                  gallery.className = 'answer-images';
+                  botBubble.appendChild(gallery);
+                }
+                const figure = document.createElement('figure');
+                figure.className = 'answer-image';
+                const img = document.createElement('img');
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.alt = String(event.image.alt || 'Knowledge-base image');
+                img.src = `data:${event.image.mime_type};base64,${event.image.data}`;
+                figure.appendChild(img);
+                if (event.image.alt) {
+                  const caption = document.createElement('figcaption');
+                  caption.textContent = String(event.image.alt);
+                  figure.appendChild(caption);
+                }
+                gallery.appendChild(figure);
+              }
             }
 
             if (event.text) {

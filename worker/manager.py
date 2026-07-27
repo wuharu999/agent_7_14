@@ -54,6 +54,7 @@ from worker.publisher import (
     safe_segment,
 )
 from worker.prompt_security import guard_user_input, refusal_text, scan_text_sources
+from worker.qa_images import extract_qa_images
 from worker.zip_extractor import extract_zip_safely
 from shared.team_names import normalize_team_name
 
@@ -408,6 +409,29 @@ class WorkerManager:
                             await asyncio.to_thread(log_unanswered, job.team, job.question)
                             if answer.startswith(GAP_MARKER):
                                 answer = answer[len(GAP_MARKER):].strip()
+
+                        display_answer, answer_images = await asyncio.to_thread(
+                            extract_qa_images,
+                            answer,
+                            get_team_config(job.team).base_dir,
+                        )
+                        if display_answer != answer:
+                            await self.emit({
+                                "type": "qa_stream_chunk",
+                                "id": job.job_id,
+                                "conversation_id": job.conversation_id,
+                                "replace_text": display_answer,
+                                "status": "chunk",
+                            })
+                        for image in answer_images:
+                            await self.emit({
+                                "type": "qa_stream_chunk",
+                                "id": job.job_id,
+                                "conversation_id": job.conversation_id,
+                                "image": image,
+                                "status": "chunk",
+                            })
+                        answer = display_answer
 
                         self.conversations.append(job.conversation_id, job.question, answer)
                         await self.emit({
