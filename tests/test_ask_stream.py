@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from ecs.app.gateway import WorkerGateway
+from worker.conversation_store import ConversationTurn
 
 @pytest.mark.anyio
 async def test_gateway_ask_stream():
@@ -90,6 +91,76 @@ async def test_claude_runner_query_target(monkeypatch):
     await claude_runner.run_claude("What is walker?", team="default")
     assert len(received_prompts) == 3
     assert "[Query Target: All Robots] What is walker?" in received_prompts[2][0]
+
+
+@pytest.mark.anyio
+async def test_claude_runner_hides_internal_chunking_errors(monkeypatch):
+    from worker import claude_runner
+    from worker.prompt_security import GuardDecision
+
+    async def mock_guard(question):
+        return GuardDecision(blocked=False)
+
+    async def mock_run_claude_process(prompt, *, team, system_prompt, timeout=None):
+        return "Separator is found, but chunk is longer than limit"
+
+    monkeypatch.setattr(claude_runner, "guard_user_input", mock_guard)
+    monkeypatch.setattr(claude_runner, "run_claude_process", mock_run_claude_process)
+
+    answer = await claude_runner.run_claude("你能干啥", team="tian_gong")
+
+    assert answer == "[错误] 助手暂时无法响应，请稍后再试。"
+
+
+@pytest.mark.anyio
+async def test_streaming_hides_internal_chunking_errors(monkeypatch):
+    from worker import claude_process, claude_runner
+    from worker.prompt_security import GuardDecision
+
+    async def mock_guard(question):
+        return GuardDecision(blocked=False)
+
+    async def mock_run_claude_process_stream(
+        prompt, *, team, system_prompt, on_chunk, timeout=None
+    ):
+        await on_chunk("Separator is found, but chunk is longer than limit", "", 0)
+        return "Separator is found, but chunk is longer than limit"
+
+    received = []
+
+    async def receive_chunk(text, thinking, thinking_tokens):
+        received.append((text, thinking, thinking_tokens))
+
+    monkeypatch.setattr(claude_runner, "guard_user_input", mock_guard)
+    monkeypatch.setattr(
+        claude_process, "run_claude_process_stream", mock_run_claude_process_stream
+    )
+
+    answer = await claude_runner.run_claude_stream(
+        "你能干啥",
+        team="tian_gong",
+        on_chunk=receive_chunk,
+    )
+
+    assert answer == "[错误] 助手暂时无法响应，请稍后再试。"
+    assert received == [(answer, "", 0)]
+
+
+def test_history_omits_prior_internal_chunking_errors():
+    from worker import claude_runner
+
+    history = [
+        ConversationTurn(
+            question="你能干啥",
+            answer="Separator is found, but chunk is longer than limit",
+        ),
+        ConversationTurn(question="正常问题", answer="正常回答"),
+    ]
+
+    rendered = claude_runner._history_text(history)
+
+    assert "Separator is found" not in rendered
+    assert "正常问题" in rendered
 
 
 @pytest.mark.anyio
