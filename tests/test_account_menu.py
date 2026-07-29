@@ -72,6 +72,8 @@ def test_shared_component_contains_role_gated_admin_and_account_actions() -> Non
     assert "fetch('/logout'" in script
     assert "accountSettings" in script
     assert "accountSettings.href = '/settings'" in script
+    assert "window.location.assign('/settings')" in script
+    assert "heading.dataset.accountLabel = 'account'" in script
 
 
 def test_shared_component_javascript_parses() -> None:
