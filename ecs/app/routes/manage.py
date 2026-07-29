@@ -218,6 +218,7 @@ async def delete_source(
 
 class CreateRobotRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
+    chinese_name: str = Field(min_length=1, max_length=64)
     description: str = Field(default="", max_length=500)
     storage_path: str = Field(default="")
 
@@ -249,6 +250,9 @@ async def create_robot_endpoint(
         name = normalize_team_name(payload.name, allow_reserved=False)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
+    chinese_name = payload.chinese_name.strip()
+    if not chinese_name:
+        return JSONResponse({"error": "Chinese robot name is required"}, status_code=400)
 
     if get_robot_by_name(name) is not None:
         return JSONResponse({"error": f"Robot '{name}' already exists"}, status_code=409)
@@ -276,7 +280,13 @@ async def create_robot_endpoint(
         )
 
     try:
-        robot_id = create_robot(name, payload.description, name)
+        robot_id = create_robot(
+            name,
+            payload.description,
+            name,
+            display_name_en=name,
+            display_name_zh=chinese_name,
+        )
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=409)
     return {"status": "ok", "robot_id": robot_id, "name": name}

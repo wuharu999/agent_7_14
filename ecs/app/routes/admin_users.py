@@ -19,6 +19,7 @@ from ecs.app.auth import (
 )
 from ecs.app.database import (
     get_allowed_teams,
+    get_robot_options,
     get_user_by_id,
     get_user_by_username,
     get_user_by_email,
@@ -64,6 +65,7 @@ async def admin_users_page(request: Request):
     page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
     page = page.replace("__USERNAME__", html.escape(str(session["username"])))
     page = page.replace("__ALLOWED_TEAMS__", json.dumps(get_allowed_teams(), ensure_ascii=False))
+    page = page.replace("__ROBOTS__", json.dumps(get_robot_options(), ensure_ascii=False))
     return HTMLResponse(page)
 
 

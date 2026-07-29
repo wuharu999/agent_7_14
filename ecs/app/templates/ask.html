@@ -245,22 +245,27 @@ function translateUI() {
 }
 
 const allowedTeams=__ALLOWED_TEAMS__;
+const robots=__ROBOTS__;
 const allOp = document.createElement('option');
 allOp.value = 'all';
 allOp.setAttribute('data-i18n', 'allRobots');
 team.appendChild(allOp);
-allowedTeams.forEach(t=>{const op=document.createElement('option');op.value=t;op.textContent=t;team.appendChild(op)});
+function robotLabel(robot){return currentLang==='zh-CN'||currentLang==='zh-TW'?robot.chinese_name:robot.english_name}
+function renderRobotOptions(){const selected=team.value||localStorage.getItem(teamKey)||'all';team.replaceChildren(allOp);robots.forEach(robot=>{const op=document.createElement('option');op.value=robot.name;op.textContent=robotLabel(robot);team.appendChild(op)});team.value=[...team.options].some(op=>op.value===selected)?selected:'all'}
+renderRobotOptions();
 
 function newConversationId(){return 'web:'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));}
 function getConversationId(){let id=localStorage.getItem(conversationKey);if(!id){id=newConversationId();localStorage.setItem(conversationKey,id)}return id;}
 
 language.value=localStorage.getItem(languageKey)||'zh-CN';
 currentLang = language.value;
+renderRobotOptions();
 
 language.addEventListener('change',()=>{
   currentLang = language.value;
   localStorage.setItem(languageKey,currentLang);
   translateUI();
+  renderRobotOptions();
 });
 
 if(localStorage.getItem(teamKey) && (allowedTeams.includes(localStorage.getItem(teamKey)) || localStorage.getItem(teamKey) === 'all')){

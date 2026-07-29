@@ -246,6 +246,10 @@ let active=0,maximum=0,completed=[];
     def test_rendered_template_javascript_parses(self) -> None:
         rendered = self.template.replace("__ALLOWED_TEAMS__", '["tian_gong"]')
         rendered = rendered.replace(
+            "__ROBOTS__",
+            '[{"name":"tian_gong","english_name":"Tiangong","chinese_name":"天工"}]',
+        )
+        rendered = rendered.replace(
             "__SUPPORTED_UPLOAD_SUFFIXES__",
             json.dumps(sorted(SUPPORTED_UPLOAD_SUFFIXES)),
         )

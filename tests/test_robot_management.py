@@ -77,7 +77,7 @@ def test_create_robot_waits_for_worker_then_updates_chat_and_folder(
 
     response = client.post(
         "/api/manage/robots",
-        json={"name": robot_name, "description": "New robot"},
+        json={"name": robot_name, "chinese_name": "新机器人", "description": "New robot"},
         headers={"X-CSRF-Token": csrf},
     )
 
@@ -95,7 +95,7 @@ def test_create_robot_offline_does_not_persist(monkeypatch):
 
     response = client.post(
         "/api/manage/robots",
-        json={"name": "offline_robot"},
+        json={"name": "offline_robot", "chinese_name": "离线机器人"},
         headers={"X-CSRF-Token": csrf},
     )
 
@@ -246,7 +246,7 @@ def test_create_robot_rejects_unsafe_or_reserved_names(monkeypatch, name):
 
     response = client.post(
         "/api/manage/robots",
-        json={"name": name},
+        json={"name": name, "chinese_name": "测试机器人"},
         headers={"X-CSRF-Token": csrf},
     )
 

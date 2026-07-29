@@ -41,7 +41,10 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
     <div class="admin-create">
         <h3 data-i18n="createRobot">Create Robot</h3>
         <form id="create-robot-form" style="display: flex; flex-direction: column; gap: 10px;">
+            <label for="robot-name">English name / folder key</label>
             <input type="text" id="robot-name" data-i18n="robotNamePlaceholder" placeholder="Robot Name" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
+            <label for="robot-name-zh">机器人中文名称</label>
+            <input type="text" id="robot-name-zh" placeholder="机器人中文名称" required maxlength="64" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
             <button type="submit" class="button" data-i18n="createRobotBtn">Create Robot</button>
             <p id="create-robot-msg" class="muted"></p>
         </form>
@@ -546,7 +549,7 @@ if (role === 'admin') {
                 const header = document.createElement('div');
                 header.className = 'robot-card-header';
                 const heading = document.createElement('strong');
-                heading.textContent = robot.name;
+                heading.textContent = uiLanguage.value === 'zh-CN' ? (robot.display_name_zh || robot.name) : (robot.display_name_en || robot.name);
                 const removeButton = document.createElement('button');
                 removeButton.type = 'button';
                 removeButton.className = 'danger';
@@ -625,6 +628,7 @@ if (role === 'admin') {
                 headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
                 body: JSON.stringify({
                     name: document.getElementById('robot-name').value,
+                    chinese_name: document.getElementById('robot-name-zh').value,
                     description: '',
                     storage_path: '',
                 })

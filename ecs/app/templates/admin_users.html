@@ -178,7 +178,15 @@ th { background: #f8fafc; font-weight: 600; color: #475569; border-top: 1px soli
 
 <script>
 const csrfToken = '__CSRF_TOKEN__';
-const allowedTeams = JSON.parse('__ALLOWED_TEAMS__');
+const robotOptions = __ROBOTS__;
+const allowedTeams = robotOptions.map(robot => robot.name);
+function displayTeamName(name) {
+  const robot = robotOptions.find(item => item.name === name);
+  const selectedLanguage = localStorage.getItem('agent1_ui_language') || 'zh-CN';
+  return selectedLanguage === 'zh-CN' || selectedLanguage === 'zh-TW'
+    ? (robot?.chinese_name || name)
+    : (robot?.english_name || name);
+}
 let allUsers = [];
 
 function renderTeamsCheckboxes(containerId, selectedTeams = []) {
@@ -220,7 +228,7 @@ async function loadUsers() {
       if (u.role === 'admin') {
         teamsHtml = '<span class="folder-tag" style="background:#fef3c7;color:#92400e;border-color:#fde68a;">全部文件夹 (All Folders)</span>';
       } else if (teamsList.length) {
-        teamsHtml = teamsList.map(t => `<span class="folder-tag">${t}</span>`).join(' ');
+        teamsHtml = teamsList.map(t => `<span class="folder-tag">${displayTeamName(t)}</span>`).join(' ');
       } else {
         teamsHtml = '<span style="color:#94a3b8;font-size:12px;">无专用文件夹 (No Folder Access)</span>';
       }

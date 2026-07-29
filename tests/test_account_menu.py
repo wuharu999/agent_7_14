@@ -91,6 +91,7 @@ def test_account_menu_javascript_parses(template_name: str) -> None:
 
     for script in scripts:
         rendered_script = script.replace("__ALLOWED_TEAMS__", "[]")
+        rendered_script = rendered_script.replace("__ROBOTS__", "[]")
         result = subprocess.run(
             ["node", "-e", f"new Function({json.dumps(rendered_script)})"],
             check=False,

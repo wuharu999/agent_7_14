@@ -188,6 +188,8 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS robots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
+                display_name_en TEXT NOT NULL DEFAULT '',
+                display_name_zh TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '',
                 storage_path TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
@@ -217,6 +219,16 @@ def initialize_database() -> None:
             );
             """
         )
+        if "display_name_en" not in _columns(connection, "robots"):
+            connection.execute(
+                "ALTER TABLE robots ADD COLUMN display_name_en TEXT NOT NULL DEFAULT ''"
+            )
+        if "display_name_zh" not in _columns(connection, "robots"):
+            connection.execute(
+                "ALTER TABLE robots ADD COLUMN display_name_zh TEXT NOT NULL DEFAULT ''"
+            )
+        connection.execute("UPDATE robots SET display_name_en = name WHERE display_name_en = ''")
+        connection.execute("UPDATE robots SET display_name_zh = name WHERE display_name_zh = ''")
 
         now = utc_now()
         source_tree_synced = connection.execute(
@@ -524,7 +536,14 @@ def get_robot_by_name(name: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def create_robot(name: str, description: str = "", storage_path: str = "") -> int:
+def create_robot(
+    name: str,
+    description: str = "",
+    storage_path: str = "",
+    *,
+    display_name_en: str | None = None,
+    display_name_zh: str | None = None,
+) -> int:
     name = normalize_team_name(name, allow_reserved=False)
     normalized_storage_path = normalize_team_name(
         storage_path or name, allow_reserved=False
@@ -535,8 +554,8 @@ def create_robot(name: str, description: str = "", storage_path: str = "") -> in
     with _DB_LOCK, _connect() as connection:
         try:
             cursor = connection.execute(
-                "INSERT INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
-                (name, description.strip(), normalized_storage_path, now)
+                "INSERT INTO robots (name, display_name_en, display_name_zh, description, storage_path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, (display_name_en or name).strip(), (display_name_zh or name).strip(), description.strip(), normalized_storage_path, now)
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Robot '{name}' already exists") from exc
@@ -1239,3 +1258,15 @@ def get_allowed_teams() -> list[str]:
         if name not in names:
             names.append(name)
     return names
+
+
+def get_robot_options() -> list[dict[str, str]]:
+    """Return stable Worker folder keys with browser display names."""
+    return [
+        {
+            "name": str(robot["name"]),
+            "english_name": str(robot.get("display_name_en") or robot["name"]),
+            "chinese_name": str(robot.get("display_name_zh") or robot["name"]),
+        }
+        for robot in get_all_robots()
+    ]

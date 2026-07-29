@@ -95,7 +95,9 @@ body{font-family:system-ui,sans-serif;max-width:1080px;margin:40px auto;padding:
 <p><a href="/manage" data-i18n="manageSources">Manage sources</a> · <a href="/" data-i18n="backQuestions">Back to questions</a></p>
 <script>
 const csrfToken='__CSRF_TOKEN__';
-const teams=__ALLOWED_TEAMS__;const team=document.getElementById('team');const authoringTeam=document.getElementById('authoring-team');for(const value of teams){if(team){const opt=document.createElement('option');opt.value=value;opt.textContent=value;team.appendChild(opt)}if(authoringTeam){const opt2=document.createElement('option');opt2.value=value;opt2.textContent=value;authoringTeam.appendChild(opt2)}}
+const teams=__ALLOWED_TEAMS__;const robots=__ROBOTS__;const team=document.getElementById('team');const authoringTeam=document.getElementById('authoring-team');
+function displayRobot(robot){return uiLanguage.value==='zh-CN'?(robot.chinese_name||robot.name):(robot.english_name||robot.name)}
+function renderRobotSelectors(){const selectedTeam=team.value;const selectedAuthoringTeam=authoringTeam.value;team.replaceChildren();authoringTeam.replaceChildren();for(const robot of robots){const opt=document.createElement('option');opt.value=robot.name;opt.textContent=displayRobot(robot);team.appendChild(opt);const opt2=opt.cloneNode(true);authoringTeam.appendChild(opt2)}team.value=selectedTeam||robots[0]?.name||'';authoringTeam.value=selectedAuthoringTeam||robots[0]?.name||''}
 const supportedUploadSuffixes=new Set(__SUPPORTED_UPLOAD_SUFFIXES__);const MAX_BATCH_FILES=20;const UPLOAD_CONCURRENCY=2;
 
 const authoringChat=document.getElementById('authoring-chat'),authoringMessage=document.getElementById('authoring-message'),authoringStart=document.getElementById('authoring-start'),authoringSend=document.getElementById('authoring-send'),authoringGenerate=document.getElementById('authoring-generate'),authoringTitle=document.getElementById('authoring-title'),authoringMarkdown=document.getElementById('authoring-markdown'),authoringPublish=document.getElementById('authoring-publish'),authoringStatus=document.getElementById('authoring-status'),authoringFiles=document.getElementById('authoring-files'),authoringFilesSummary=document.getElementById('authoring-files-summary'),authoringHelpBtn=document.getElementById('authoring-help-btn'),authoringHelpModal=document.getElementById('authoring-help-modal'),authoringHelpClose=document.getElementById('authoring-help-close');let authoringSession=null,articleId=null;
@@ -163,7 +165,7 @@ function applyLanguage(){
   }
   uiLanguage.setAttribute('aria-label',uiLanguage.value==='zh-CN'?'界面语言':'Interface language');
 }
-uiLanguage.value=localStorage.getItem('agent1_ui_language')||'en';applyLanguage();uiLanguage.onchange=()=>{localStorage.setItem('agent1_ui_language',uiLanguage.value);applyLanguage();refreshUploadLanguage()};
+uiLanguage.value=localStorage.getItem('agent1_ui_language')||'en';applyLanguage();renderRobotSelectors();uiLanguage.onchange=()=>{localStorage.setItem('agent1_ui_language',uiLanguage.value);applyLanguage();renderRobotSelectors();refreshUploadLanguage()};
 
 const uploadForm=document.getElementById('form'),fileInput=document.getElementById('file'),uploadButton=document.getElementById('upload-button'),selectionSummary=document.getElementById('selection-summary'),batchSummary=document.getElementById('batch-summary'),uploadQueue=document.getElementById('upload-queue');
 const terminalUploadStatuses=new Set(['completed','failed','partially_failed','download_failed','sources_removed']);const failedUploadStatuses=new Set(['unsupported','request_failed','failed','partially_failed','download_failed']);let uploadItems=[];let batchRunning=false;
