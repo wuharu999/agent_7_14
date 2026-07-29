@@ -184,12 +184,29 @@ class UploadEndpointTests(unittest.TestCase):
             status="failed",
             error="Provider connection failed",
         )
+        database.create_upload(
+            upload_id="old-active-monitor",
+            task_id="old-active-monitor-task",
+            team="tian_gong",
+            filename="old.md",
+            size_bytes=12,
+            ecs_path="/tmp/old.md",
+            status="waiting_for_llm_wiki",
+            stage="waiting_for_llm_wiki",
+            message="Stale waiting upload",
+        )
+        with database._DB_LOCK, database._connect() as connection:
+            connection.execute(
+                "UPDATE uploads SET created_at = ?, updated_at = ? WHERE upload_id = ?",
+                ("2020-01-01T00:00:00+00:00", "2020-01-01T00:00:00+00:00", "old-active-monitor"),
+            )
 
         uploads_for_monitor = database.list_recent_uploads_with_sources(hours=24)
         monitored = next(item for item in uploads_for_monitor if item["upload_id"] == "recent-monitor")
 
         self.assertEqual(monitored["sources"][0]["source_identity"], "tian_gong/recent-monitor/failed-file.md")
         self.assertEqual(monitored["sources"][0]["error"], "Provider connection failed")
+        self.assertNotIn("old-active-monitor", {item["upload_id"] for item in uploads_for_monitor})
 
     def test_unsupported_extension_returns_400_without_creating_upload(self) -> None:
         response = self._upload("payload.exe")

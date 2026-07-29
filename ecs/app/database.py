@@ -1085,32 +1085,23 @@ def list_uploads(limit: int = 50) -> list[dict[str, Any]]:
 
 
 def list_recent_uploads_with_sources(hours: int = 24, limit: int = 200) -> list[dict[str, Any]]:
-    """Return recent uploads plus all uploads that are still being processed.
+    """Return uploads created within the requested retention window.
 
     Source rows are included so the browser can keep failed filenames and
     ingestion errors visible for the requested retention window.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    active_statuses = (
-        "waiting_for_worker",
-        "queued_for_worker",
-        "worker_disconnected",
-        "waiting_for_llm_wiki",
-        "queued_in_llm_wiki",
-        "ingesting",
-    )
-    placeholders = ",".join("?" for _ in active_statuses)
     with _DB_LOCK, _connect() as connection:
         upload_rows = connection.execute(
-            f"""
+            """
             SELECT upload_id, team, filename, size_bytes, status, stage, message,
                    percent, error, created_by, created_at, updated_at
             FROM uploads
-            WHERE created_at >= ? OR status IN ({placeholders})
+            WHERE created_at >= ?
             ORDER BY created_at DESC
             LIMIT ?
             """,
-            (cutoff, *active_statuses, limit),
+            (cutoff, limit),
         ).fetchall()
         upload_ids = [str(row["upload_id"]) for row in upload_rows]
         source_rows = []
