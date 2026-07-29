@@ -24,7 +24,7 @@ def test_system_prompt_requires_verbatim_product_names() -> None:
 def test_system_prompt_rejects_political_and_unrelated_questions() -> None:
     assert "Refuse political questions" in claude_runner.SYSTEM_PROMPT
     assert "any unrelated question" in claude_runner.SYSTEM_PROMPT
-    assert "AI notice at the end" in claude_runner.SYSTEM_PROMPT
+    assert "AI notice at the end" not in claude_runner.SYSTEM_PROMPT
 
 
 @pytest.mark.anyio
