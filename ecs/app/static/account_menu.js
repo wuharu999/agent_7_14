@@ -84,7 +84,9 @@
     const popover = makeElement('div', 'account-menu-popover');
     popover.role = 'menu';
     popover.hidden = true;
-    const heading = makeElement('div', 'account-menu-heading');
+    const heading = makeElement('a', 'account-menu-heading');
+    heading.href = '/settings';
+    heading.role = 'menuitem';
     heading.dataset.accountLabel = 'account';
     popover.appendChild(heading);
 
