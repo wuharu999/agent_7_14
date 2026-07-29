@@ -36,6 +36,15 @@ def test_login_page_does_not_show_an_account_menu() -> None:
     assert "data-account-menu" not in page
 
 
+def test_settings_page_shows_an_inline_current_password_error() -> None:
+    page = (TEMPLATE_ROOT / "settings.html").read_text(encoding="utf-8")
+
+    assert 'id="current-password-error"' in page
+    assert "Current password is incorrect" in page
+    assert "当前密码不正确，请重新输入。" in page
+    assert "aria-invalid" in page
+
+
 def test_login_page_uses_youbida_only_for_the_chinese_browser_title() -> None:
     page = (TEMPLATE_ROOT / "login.html").read_text(encoding="utf-8")
     assert '<title data-i18n="title">优必答登录</title>' in page
