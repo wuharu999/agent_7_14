@@ -240,6 +240,8 @@ class UploadBatchTemplateTests(unittest.TestCase):
         self.assertIn("link.href='/uploads/'+encodeURIComponent", self.template)
         self.assertIn("source.error", self.template)
         self.assertIn("upload-row.ingesting", self.template)
+        self.assertIn("document.createElement('details')", self.template)
+        self.assertIn("row.open=ingesting||failedUploadStatuses.has(status)", self.template)
 
     def test_upload_token_notice_is_available_in_both_interface_languages(self) -> None:
         self.assertIn('data-i18n="uploadTokenNotice"', self.template)
