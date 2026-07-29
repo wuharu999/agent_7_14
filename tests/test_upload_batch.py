@@ -166,6 +166,31 @@ class UploadEndpointTests(unittest.TestCase):
             self.assertEqual(record["team"], "tian_gong")
             self.assertEqual(Path(record["ecs_path"]).read_bytes(), expected)
 
+    def test_recent_upload_monitor_includes_source_failures(self) -> None:
+        database.create_upload(
+            upload_id="recent-monitor",
+            task_id="recent-monitor-task",
+            team="tian_gong",
+            filename="recent.zip",
+            size_bytes=12,
+            ecs_path="/tmp/recent.zip",
+            status="failed",
+            stage="ingestion_failed",
+            message="Ingestion failed",
+        )
+        database.upsert_source(
+            upload_id="recent-monitor",
+            source_identity="tian_gong/recent-monitor/failed-file.md",
+            status="failed",
+            error="Provider connection failed",
+        )
+
+        uploads_for_monitor = database.list_recent_uploads_with_sources(hours=24)
+        monitored = next(item for item in uploads_for_monitor if item["upload_id"] == "recent-monitor")
+
+        self.assertEqual(monitored["sources"][0]["source_identity"], "tian_gong/recent-monitor/failed-file.md")
+        self.assertEqual(monitored["sources"][0]["error"], "Provider connection failed")
+
     def test_unsupported_extension_returns_400_without_creating_upload(self) -> None:
         response = self._upload("payload.exe")
 
@@ -210,9 +235,11 @@ class UploadBatchTemplateTests(unittest.TestCase):
     def test_global_upload_status_is_persisted_and_refreshed_from_the_api(self) -> None:
         self.assertIn('id="global-upload-list"', self.template)
         self.assertIn('id="current-batch-summary"', self.template)
-        self.assertIn("fetch('/api/uploads?limit=50')", self.template)
+        self.assertIn("fetch('/api/uploads/recent?hours=24&limit=200')", self.template)
         self.assertIn("function refreshGlobalUploads()", self.template)
         self.assertIn("link.href='/uploads/'+encodeURIComponent", self.template)
+        self.assertIn("source.error", self.template)
+        self.assertIn("upload-row.ingesting", self.template)
 
     def test_upload_token_notice_is_available_in_both_interface_languages(self) -> None:
         self.assertIn('data-i18n="uploadTokenNotice"', self.template)

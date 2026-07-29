@@ -4,7 +4,7 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1082,6 +1082,66 @@ def list_uploads(limit: int = 50) -> list[dict[str, Any]]:
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def list_recent_uploads_with_sources(hours: int = 24, limit: int = 200) -> list[dict[str, Any]]:
+    """Return recent uploads plus all uploads that are still being processed.
+
+    Source rows are included so the browser can keep failed filenames and
+    ingestion errors visible for the requested retention window.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    active_statuses = (
+        "waiting_for_worker",
+        "queued_for_worker",
+        "worker_disconnected",
+        "waiting_for_llm_wiki",
+        "queued_in_llm_wiki",
+        "ingesting",
+    )
+    placeholders = ",".join("?" for _ in active_statuses)
+    with _DB_LOCK, _connect() as connection:
+        upload_rows = connection.execute(
+            f"""
+            SELECT upload_id, team, filename, size_bytes, status, stage, message,
+                   percent, error, created_by, created_at, updated_at
+            FROM uploads
+            WHERE created_at >= ? OR status IN ({placeholders})
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (cutoff, *active_statuses, limit),
+        ).fetchall()
+        upload_ids = [str(row["upload_id"]) for row in upload_rows]
+        source_rows = []
+        if upload_ids:
+            source_placeholders = ",".join("?" for _ in upload_ids)
+            source_rows = connection.execute(
+                f"""
+                SELECT upload_id, source_identity, status, error, files_written,
+                       retry_count, max_retries, active_queue_count, updated_at
+                FROM upload_sources
+                WHERE upload_id IN ({source_placeholders})
+                ORDER BY source_identity
+                """,
+                upload_ids,
+            ).fetchall()
+
+    sources_by_upload: dict[str, list[dict[str, Any]]] = {upload_id: [] for upload_id in upload_ids}
+    for row in source_rows:
+        source = dict(row)
+        try:
+            source["files_written"] = json.loads(source.get("files_written") or "[]")
+        except json.JSONDecodeError:
+            source["files_written"] = []
+        sources_by_upload.setdefault(str(source["upload_id"]), []).append(source)
+
+    uploads: list[dict[str, Any]] = []
+    for row in upload_rows:
+        upload = dict(row)
+        upload["sources"] = sources_by_upload.get(str(upload["upload_id"]), [])
+        uploads.append(upload)
+    return uploads
 
 
 def list_dispatchable_uploads() -> list[dict[str, Any]]:

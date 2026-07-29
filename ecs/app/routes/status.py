@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from ecs.app.auth import require_user
-from ecs.app.database import get_upload, list_uploads
+from ecs.app.database import get_upload, list_recent_uploads_with_sources, list_uploads
 from ecs.app.gateway import gateway
 
 router = APIRouter()
@@ -24,6 +24,16 @@ async def health():
 async def uploads_api(request: Request, limit: int = Query(50, ge=1, le=200)):
     require_user(request)
     return {"uploads": list_uploads(limit)}
+
+
+@router.get("/api/uploads/recent")
+async def recent_uploads_api(
+    request: Request,
+    hours: int = Query(24, ge=1, le=168),
+    limit: int = Query(200, ge=1, le=200),
+):
+    require_user(request)
+    return {"uploads": list_recent_uploads_with_sources(hours=hours, limit=limit)}
 
 
 @router.get("/api/uploads/{upload_id}")
