@@ -27,7 +27,7 @@ def test_shared_account_settings_menu_is_loaded_on_every_application_page(
     page = (TEMPLATE_ROOT / template_name).read_text(encoding="utf-8")
 
     assert 'href="/static/account_menu.css"' in page
-    assert 'src="/static/account_menu.js?v=20260729-2"' in page
+    assert 'src="/static/account_menu.js?v=20260729-3"' in page
     assert "data-account-menu" in page
 
 
@@ -82,8 +82,7 @@ def test_shared_component_contains_role_gated_admin_and_account_actions() -> Non
     assert "accountSettings" in script
     assert "accountSettings.href = '/settings'" in script
     assert "window.location.assign('/settings')" in script
-    assert "heading.dataset.accountLabel = 'account'" in script
-    assert "heading.href = '/settings'" in script
+    assert "account-menu-heading" not in script
 
 
 def test_shared_component_javascript_parses() -> None:
