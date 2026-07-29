@@ -620,16 +620,28 @@ if (role === 'admin') {
                 namesEditor.style.gridTemplateColumns = 'minmax(0, 1fr) minmax(0, 1fr) auto auto';
                 namesEditor.style.gap = '8px';
                 namesEditor.style.marginTop = '10px';
+                const englishField = document.createElement('label');
+                englishField.style.display = 'grid';
+                englishField.style.gap = '3px';
+                englishField.style.fontSize = '12px';
+                englishField.textContent = tr('englishDisplayName');
                 const englishInput = document.createElement('input');
                 englishInput.type = 'text';
                 englishInput.maxLength = 64;
                 englishInput.value = robot.display_name_en || robot.name;
                 englishInput.setAttribute('aria-label', tr('englishDisplayName'));
+                englishField.appendChild(englishInput);
+                const chineseField = document.createElement('label');
+                chineseField.style.display = 'grid';
+                chineseField.style.gap = '3px';
+                chineseField.style.fontSize = '12px';
+                chineseField.textContent = tr('chineseDisplayName');
                 const chineseInput = document.createElement('input');
                 chineseInput.type = 'text';
                 chineseInput.maxLength = 64;
                 chineseInput.value = robot.display_name_zh || robot.name;
                 chineseInput.setAttribute('aria-label', tr('chineseDisplayName'));
+                chineseField.appendChild(chineseInput);
                 const saveNamesButton = document.createElement('button');
                 saveNamesButton.type = 'submit';
                 saveNamesButton.textContent = tr('saveRobotNames');
@@ -639,7 +651,7 @@ if (role === 'admin') {
                 cancelNamesButton.className = 'secondary';
                 cancelNamesButton.textContent = tr('cancel');
                 cancelNamesButton.style.margin = '0';
-                namesEditor.append(englishInput, chineseInput, saveNamesButton, cancelNamesButton);
+                namesEditor.append(englishField, chineseField, saveNamesButton, cancelNamesButton);
                 editButton.addEventListener('click', () => {
                     namesEditor.hidden = !namesEditor.hidden;
                     if (!namesEditor.hidden) englishInput.focus();

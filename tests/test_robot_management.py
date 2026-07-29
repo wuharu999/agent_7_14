@@ -322,6 +322,8 @@ def test_editor_pool_drag_assignment_and_removal():
     assert "removeButton.textContent = '×'" in page
     assert "/api/manage/robots/${robot.id}" in page
     assert "editRobotNames" in page
+    assert "englishDisplayName" in page
+    assert "chineseDisplayName" in page
     assert "method: 'PATCH'" in page
     scripts = []
     cursor = 0
