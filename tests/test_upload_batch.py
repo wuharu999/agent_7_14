@@ -252,6 +252,8 @@ class UploadBatchTemplateTests(unittest.TestCase):
     def test_global_upload_status_is_persisted_and_refreshed_from_the_api(self) -> None:
         self.assertIn('id="global-upload-list"', self.template)
         self.assertIn('id="current-batch-summary"', self.template)
+        self.assertIn('<details id="batch-summary"', self.template)
+        self.assertIn('<details id="current-batch-panel"', self.template)
         self.assertIn("fetch('/api/uploads/recent?hours=24&limit=200')", self.template)
         self.assertIn("function refreshGlobalUploads()", self.template)
         self.assertIn("link.href='/uploads/'+encodeURIComponent", self.template)
