@@ -207,6 +207,13 @@ class UploadBatchTemplateTests(unittest.TestCase):
         self.assertIn("item.sources=Array.isArray(data.sources)?data.sources:[]", self.template)
         self.assertIn("retry_count", self.template)
 
+    def test_global_upload_status_is_persisted_and_refreshed_from_the_api(self) -> None:
+        self.assertIn('id="global-upload-list"', self.template)
+        self.assertIn('id="current-batch-summary"', self.template)
+        self.assertIn("fetch('/api/uploads?limit=50')", self.template)
+        self.assertIn("function refreshGlobalUploads()", self.template)
+        self.assertIn("link.href='/uploads/'+encodeURIComponent", self.template)
+
     def test_upload_token_notice_is_available_in_both_interface_languages(self) -> None:
         self.assertIn('data-i18n="uploadTokenNotice"', self.template)
         self.assertIn(
