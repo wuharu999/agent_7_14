@@ -293,6 +293,13 @@ def test_qa_pages_render_validated_image_payloads():
         assert "event.replace_text" in template
 
 
+def test_claude_image_instruction_allows_relevant_uploaded_source_assets():
+    from worker import claude_runner
+
+    assert "Proactively include a picture" in claude_runner.SYSTEM_PROMPT
+    assert "raw/sources/team/upload-id/path/to/image.png" in claude_runner.SYSTEM_PROMPT
+
+
 def test_history_omits_prior_internal_chunking_errors():
     from worker import claude_runner
 

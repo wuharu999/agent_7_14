@@ -27,6 +27,21 @@ def test_extracts_existing_bounded_wiki_image(tmp_path: Path) -> None:
     assert base64.b64decode(str(images[0]["data"])) == b"image-data"
 
 
+def test_extracts_existing_bounded_source_asset_image(tmp_path: Path) -> None:
+    image_path = tmp_path / "raw" / "sources" / "tian_gong" / "upload-1" / "robot.png"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"image-data")
+
+    cleaned, images = qa_images.extract_qa_images(
+        "![机器人正面](raw/sources/tian_gong/upload-1/robot.png)",
+        tmp_path,
+    )
+
+    assert cleaned == ""
+    assert len(images) == 1
+    assert images[0]["mime_type"] == "image/png"
+
+
 def test_rejects_traversal_symlink_and_unsupported_type(tmp_path: Path) -> None:
     media = tmp_path / "wiki" / "media"
     media.mkdir(parents=True)

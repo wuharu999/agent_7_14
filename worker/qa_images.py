@@ -10,7 +10,7 @@ MAX_QA_IMAGE_BYTES = 8 * 1024**2
 MAX_QA_IMAGE_TOTAL_BYTES = 12 * 1024**2
 
 _IMAGE_MARKDOWN = re.compile(
-    r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<path>wiki/media/[^)>\n]+)>?\s*\)"
+    r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<path>(?:wiki/media|raw/sources)/[^)>\n]+)>?\s*\)"
 )
 _IMAGE_MIME_TYPES = {
     ".gif": "image/gif",
@@ -41,7 +41,10 @@ def extract_qa_images(
 ) -> tuple[str, list[dict[str, str | int]]]:
     """Extract bounded, local wiki images referenced by a Claude answer."""
     project_root = project_root.resolve()
-    media_root = (project_root / "wiki" / "media").resolve()
+    image_roots = tuple(
+        (project_root / root).resolve()
+        for root in ("wiki/media", "raw/sources")
+    )
     images: list[dict[str, str | int]] = []
     seen: set[Path] = set()
     total_bytes = 0
@@ -57,7 +60,10 @@ def extract_qa_images(
             continue
         try:
             image_path = (project_root / relative_path).resolve(strict=True)
-            image_path.relative_to(media_root)
+            if not any(
+                image_path.is_relative_to(image_root) for image_root in image_roots
+            ):
+                continue
         except (FileNotFoundError, OSError, ValueError):
             continue
         if image_path in seen or not image_path.is_file():
