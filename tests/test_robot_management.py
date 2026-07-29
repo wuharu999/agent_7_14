@@ -324,6 +324,10 @@ def test_editor_pool_drag_assignment_and_removal():
     assert "editRobotNames" in page
     assert "englishDisplayName" in page
     assert "chineseDisplayName" in page
+    assert 'class="petdex-state-panel"' in page
+    assert "/petdex/assets/sleeping-sheet.png" in page
+    assert "/petdex/assets/charging-sheet.png" in page
+    assert "/petdex/assets/thinking-sheet.png" in page
     assert "method: 'PATCH'" in page
     scripts = []
     cursor = 0
