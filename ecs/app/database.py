@@ -583,6 +583,31 @@ def get_robot_by_id(robot_id: int) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def update_robot_display_names(
+    robot_id: int,
+    *,
+    display_name_en: str,
+    display_name_zh: str,
+) -> dict[str, Any]:
+    """Update display names without changing the stable Worker folder key."""
+    english_name = display_name_en.strip()
+    chinese_name = display_name_zh.strip()
+    if not english_name or not chinese_name:
+        raise ValueError("English and Chinese robot names are required")
+    if len(english_name) > 64 or len(chinese_name) > 64:
+        raise ValueError("Robot display names must be 64 characters or fewer")
+    with _DB_LOCK, _connect() as connection:
+        cursor = connection.execute(
+            "UPDATE robots SET display_name_en = ?, display_name_zh = ? WHERE id = ?",
+            (english_name, chinese_name, robot_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Robot not found")
+    robot = get_robot_by_id(robot_id)
+    assert robot is not None
+    return robot
+
+
 def list_active_editors() -> list[dict[str, Any]]:
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute(

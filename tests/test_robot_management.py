@@ -103,6 +103,31 @@ def test_create_robot_offline_does_not_persist(monkeypatch):
     assert database.get_robot_by_name("offline_robot") is None
 
 
+def test_admin_can_update_robot_display_names_used_by_chat_selector():
+    client, csrf = _admin_client()
+    robot_id = database.create_robot(
+        "display_robot",
+        display_name_en="Old English",
+        display_name_zh="旧中文",
+    )
+
+    response = client.patch(
+        f"/api/manage/robots/{robot_id}",
+        json={"english_name": "Walker Display", "chinese_name": "行者展示"},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    robot = database.get_robot_by_id(robot_id)
+    assert robot is not None
+    assert robot["name"] == "display_robot"
+    assert robot["display_name_en"] == "Walker Display"
+    assert robot["display_name_zh"] == "行者展示"
+    chat_page = client.get("/").text
+    assert '"english_name": "Walker Display"' in chat_page
+    assert '"chinese_name": "行者展示"' in chat_page
+
+
 def test_old_database_keeps_all_configured_robots_after_upgrade(monkeypatch):
     with database._DB_LOCK, database._connect() as connection:
         connection.execute("DELETE FROM robot_editors")
@@ -296,6 +321,8 @@ def test_editor_pool_drag_assignment_and_removal():
     assert "dataTransfer.setData('text/plain'" in page
     assert "removeButton.textContent = '×'" in page
     assert "/api/manage/robots/${robot.id}" in page
+    assert "editRobotNames" in page
+    assert "method: 'PATCH'" in page
     scripts = []
     cursor = 0
     while True:

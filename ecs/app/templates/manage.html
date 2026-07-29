@@ -127,6 +127,13 @@ const translations = {
     loadingRobots: 'Loading robots...',
     noRobots: 'No robot folders were returned by the source tree.',
     removeRobot: 'Remove robot',
+    editRobotNames: 'Edit names',
+    englishDisplayName: 'English display name',
+    chineseDisplayName: 'Chinese display name',
+    saveRobotNames: 'Save names',
+    cancel: 'Cancel',
+    savingRobotNames: 'Saving...',
+    updateRobotNamesFailed: 'Failed to update robot names.',
     removingRobot: 'Removing...',
     confirmRemoveRobot: 'Remove robot {robotName} and all source files inside it?\n\nThe folder will be moved to .agent1-trash and editor assignments will be removed.',
     removeRobotFailed: 'Failed to remove robot.',
@@ -186,6 +193,13 @@ const translations = {
     loadingRobots: '正在加载机器人列表……',
     noRobots: '源文件树中没有机器人文件夹。',
     removeRobot: '移除机器人',
+    editRobotNames: '修改名称',
+    englishDisplayName: '英文显示名称',
+    chineseDisplayName: '中文显示名称',
+    saveRobotNames: '保存名称',
+    cancel: '取消',
+    savingRobotNames: '正在保存……',
+    updateRobotNamesFailed: '修改机器人名称失败。',
     removingRobot: '正在移除……',
     confirmRemoveRobot: '确认移除机器人 {robotName} 及其全部源文件吗？\n\n文件夹将移至 .agent1-trash，相关编辑者分配也会移除。',
     removeRobotFailed: '移除机器人失败。',
@@ -510,6 +524,33 @@ if (role === 'admin') {
         }
     }
 
+    async function updateRobotNames(robot, englishInput, chineseInput, button, editor) {
+        const englishName = englishInput.value.trim();
+        const chineseName = chineseInput.value.trim();
+        if (!englishName || !chineseName) {
+            alert(tr('englishDisplayName') + ' / ' + tr('chineseDisplayName') + ' required');
+            return;
+        }
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = tr('savingRobotNames');
+        try {
+            const response = await fetch(`/api/manage/robots/${robot.id}`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                body: JSON.stringify({english_name: englishName, chinese_name: chineseName})
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || tr('updateRobotNamesFailed'));
+            editor.hidden = true;
+            await loadRobots();
+        } catch (error) {
+            alert(String(error));
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+
     async function loadRobots() {
         try {
             const [robotsResponse, editorsResponse] = await Promise.all([
@@ -550,6 +591,17 @@ if (role === 'admin') {
                 header.className = 'robot-card-header';
                 const heading = document.createElement('strong');
                 heading.textContent = uiLanguage.value === 'zh-CN' ? (robot.display_name_zh || robot.name) : (robot.display_name_en || robot.name);
+                const controls = document.createElement('div');
+                controls.style.display = 'flex';
+                controls.style.gap = '8px';
+                const editButton = document.createElement('button');
+                editButton.type = 'button';
+                editButton.className = 'secondary';
+                editButton.textContent = tr('editRobotNames');
+                editButton.style.margin = '0';
+                editButton.style.padding = '0 11px';
+                editButton.style.height = '32px';
+                editButton.style.fontSize = '12px';
                 const removeButton = document.createElement('button');
                 removeButton.type = 'button';
                 removeButton.className = 'danger';
@@ -558,8 +610,46 @@ if (role === 'admin') {
                     event.stopPropagation();
                     removeRobot(robot, removeButton);
                 });
-                header.append(heading, removeButton);
+                controls.append(editButton, removeButton);
+                header.append(heading, controls);
                 div.appendChild(header);
+
+                const namesEditor = document.createElement('form');
+                namesEditor.hidden = true;
+                namesEditor.style.display = 'grid';
+                namesEditor.style.gridTemplateColumns = 'minmax(0, 1fr) minmax(0, 1fr) auto auto';
+                namesEditor.style.gap = '8px';
+                namesEditor.style.marginTop = '10px';
+                const englishInput = document.createElement('input');
+                englishInput.type = 'text';
+                englishInput.maxLength = 64;
+                englishInput.value = robot.display_name_en || robot.name;
+                englishInput.setAttribute('aria-label', tr('englishDisplayName'));
+                const chineseInput = document.createElement('input');
+                chineseInput.type = 'text';
+                chineseInput.maxLength = 64;
+                chineseInput.value = robot.display_name_zh || robot.name;
+                chineseInput.setAttribute('aria-label', tr('chineseDisplayName'));
+                const saveNamesButton = document.createElement('button');
+                saveNamesButton.type = 'submit';
+                saveNamesButton.textContent = tr('saveRobotNames');
+                saveNamesButton.style.margin = '0';
+                const cancelNamesButton = document.createElement('button');
+                cancelNamesButton.type = 'button';
+                cancelNamesButton.className = 'secondary';
+                cancelNamesButton.textContent = tr('cancel');
+                cancelNamesButton.style.margin = '0';
+                namesEditor.append(englishInput, chineseInput, saveNamesButton, cancelNamesButton);
+                editButton.addEventListener('click', () => {
+                    namesEditor.hidden = !namesEditor.hidden;
+                    if (!namesEditor.hidden) englishInput.focus();
+                });
+                cancelNamesButton.addEventListener('click', () => { namesEditor.hidden = true; });
+                namesEditor.addEventListener('submit', event => {
+                    event.preventDefault();
+                    updateRobotNames(robot, englishInput, chineseInput, saveNamesButton, namesEditor);
+                });
+                div.appendChild(namesEditor);
 
                 const hint = document.createElement('p');
                 hint.className = 'robot-drop-hint';

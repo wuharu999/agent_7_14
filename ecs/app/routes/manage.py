@@ -22,6 +22,7 @@ from ecs.app.database import (
     mark_sources_deleted,
     reconcile_robots_with_source_tree,
     remove_robot_editor,
+    update_robot_display_names,
     write_audit,
 )
 from ecs.app.gateway import gateway
@@ -225,6 +226,11 @@ class CreateRobotRequest(BaseModel):
 class AssignEditorRequest(BaseModel):
     user_id: int
 
+
+class UpdateRobotDisplayNamesRequest(BaseModel):
+    english_name: str = Field(min_length=1, max_length=64)
+    chinese_name: str = Field(min_length=1, max_length=64)
+
 @router.get("/api/manage/robots")
 async def list_robots(request: Request):
     session = require_roles(request, {"admin"})
@@ -376,6 +382,46 @@ async def remove_robot(
         "name": robot_name,
         **details,
         "message": "Robot source folder moved to Worker trash and metadata removed.",
+    }
+
+
+@router.patch("/api/manage/robots/{robot_id}")
+async def update_robot_display_names_endpoint(
+    robot_id: int,
+    payload: UpdateRobotDisplayNamesRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"admin"})
+    verify_csrf(session, x_csrf_token)
+    robot = get_robot_by_id(robot_id)
+    if robot is None:
+        return JSONResponse({"error": "Robot not found"}, status_code=404)
+    try:
+        updated = update_robot_display_names(
+            robot_id,
+            display_name_en=payload.english_name,
+            display_name_zh=payload.chinese_name,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    write_audit(
+        user_id=int(session["user_id"]),
+        username=str(session["username"]),
+        action="update_robot_display_names",
+        source_path=str(robot["name"]),
+        result="ok",
+        details=json.dumps(
+            {
+                "english_name": updated["display_name_en"],
+                "chinese_name": updated["display_name_zh"],
+            },
+            ensure_ascii=False,
+        ),
+    )
+    return {
+        "status": "ok",
+        "robot": updated,
     }
 
 @router.get("/api/manage/robots/{robot_id}/editors")
