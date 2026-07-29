@@ -21,6 +21,7 @@ from shared.source_types import (
     SUPPORTED_SOURCE_SUFFIXES,
     SUPPORTED_UPLOAD_SUFFIXES,
     TEXT_SOURCE_SUFFIXES,
+    VISUAL_ASSET_SUFFIXES,
     is_supported_upload,
 )
 
@@ -70,7 +71,11 @@ class SharedSourceTypeTests(unittest.TestCase):
     def test_source_and_outer_upload_formats_are_consistent(self) -> None:
         self.assertEqual(
             SUPPORTED_SOURCE_SUFFIXES,
-            frozenset(DOCUMENT_SOURCE_SUFFIXES + TEXT_SOURCE_SUFFIXES),
+            frozenset(
+                DOCUMENT_SOURCE_SUFFIXES
+                + TEXT_SOURCE_SUFFIXES
+                + VISUAL_ASSET_SUFFIXES
+            ),
         )
         self.assertEqual(ARCHIVE_UPLOAD_SUFFIXES, (".zip",))
         self.assertEqual(
@@ -86,6 +91,10 @@ class SharedSourceTypeTests(unittest.TestCase):
             "table.XLSX",
             "readme.MDX",
             "配置.YAML",
+            "控制面板.PNG",
+            "camera.JPEG",
+            "walk-cycle.webp",
+            "motion.GIF",
             "sources.ZIP",
         ):
             self.assertTrue(is_supported_upload(filename), filename)
@@ -241,6 +250,11 @@ class UploadBatchTemplateTests(unittest.TestCase):
         self.assertIn("data.status_page", self.template)
         self.assertIn("pollUpload(item)", self.template)
         self.assertNotIn("location.href=data.status_page", self.template)
+
+    def test_visual_assets_are_listed_for_multimodal_ingestion(self) -> None:
+        self.assertIn('data-i18n="assetsTitle"', self.template)
+        self.assertIn(".png, .jpg, .jpeg, .webp, .gif", self.template)
+        self.assertIn("multimodal ingestion", self.template)
 
     def test_each_upload_row_shows_worker_and_llm_wiki_progress(self) -> None:
         self.assertIn("pipelineWorker", self.template)

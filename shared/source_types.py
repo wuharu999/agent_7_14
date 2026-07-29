@@ -15,10 +15,18 @@ TEXT_SOURCE_SUFFIXES = (
     ".yaml",
     ".yml",
 )
+# Published unchanged as source assets for the multimodal LLM Wiki ingester.
+VISUAL_ASSET_SUFFIXES = (
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+)
 ARCHIVE_UPLOAD_SUFFIXES = (".zip",)
 
 SUPPORTED_SOURCE_SUFFIXES = frozenset(
-    DOCUMENT_SOURCE_SUFFIXES + TEXT_SOURCE_SUFFIXES
+    DOCUMENT_SOURCE_SUFFIXES + TEXT_SOURCE_SUFFIXES + VISUAL_ASSET_SUFFIXES
 )
 SUPPORTED_UPLOAD_SUFFIXES = frozenset(
     (*SUPPORTED_SOURCE_SUFFIXES, *ARCHIVE_UPLOAD_SUFFIXES)

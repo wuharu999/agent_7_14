@@ -148,9 +148,10 @@ scan, error handling, and LLM Wiki status link. A failed file does not stop the
 rest of the selection.
 
 Supported documents are PDF, DOCX, PPTX, and XLSX. Supported text/data files
-are Markdown, TXT, CSV, JSON, HTML, XML, and YAML. ZIP archives may contain
-supported sources and should be used when related files need to remain one
-source bundle.
+are Markdown, TXT, CSV, JSON, HTML, XML, and YAML. Visual assets are PNG,
+JPG/JPEG, WebP, and GIF; they are published as original source assets for LLM
+Wiki's multimodal ingestion. ZIP archives may contain supported sources and
+should be used when related files need to remain one source bundle.
 
 On the first startup of a fresh database, the ECS seeds an `admin` account. Its
 password comes from `DEFAULT_ADMIN_PASSWORD`, or defaults to
