@@ -402,6 +402,18 @@ def update_user_password(user_id: int, password_hash: str, password_salt: str) -
         )
 
 
+def update_user_email(user_id: int, email: str) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        try:
+            connection.execute(
+                "UPDATE users SET email = ?, updated_at = ? WHERE id = ?",
+                (email, now, user_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("Email already registered") from exc
+
+
 def toggle_user_active(user_id: int) -> bool:
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
@@ -460,6 +472,7 @@ def get_session_with_user(token_hash: str) -> dict[str, Any] | None:
                 s.csrf_token,
                 s.expires_at,
                 u.username,
+                u.email,
                 u.role,
                 u.teams,
                 u.is_active

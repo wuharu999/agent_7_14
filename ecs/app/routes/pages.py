@@ -58,6 +58,17 @@ async def login_page(
     return HTMLResponse(page)
 
 
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    session = current_session(request)
+    if session is None:
+        return _login_redirect("/settings")
+    page = _template("settings.html")
+    page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
+    page = page.replace("__USERNAME__", html.escape(str(session["username"])))
+    return HTMLResponse(page)
+
+
 @router.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request):
     session = current_session(request)

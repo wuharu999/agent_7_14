@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 from urllib.parse import urlsplit
@@ -65,12 +66,19 @@ def verify_password(password: str, stored_hash: str, stored_salt: str) -> bool:
 
 
 def normalize_username(username: str) -> str:
-    value = username.strip().lower()
+    value = unicodedata.normalize("NFKC", username).strip()
     if not value or len(value) > 64:
         raise ValueError("Username must contain 1 to 64 characters")
-    if any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789._-" for ch in value):
-        raise ValueError("Username may contain letters, numbers, dot, underscore and hyphen")
-    return value
+    normalized = "".join(character.lower() if character.isascii() else character for character in value)
+    if any(
+        character not in "._-"
+        and not unicodedata.category(character).startswith(("L", "N"))
+        for character in normalized
+    ):
+        raise ValueError(
+            "Username may contain letters (including Chinese), numbers, dot, underscore and hyphen"
+        )
+    return normalized
 
 
 def normalize_email(email: str) -> str:

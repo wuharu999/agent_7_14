@@ -33,7 +33,7 @@ def _create_user(role="admin", teams="tian_gong,walker_s2"):
 
 @pytest.mark.parametrize(
     "page_path",
-    ["/admin/users", "/manage", "/upload", "/uploads/example-upload"],
+    ["/admin/users", "/manage", "/upload", "/uploads/example-upload", "/settings"],
 )
 def test_protected_pages_redirect_unauthenticated_users_to_login(page_path: str):
     client = TestClient(app)
@@ -96,6 +96,59 @@ def test_admin_users_page_success():
     assert "用户与文件夹权限管理" in response.text
     assert "removeDisabledUser" in response.text
     assert "删除账户" in response.text
+
+
+def test_username_normalization_supports_chinese_characters():
+    assert auth.normalize_username(" 张三_01 ") == "张三_01"
+
+
+def test_user_creation_accepts_chinese_username_and_keeps_numeric_id():
+    user_id = auth.create_or_update_user(
+        username="王小明",
+        email="wang@example.com",
+        password="SecurePassword123!",
+        role="editor",
+        teams="tian_gong",
+    )
+
+    user = database.get_user_by_id(user_id)
+    assert user is not None
+    assert user["id"] == user_id
+    assert user["username"] == "王小明"
+
+
+def test_user_can_update_own_email_and_password_from_settings():
+    client = TestClient(app)
+    username = f"settings_{uuid.uuid4().hex[:8]}"
+    old_password = "CurrentPassword123!"
+    new_password = "ReplacementPassword123!"
+    user_id = auth.create_or_update_user(
+        username=username,
+        email=f"{username}@example.com",
+        password=old_password,
+        role="editor",
+        teams="tian_gong",
+    )
+    token, csrf = auth.create_login_session(user_id)
+    client.cookies.set(config.SESSION_COOKIE_NAME, token)
+
+    response = client.post(
+        "/api/settings",
+        json={
+            "email": "updated-settings@example.com",
+            "current_password": old_password,
+            "new_password": new_password,
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "email": "updated-settings@example.com"}
+    user = database.get_user_by_id(user_id)
+    assert user is not None
+    assert user["email"] == "updated-settings@example.com"
+    assert auth.authenticate(username, new_password) is not None
+    assert auth.authenticate(username, old_password) is None
 
 
 def test_admin_user_creation_recovers_a_dropped_success_response():

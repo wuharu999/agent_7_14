@@ -15,6 +15,7 @@ ACCOUNT_MENU_TEMPLATES = (
     "manage.html",
     "upload.html",
     "upload_status.html",
+    "settings.html",
     "admin_users.html",
 )
 
@@ -69,6 +70,8 @@ def test_shared_component_contains_role_gated_admin_and_account_actions() -> Non
     assert "upload.href = '/upload'" in script
     assert "fetch('/api/export/wiki')" in script
     assert "fetch('/logout'" in script
+    assert "accountSettings" in script
+    assert "accountSettings.href = '/settings'" in script
 
 
 def test_shared_component_javascript_parses() -> None:
@@ -83,7 +86,7 @@ def test_shared_component_javascript_parses() -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("template_name", ["ask.html"])
+@pytest.mark.parametrize("template_name", ["ask.html", "settings.html"])
 def test_account_menu_javascript_parses(template_name: str) -> None:
     page = (TEMPLATE_ROOT / template_name).read_text(encoding="utf-8")
     scripts = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)
