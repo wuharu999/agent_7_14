@@ -200,6 +200,13 @@ class UploadBatchTemplateTests(unittest.TestCase):
         self.assertIn("pollUpload(item)", self.template)
         self.assertNotIn("location.href=data.status_page", self.template)
 
+    def test_each_upload_row_shows_worker_and_llm_wiki_progress(self) -> None:
+        self.assertIn("pipelineWorker", self.template)
+        self.assertIn("pipelineWiki", self.template)
+        self.assertIn("sourceProgress", self.template)
+        self.assertIn("item.sources=Array.isArray(data.sources)?data.sources:[]", self.template)
+        self.assertIn("retry_count", self.template)
+
     def test_upload_token_notice_is_available_in_both_interface_languages(self) -> None:
         self.assertIn('data-i18n="uploadTokenNotice"', self.template)
         self.assertIn(

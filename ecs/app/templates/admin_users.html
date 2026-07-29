@@ -56,7 +56,6 @@ th { background: #f8fafc; font-weight: 600; color: #475569; border-top: 1px soli
   </div>
   <div class="actions" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
     <a class="button secondary" href="/" style="background:#475569; text-decoration:none; padding:0 16px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; color:#fff; font-weight:700; font-size:14px;">提问 (Questions)</a>
-    <a class="button secondary" href="/wecom-ask" style="background:#475569; text-decoration:none; padding:0 16px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; color:#fff; font-weight:700; font-size:14px;">WeCom</a>
     <div data-account-menu data-account-return="/admin/users"></div>
   </div>
 </div>
@@ -236,6 +235,7 @@ async function loadUsers() {
         <td>
           <button type="button" class="secondary" style="padding:4px 10px;font-size:12px;" onclick="openEditModal(${u.id})">编辑权限/密码</button>
           <button type="button" class="${u.is_active ? 'danger' : 'success'}" style="padding:4px 10px;font-size:12px;margin-left:4px;" onclick="toggleActive(${u.id})">${u.is_active ? '禁用' : '启用'}</button>
+          ${u.is_active ? '' : `<button type="button" class="danger" style="padding:4px 10px;font-size:12px;margin-left:4px;" onclick="removeDisabledUser(${u.id})">删除账户</button>`}
         </td>
       `;
       tbody.appendChild(tr);
@@ -345,6 +345,23 @@ async function toggleActive(userId) {
     loadUsers();
   } catch (err) {
     alert('操作失败: ' + err.message);
+  }
+}
+
+async function removeDisabledUser(userId) {
+  const user = allUsers.find(item => item.id === userId);
+  if (!user || user.is_active) return;
+  if (!confirm(`确定永久删除已禁用账户「${user.username}」吗？此操作无法恢复。`)) return;
+  try {
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: { 'X-CSRF-Token': csrfToken }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '删除账户失败');
+    loadUsers();
+  } catch (err) {
+    alert('删除账户失败: ' + err.message);
   }
 }
 

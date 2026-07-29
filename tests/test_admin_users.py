@@ -94,6 +94,8 @@ def test_admin_users_page_success():
     response = client.get("/admin/users")
     assert response.status_code == 200
     assert "用户与文件夹权限管理" in response.text
+    assert "removeDisabledUser" in response.text
+    assert "删除账户" in response.text
 
 
 def test_admin_user_creation_recovers_a_dropped_success_response():
@@ -175,3 +177,31 @@ def test_api_create_and_update_user():
     )
     assert toggle_res.status_code == 200
     assert toggle_res.json()["is_active"] is False
+
+    delete_res = client.delete(
+        f"/api/admin/users/{created_id}",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert delete_res.status_code == 200
+    assert database.get_user_by_id(created_id) is None
+
+
+def test_delete_user_requires_an_inactive_account():
+    client = TestClient(app)
+    _admin_id, _, token, csrf = _create_user(role="admin")
+    client.cookies.set(config.SESSION_COOKIE_NAME, token)
+    editor_id, _, _, _ = _create_user(role="editor")
+
+    active_delete = client.delete(
+        f"/api/admin/users/{editor_id}",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert active_delete.status_code == 400
+    assert active_delete.json()["error"] == "Disable the account before removing it"
+
+    database.toggle_user_active(editor_id)
+    deleted = client.delete(
+        f"/api/admin/users/{editor_id}",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert deleted.status_code == 200

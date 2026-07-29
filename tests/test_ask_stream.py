@@ -111,7 +111,10 @@ async def test_claude_runner_hides_internal_chunking_errors(monkeypatch):
 
     answer = await claude_runner.run_claude("你能干啥", team="tian_gong")
 
-    assert answer == "[错误] 助手暂时无法响应，请稍后再试。"
+    assert answer == (
+        "[错误] 助手暂时无法响应，请稍后再试。\n\n"
+        "提示：本回复由 AI 生成，可能存在错误，请以实际资料为准。"
+    )
 
 
 @pytest.mark.anyio
@@ -130,7 +133,10 @@ async def test_nonstream_answer_corrects_known_product_translation(monkeypatch):
 
     answer = await claude_runner.run_claude("这是什么平台？", team="walker_s2")
 
-    assert answer == "平台名称是Thinkerstudio遥操数采平台。"
+    assert answer == (
+        "平台名称是Thinkerstudio遥操数采平台。\n\n"
+        "提示：本回复由 AI 生成，可能存在错误，请以实际资料为准。"
+    )
 
 
 @pytest.mark.anyio
@@ -163,7 +169,10 @@ async def test_streaming_hides_internal_chunking_errors(monkeypatch):
         on_chunk=receive_chunk,
     )
 
-    assert answer == "[错误] 助手暂时无法响应，请稍后再试。"
+    assert answer == (
+        "[错误] 助手暂时无法响应，请稍后再试。\n\n"
+        "提示：本回复由 AI 生成，可能存在错误，请以实际资料为准。"
+    )
     assert received == [(answer, "", 0)]
 
 
@@ -200,9 +209,9 @@ async def test_streaming_preserves_safe_text_and_thinking_progress(monkeypatch):
         on_chunk=receive_chunk,
     )
 
-    assert result == answer
+    assert result == answer + "\n\n" + claude_runner.AI_NOTICE_RESPONSES["zh-CN"]
     assert received[0] == ("", "", 12)
-    assert "".join(text for text, _, _ in received) == answer
+    assert "".join(text for text, _, _ in received) == result
     assert all(thinking == "" for _, thinking, _ in received)
     assert len(received) >= 3
 
@@ -239,9 +248,9 @@ async def test_streaming_hides_wiki_image_marker_from_text(monkeypatch):
         on_chunk=receive_chunk,
     )
 
-    assert result == answer
+    assert result == answer + "\n\n" + claude_runner.AI_NOTICE_RESPONSES["zh-CN"]
     visible_text = "".join(text for text, _, _ in received)
-    assert visible_text == "机器人外观如下。"
+    assert visible_text == "机器人外观如下。\n\n" + claude_runner.AI_NOTICE_RESPONSES["zh-CN"]
     assert "wiki/media" not in visible_text
 
 
@@ -275,7 +284,7 @@ async def test_gateway_nonstream_answer_uses_replacement_text():
 
 def test_qa_pages_render_validated_image_payloads():
     root = Path(__file__).resolve().parents[1]
-    for template_name in ("ask.html", "wecom_ask.html"):
+    for template_name in ("ask.html",):
         template = (root / "ecs" / "app" / "templates" / template_name).read_text(
             encoding="utf-8"
         )
@@ -307,19 +316,23 @@ async def test_predefined_responses():
 
     # Test "Separator is not found"
     resp1 = await claude_runner.run_claude("Separator is not found", team="all")
-    assert resp1 == "整个知识库中未出现该错误信息字符串。"
+    assert resp1.startswith("整个知识库中未出现该错误信息字符串。")
+    assert resp1.endswith(claude_runner.AI_NOTICE_RESPONSES["zh-CN"])
 
     # Test "chunk exceed the limit"
     resp2 = await claude_runner.run_claude("chunk exceed the limit", team="walker_s2")
-    assert resp2 == "整个知识库中未出现该错误信息字符串。"
+    assert resp2.startswith("整个知识库中未出现该错误信息字符串。")
+    assert resp2.endswith(claude_runner.AI_NOTICE_RESPONSES["zh-CN"])
 
     # Test "全部机器人"
     resp3 = await claude_runner.run_claude("全部机器人", team="all")
-    assert resp3 == "该标记格式未出现在任何 wiki 页面、源文件或代码中。"
+    assert resp3.startswith("该标记格式未出现在任何 wiki 页面、源文件或代码中。")
+    assert resp3.endswith(claude_runner.AI_NOTICE_RESPONSES["zh-CN"])
 
     # Test "All Robots" tag
     resp4 = await claude_runner.run_claude("[Query Target: All Robots]", team="all")
-    assert resp4 == "该标记格式未出现在任何 wiki 页面、源文件或代码中。"
+    assert resp4.startswith("该标记格式未出现在任何 wiki 页面、源文件或代码中。")
+    assert resp4.endswith(claude_runner.AI_NOTICE_RESPONSES["zh-CN"])
 
     expected_by_language = {
         "zh-CN": "该标记格式未出现在任何 wiki 页面、源文件或代码中。",
@@ -335,11 +348,12 @@ async def test_predefined_responses():
         response = await claude_runner.run_claude(
             "[Query Target: All Robots]", team="all", language=language
         )
-        assert response == expected
+        assert response == expected + "\n\n" + claude_runner.AI_NOTICE_RESPONSES[language]
 
     english_error = await claude_runner.run_claude(
         "Separator is not found", team="all", language="en"
     )
     assert english_error == (
-        "That error message string does not appear anywhere in the knowledge base."
+        "That error message string does not appear anywhere in the knowledge base.\n\n"
+        + claude_runner.AI_NOTICE_RESPONSES["en"]
     )

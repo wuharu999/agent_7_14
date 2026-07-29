@@ -23,6 +23,7 @@ from ecs.app.database import (
     get_user_by_username,
     get_user_by_email,
     list_users,
+    delete_disabled_user,
     toggle_user_active,
     update_user_details,
     update_user_password,
@@ -190,3 +191,29 @@ async def api_toggle_user_active(
     )
 
     return JSONResponse({"status": "ok", "user_id": user_id, "is_active": new_state})
+
+
+@router.delete("/api/admin/users/{user_id}")
+async def api_delete_disabled_user(
+    user_id: int,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"admin"})
+    verify_csrf(session, x_csrf_token)
+
+    try:
+        deleted = await asyncio.to_thread(delete_disabled_user, user_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    write_audit(
+        action="delete_disabled_user",
+        user_id=int(session["user_id"]),
+        username=str(session.get("username", "")),
+        result="ok",
+        details=json.dumps(
+            {"deleted_user_id": deleted["id"], "deleted_username": deleted["username"]}
+        ),
+    )
+    return JSONResponse({"status": "ok", "user_id": deleted["id"]})

@@ -31,7 +31,7 @@ On the `/upload` page, resolve the duplicated supported file extensions text. Co
 
 ### UI Layouts (Horizontal & Vertical)
 - [ ] The default `/` route serves a horizontal layout with a side-by-side chat and interactive graph.
-- [ ] A new dedicated route (e.g., `/wecom-ask`) serves a vertical chat layout.
+- [x] The dedicated vertical chat route was removed; use `/` for public QA.
 - [ ] The vertical layout must look significantly more premium and futuristic than the basic FAQ platform, drawing specific visual and stylistic cues from the Walker C1 product page.
 
 ### Wiki Expansion

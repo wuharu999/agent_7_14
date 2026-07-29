@@ -404,6 +404,26 @@ def toggle_user_active(user_id: int) -> bool:
         return bool(new_state)
 
 
+def delete_disabled_user(user_id: int) -> dict[str, Any]:
+    """Permanently remove an inactive account and its dependent session data."""
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT id, username, role, is_active FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("User not found")
+        if bool(row["is_active"]):
+            raise ValueError("Disable the account before removing it")
+        if row["role"] == "admin":
+            admin_count = connection.execute(
+                "SELECT COUNT(*) AS count FROM users WHERE role = 'admin'"
+            ).fetchone()
+            if int(admin_count["count"]) <= 1:
+                raise ValueError("Cannot remove the last admin account")
+        connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return {"id": int(row["id"]), "username": str(row["username"])}
+
+
 def create_session_record(
     *, user_id: int, token_hash: str, csrf_token: str, expires_at: str
 ) -> None:

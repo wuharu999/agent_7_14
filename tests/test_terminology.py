@@ -21,6 +21,12 @@ def test_system_prompt_requires_verbatim_product_names() -> None:
     assert "Thinkercosmos" in claude_runner.SYSTEM_PROMPT
 
 
+def test_system_prompt_rejects_political_and_unrelated_questions() -> None:
+    assert "Refuse political questions" in claude_runner.SYSTEM_PROMPT
+    assert "any unrelated question" in claude_runner.SYSTEM_PROMPT
+    assert "AI notice at the end" in claude_runner.SYSTEM_PROMPT
+
+
 @pytest.mark.anyio
 async def test_streaming_corrects_translated_name_across_chunks(monkeypatch) -> None:
     async def mock_guard(question: str) -> GuardDecision:
@@ -54,6 +60,9 @@ async def test_streaming_corrects_translated_name_across_chunks(monkeypatch) -> 
     )
 
     visible = "".join(received)
-    assert result == "工具包括Thinkerstudio遥操数采平台，可用于遥操。"
+    assert result == (
+        "工具包括Thinkerstudio遥操数采平台，可用于遥操。\n\n"
+        + claude_runner.AI_NOTICE_RESPONSES["zh-CN"]
+    )
     assert visible == result
     assert "慧思开物" not in visible

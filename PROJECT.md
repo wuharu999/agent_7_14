@@ -10,7 +10,7 @@
 |---|------|-------|-------------|--------|
 | 1 | Exploration & Diagnosis | Run initial diagnostics and investigate existing codebases | None | DONE |
 | 2 | System Config & Test Fixes | Fix shared secret mismatch, config path mapping, authoring TypeError, and restore broken tests | M1 | IN_PROGRESS |
-| 3 | UI Layouts (Horizontal & Vertical) | Default `/` (horizontal) and new `/wecom-ask` (Walker C1 vertical) routes and templates | M2 | PLANNED |
+| 3 | UI Layouts | Default `/` horizontal QA route | M2 | PLANNED |
 | 4 | Wiki Expansion | Add missing robot learning topics to local wiki knowledge base to match UI graph nodes | M2 | PLANNED |
 | 5 | Source Manager & Upload Updates | Implement folder collapsing/expanding, display upload timestamps, and simplify upload formats | M2 | PLANNED |
 | 6 | E2E Testing Track | Write and run comprehensive E2E test cases across Tiers 1-4 | M3, M4, M5 | PLANNED |

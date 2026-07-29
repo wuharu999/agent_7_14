@@ -35,14 +35,6 @@ async def ask_page():
     return HTMLResponse(page)
 
 
-@router.get("/wecom-ask", response_class=HTMLResponse)
-async def wecom_ask_page():
-    page = _template("wecom_ask.html")
-    page = page.replace("__ALLOWED_TEAMS__", json.dumps(get_allowed_teams(), ensure_ascii=False))
-    return HTMLResponse(page)
-
-
-
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(
     request: Request,

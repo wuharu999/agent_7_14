@@ -52,6 +52,12 @@ def test_upload_page_renders_all_account_placeholders():
     assert '<span id="user-role">admin</span>' in response.text
 
 
+def test_removed_wecom_ask_page_returns_not_found():
+    client, _csrf = _admin_client()
+
+    assert client.get("/wecom-ask").status_code == 404
+
+
 def test_create_robot_waits_for_worker_then_updates_chat_and_folder(
     monkeypatch, tmp_path
 ):
@@ -80,7 +86,6 @@ def test_create_robot_waits_for_worker_then_updates_chat_and_folder(
     assert robot_folder.is_dir()
     assert database.get_robot_by_name(robot_name) is not None
     assert robot_name in client.get("/").text
-    assert robot_name in client.get("/wecom-ask").text
     assert robot_name in client.get("/upload").text
 
 
