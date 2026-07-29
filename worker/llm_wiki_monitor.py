@@ -157,7 +157,10 @@ async def monitor_source(
                     retry_count = task_retries
                     max_retries = task_max_retries
                     error = task_error or "LLM Wiki ingestion failed"
-                elif task_error and task_retries > 0 and state not in {"processing"}:
+                elif (
+                    (task_status == "failed" and not permanently_failed)
+                    or (task_error and task_retries > 0)
+                ) and state not in {"processing"}:
                     state = "retrying"
                     retry_count = task_retries
                     max_retries = task_max_retries

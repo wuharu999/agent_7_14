@@ -1135,6 +1135,62 @@ def list_recent_uploads_with_sources(hours: int = 24, limit: int = 200) -> list[
     return uploads
 
 
+def get_recent_llm_wiki_source_counts(hours: int = 24) -> dict[str, int]:
+    """Count each recently uploaded source once by its persisted ingestion state.
+
+    LLM Wiki's queue can contain multiple entries for one source (including
+    retries), and it does not contain sources still waiting for Source Watch.
+    The upload-source table is therefore the authoritative status scope for
+    the web summary.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    counts = {
+        "total": 0,
+        "waiting": 0,
+        "queued": 0,
+        "processing": 0,
+        "retrying": 0,
+        "completed": 0,
+        "failed": 0,
+        "deleted": 0,
+    }
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT s.status, s.error, s.retry_count, s.max_retries
+            FROM upload_sources AS s
+            INNER JOIN uploads AS u ON u.upload_id = s.upload_id
+            WHERE u.created_at >= ?
+            """,
+            (cutoff,),
+        ).fetchall()
+
+    for row in rows:
+        counts["total"] += 1
+        status = str(row["status"] or "waiting")
+        retry_count = int(row["retry_count"] or 0)
+        max_retries = int(row["max_retries"] or 0)
+        retry_available = retry_count > 0 and (
+            max_retries <= 0 or retry_count < max_retries
+        )
+
+        if status == "completed":
+            counts["completed"] += 1
+        elif status == "processing":
+            counts["processing"] += 1
+        elif status == "retrying" or (status == "failed" and retry_available):
+            counts["retrying"] += 1
+        elif status == "queued":
+            counts["queued"] += 1
+        elif status == "failed":
+            counts["failed"] += 1
+        elif status == "deleted":
+            counts["deleted"] += 1
+        else:
+            counts["waiting"] += 1
+    return counts
+
+
 def list_dispatchable_uploads() -> list[dict[str, Any]]:
     statuses = (
         "waiting_for_worker",

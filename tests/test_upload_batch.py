@@ -217,6 +217,49 @@ class UploadEndpointTests(unittest.TestCase):
         self.assertEqual(monitored["sources"][0]["error"], "Provider connection failed")
         self.assertNotIn("old-active-monitor", {item["upload_id"] for item in uploads_for_monitor})
 
+    def test_global_llm_wiki_counts_use_unique_persisted_sources(self) -> None:
+        database.create_upload(
+            upload_id="global-counts",
+            task_id="global-counts-task",
+            team="tian_gong",
+            filename="sources.zip",
+            size_bytes=12,
+            ecs_path="/tmp/sources.zip",
+            status="waiting_for_llm_wiki",
+            stage="waiting_for_llm_wiki",
+            message="Waiting",
+        )
+        for source_identity, status, retries, maximum in (
+            ("tian_gong/global-counts/waiting.png", "waiting", 0, 0),
+            ("tian_gong/global-counts/queued.png", "queued", 0, 3),
+            ("tian_gong/global-counts/processing.png", "processing", 0, 3),
+            ("tian_gong/global-counts/retry.png", "failed", 1, 3),
+            ("tian_gong/global-counts/failed.png", "failed", 3, 3),
+            ("tian_gong/global-counts/done.png", "completed", 0, 0),
+            ("tian_gong/global-counts/deleted.png", "deleted", 0, 0),
+        ):
+            database.upsert_source(
+                upload_id="global-counts",
+                source_identity=source_identity,
+                status=status,
+                retry_count=retries,
+                max_retries=maximum,
+            )
+
+        self.assertEqual(
+            database.get_recent_llm_wiki_source_counts(hours=24),
+            {
+                "total": 7,
+                "waiting": 1,
+                "queued": 1,
+                "processing": 1,
+                "retrying": 1,
+                "completed": 1,
+                "failed": 1,
+                "deleted": 1,
+            },
+        )
+
     def test_unsupported_extension_returns_400_without_creating_upload(self) -> None:
         response = self._upload("payload.exe")
 

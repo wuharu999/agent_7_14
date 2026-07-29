@@ -4,7 +4,12 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from ecs.app.auth import require_user
-from ecs.app.database import get_upload, list_recent_uploads_with_sources, list_uploads
+from ecs.app.database import (
+    get_recent_llm_wiki_source_counts,
+    get_upload,
+    list_recent_uploads_with_sources,
+    list_uploads,
+)
 from ecs.app.gateway import gateway
 
 router = APIRouter()
@@ -49,4 +54,8 @@ async def upload_status_api(upload_id: str, request: Request):
 @router.get("/api/status/llm_wiki")
 async def llm_wiki_status_api(request: Request):
     require_user(request)
-    return gateway.latest_snapshot
+    return {
+        "counts": get_recent_llm_wiki_source_counts(hours=24),
+        "hours": 24,
+        "worker_online": gateway.online,
+    }

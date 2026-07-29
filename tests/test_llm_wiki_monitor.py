@@ -64,6 +64,57 @@ async def test_monitor_source_matches_team_in_shared_queue_path(
 
 
 @pytest.mark.anyio
+async def test_monitor_source_marks_retryable_failed_task_as_retrying(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    queue_file = tmp_path / "ingest-queue.json"
+    cache_file = tmp_path / "ingest-cache.json"
+    queue_file.write_text(
+        json.dumps(
+            [
+                {
+                    "sourcePath": "raw/sources/walker_s2/upload-1/manual.pdf",
+                    "status": "failed",
+                    "retryCount": 1,
+                    "maxRetries": 3,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    cache_file.write_text("{}", encoding="utf-8")
+    config = SimpleNamespace(
+        llm_wiki_queue_file=queue_file,
+        llm_wiki_cache_file=cache_file,
+    )
+    monkeypatch.setattr(llm_wiki_monitor, "get_team_config", lambda _team: config)
+
+    class StopMonitor(Exception):
+        pass
+
+    async def stop_after_event(_seconds: float) -> None:
+        raise StopMonitor
+
+    events: list[dict[str, object]] = []
+
+    async def emit(event: dict[str, object]) -> None:
+        events.append(event)
+
+    monkeypatch.setattr(llm_wiki_monitor.asyncio, "sleep", stop_after_event)
+    with pytest.raises(StopMonitor):
+        await llm_wiki_monitor.monitor_source(
+            team="walker_s2",
+            upload_id="upload-1",
+            source_identity="walker_s2/upload-1/manual.pdf",
+            published_at_ms=1,
+            emit=emit,
+        )
+
+    assert events[0]["source_status"] == "retrying"
+
+
+@pytest.mark.anyio
 async def test_global_snapshot_counts_shared_queue_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
