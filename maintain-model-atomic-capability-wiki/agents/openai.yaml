@@ -1,0 +1,7 @@
+interface:
+  display_name: "机型原子能力 Wiki 维护"
+  short_description: "从文件与源 Wiki 持续生成、校验并维护指定机型的原子能力词条"
+  default_prompt: "Use $maintain-model-atomic-capability-wiki to build or incrementally update the atomic capability Wiki section for this robot model from the supplied source corpus."
+
+policy:
+  allow_implicit_invocation: true

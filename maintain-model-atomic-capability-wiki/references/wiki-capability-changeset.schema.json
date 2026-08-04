@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wiki-capability-changeset.schema.json",
+  "title": "Atomic Capability Wiki Changeset",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "changeset_id",
+    "model_id",
+    "source_snapshot",
+    "target",
+    "operations",
+    "coverage_report"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "changeset_id": {
+      "type": "string",
+      "pattern": "^CHG-[A-Z0-9-]+$"
+    },
+    "model_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+    },
+    "source_snapshot": {
+      "type": "object",
+      "required": ["snapshot_id", "sources"],
+      "properties": {
+        "snapshot_id": { "type": "string", "minLength": 1 },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "source_id",
+              "version",
+              "hash_or_revision",
+              "status"
+            ],
+            "properties": {
+              "source_id": { "type": "string", "minLength": 1 },
+              "version": { "type": ["string", "null"] },
+              "hash_or_revision": { "type": ["string", "null"] },
+              "status": {
+                "enum": [
+                  "processed",
+                  "unchanged",
+                  "excluded",
+                  "blocked",
+                  "unprocessed"
+                ]
+              },
+              "reason": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": ["wiki_id", "section_id", "base_revision"],
+      "properties": {
+        "wiki_id": { "type": "string", "minLength": 1 },
+        "section_id": { "type": "string", "minLength": 1 },
+        "base_revision": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "operation_id",
+          "action",
+          "target_entry_id",
+          "reason",
+          "source_evidence_ids",
+          "approval_required",
+          "after_entry"
+        ],
+        "properties": {
+          "operation_id": { "type": "string", "minLength": 1 },
+          "action": {
+            "enum": [
+              "create",
+              "update",
+              "implementation-instance",
+              "split",
+              "merge-proposal",
+              "conflict",
+              "deprecate",
+              "source-removed",
+              "delete-proposal",
+              "skip",
+              "blocked"
+            ]
+          },
+          "target_entry_id": {
+            "type": ["string", "null"],
+            "pattern": "^CAP-[A-Z0-9-]+$"
+          },
+          "base_entry_revision": { "type": ["string", "null"] },
+          "reason": { "type": "string", "minLength": 3 },
+          "source_evidence_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "approval_required": { "type": "boolean" },
+          "after_entry": {
+            "oneOf": [
+              { "$ref": "atomic-capability-entry.schema.json" },
+              { "type": "null" }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "coverage_report": {
+      "type": "object",
+      "required": [
+        "total_sources",
+        "processed_sources",
+        "unchanged_sources",
+        "excluded_sources",
+        "blocked_sources",
+        "unprocessed_sources",
+        "extracted_claims",
+        "atomic_entries",
+        "non_capability_candidates",
+        "operation_counts",
+        "is_complete"
+      ],
+      "properties": {
+        "total_sources": { "type": "integer", "minimum": 0 },
+        "processed_sources": { "type": "integer", "minimum": 0 },
+        "unchanged_sources": { "type": "integer", "minimum": 0 },
+        "excluded_sources": { "type": "integer", "minimum": 0 },
+        "blocked_sources": { "type": "integer", "minimum": 0 },
+        "unprocessed_sources": { "type": "integer", "minimum": 0 },
+        "extracted_claims": { "type": "integer", "minimum": 0 },
+        "atomic_entries": { "type": "integer", "minimum": 0 },
+        "non_capability_candidates": { "type": "integer", "minimum": 0 },
+        "operation_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "is_complete": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

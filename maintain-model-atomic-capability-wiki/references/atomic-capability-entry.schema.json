@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "atomic-capability-entry.schema.json",
+  "title": "Atomic Capability Wiki Entry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "capability_id",
+    "semantic_key",
+    "name",
+    "effect",
+    "scope",
+    "trigger",
+    "inputs",
+    "outputs",
+    "preconditions",
+    "hold_conditions",
+    "postconditions",
+    "constraints",
+    "quality_metrics",
+    "failure_modes",
+    "interfaces",
+    "dependencies",
+    "incompatible_resources",
+    "evidence",
+    "confidence",
+    "unknowns",
+    "lifecycle"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "capability_id": { "type": "string", "pattern": "^CAP-[A-Z0-9-]+$" },
+    "semantic_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+    },
+    "name": { "type": "string", "minLength": 3 },
+    "effect": {
+      "type": "object",
+      "required": ["action", "object", "observable_result"],
+      "properties": {
+        "action": { "type": "string", "minLength": 1 },
+        "object": { "type": "string", "minLength": 1 },
+        "observable_result": { "type": "string", "minLength": 3 }
+      },
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "vendor",
+        "model_id",
+        "source_model_names",
+        "body_parts",
+        "environment",
+        "selector",
+        "resolution_status"
+      ],
+      "properties": {
+        "vendor": { "type": "string", "minLength": 1 },
+        "model_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+        },
+        "source_model_names": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "hardware_revision": { "type": ["string", "null"] },
+        "software_version": { "type": ["string", "null"] },
+        "firmware_version": { "type": ["string", "null"] },
+        "body_parts": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "environment": { "type": "string", "minLength": 1 },
+        "selector": { "type": "string", "minLength": 1 },
+        "resolution_status": {
+          "enum": ["resolved", "ambiguous", "conflicted"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "trigger": { "type": "string", "minLength": 3 },
+    "inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/port" }
+    },
+    "outputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/port" }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "hold_conditions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "postconditions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "constraints": {
+      "type": "object",
+      "required": ["time", "space", "information", "energy"],
+      "properties": {
+        "time": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/constraint" }
+        },
+        "space": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/constraint" }
+        },
+        "information": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/constraint" }
+        },
+        "energy": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/constraint" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "quality_metrics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/metric" }
+    },
+    "failure_modes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/failure" }
+    },
+    "interfaces": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/interface" },
+      "minItems": 1
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^CAP-[A-Z0-9-]+$"
+      },
+      "uniqueItems": true
+    },
+    "incompatible_resources": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" },
+      "minItems": 1
+    },
+    "confidence": {
+      "type": "object",
+      "required": ["extraction_score", "basis"],
+      "properties": {
+        "extraction_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "basis": { "type": "string", "minLength": 3 }
+      },
+      "additionalProperties": false
+    },
+    "unknowns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": [
+        "status",
+        "supersedes",
+        "replaced_by",
+        "deprecation_reason"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["draft", "reviewed", "verified", "deprecated"]
+        },
+        "supersedes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^CAP-[A-Z0-9-]+$"
+          },
+          "uniqueItems": true
+        },
+        "replaced_by": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^CAP-[A-Z0-9-]+$"
+          },
+          "uniqueItems": true
+        },
+        "deprecation_reason": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "port": {
+      "type": "object",
+      "required": ["name", "data_type", "unit", "frame", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "data_type": { "type": "string", "minLength": 1 },
+        "unit": { "type": ["string", "null"] },
+        "frame": { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "constraint": {
+      "type": "object",
+      "required": [
+        "name",
+        "operator",
+        "value",
+        "unit",
+        "knowledge_state",
+        "evidence_ids"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "operator": {
+          "enum": [
+            "eq",
+            "ne",
+            "lt",
+            "lte",
+            "gt",
+            "gte",
+            "in",
+            "contains",
+            "compatible_with",
+            "unknown"
+          ]
+        },
+        "value": {},
+        "unit": { "type": ["string", "null"] },
+        "knowledge_state": {
+          "enum": ["known", "assumed", "unknown"]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "metric": {
+      "type": "object",
+      "required": [
+        "name",
+        "operator",
+        "value",
+        "unit",
+        "test_method",
+        "evidence_ids"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "operator": {
+          "enum": ["eq", "lt", "lte", "gt", "gte", "range", "unknown"]
+        },
+        "value": {},
+        "unit": { "type": ["string", "null"] },
+        "test_method": { "type": ["string", "null"] },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "required": [
+        "condition",
+        "observable_signal",
+        "documented_recovery",
+        "evidence_ids"
+      ],
+      "properties": {
+        "condition": { "type": "string", "minLength": 1 },
+        "observable_signal": { "type": ["string", "null"] },
+        "documented_recovery": { "type": ["string", "null"] },
+        "evidence_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "interface": {
+      "type": "object",
+      "required": ["type", "reference", "version"],
+      "properties": {
+        "type": {
+          "enum": [
+            "sdk",
+            "api",
+            "ros_topic",
+            "ros_service",
+            "ros_action",
+            "cli",
+            "tool",
+            "manual",
+            "other"
+          ]
+        },
+        "reference": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "evidence_id",
+        "source_type",
+        "source_id",
+        "source_version",
+        "source_hash",
+        "locator",
+        "claim",
+        "evidence_level",
+        "excerpt"
+      ],
+      "properties": {
+        "evidence_id": { "type": "string", "minLength": 1 },
+        "source_type": {
+          "enum": [
+            "file",
+            "wiki",
+            "sdk",
+            "manual",
+            "tool",
+            "test",
+            "marketing"
+          ]
+        },
+        "source_id": { "type": "string", "minLength": 1 },
+        "source_version": { "type": ["string", "null"] },
+        "source_hash": { "type": ["string", "null"] },
+        "locator": { "type": "string", "minLength": 1 },
+        "claim": { "type": "string", "minLength": 3 },
+        "evidence_level": { "enum": ["E1", "E2", "E3", "E4", "E5"] },
+        "excerpt": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
