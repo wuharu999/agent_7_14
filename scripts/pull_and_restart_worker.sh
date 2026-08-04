@@ -29,7 +29,7 @@ if [ "${#live_items[@]}" -gt 0 ]; then
 fi
 
 git fetch origin "$DEPLOY_BRANCH"
-git merge --ff-only "origin/$DEPLOY_BRANCH"
+git merge --ff-only FETCH_HEAD
 
 .venv-worker/bin/python -m pip install -r worker/requirements.txt
 .venv-worker/bin/python -m compileall -q worker shared scripts

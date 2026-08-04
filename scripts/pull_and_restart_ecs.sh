@@ -22,7 +22,7 @@ tar -czf "$backup_dir/ecs-data.tgz" ecs-data
 git rev-parse HEAD > "$backup_dir/previous-commit.txt"
 
 git fetch origin "$DEPLOY_BRANCH"
-git merge --ff-only "origin/$DEPLOY_BRANCH"
+git merge --ff-only FETCH_HEAD
 
 .venv-ecs/bin/python -m pip install -r ecs/requirements.txt
 .venv-ecs/bin/python -m compileall -q ecs shared scripts
