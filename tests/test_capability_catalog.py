@@ -129,6 +129,30 @@ def test_source_manifest_reports_added_modified_and_deleted(tmp_path: Path) -> N
     assert changes["counts"] == {"added": 1, "modified": 1, "deleted": 1, "total": 3}
 
 
+def test_wiki_manifest_scans_text_evidence_and_excludes_generated_catalog(
+    tmp_path: Path,
+) -> None:
+    wiki = tmp_path / "wiki"
+    (wiki / "sources").mkdir(parents=True)
+    (wiki / "sources" / "manual.md").write_text("walk()", encoding="utf-8")
+    (wiki / "sources" / "image.png").write_bytes(b"not sent to Claude")
+    (wiki / "capabilities" / "walker_s2").mkdir(parents=True)
+    (wiki / "capabilities" / "walker_s2" / "CAP-OLD.md").write_text(
+        "generated output", encoding="utf-8"
+    )
+
+    manifest = capability_catalog._collect_wiki_manifest(wiki)
+
+    assert list(manifest) == ["sources/manual.md"]
+
+
+def test_first_run_is_full_then_normal_runs_are_incremental() -> None:
+    assert capability_catalog._effective_scan_mode("incremental", {}) == "full"
+    baseline = {"wiki_files": {"sources/manual.md": {}}}
+    assert capability_catalog._effective_scan_mode("incremental", baseline) == "incremental"
+    assert capability_catalog._effective_scan_mode("full", baseline) == "full"
+
+
 def test_generated_changeset_passes_the_bundled_hard_gate(tmp_path: Path) -> None:
     path = tmp_path / "changeset.json"
     path.write_text(json.dumps(_changeset()), encoding="utf-8")
@@ -175,10 +199,20 @@ def test_publish_is_atomic_saves_manifest_and_protects_verified_entries(tmp_path
         snapshot_id="SRC-1",
         source_manifest=manifest,
         source_changes={"counts": {"total": 1}},
+        wiki_manifest={"sources/manual.md": {"size_bytes": 6, "mtime_ns": 1}},
+        scan_mode="full",
     )
     target = tmp_path / "wiki" / "capabilities" / "walker_s2"
     assert result["entries_written"] == ["CAP-WALK-FORWARD"]
     assert json.loads((target / "_source-manifest.json").read_text())["files"] == manifest
+    organization_manifest = json.loads(
+        (target / "_organization-manifest.json").read_text()
+    )
+    assert organization_manifest["scan_mode"] == "full"
+    assert organization_manifest["wiki_files"] == {
+        "sources/manual.md": {"size_bytes": 6, "mtime_ns": 1}
+    }
+    assert result["catalog_entries"][0]["capability_id"] == "CAP-WALK-FORWARD"
     assert (target / "CAP-WALK-FORWARD.md").is_file()
 
     verified = json.loads((target / "CAP-WALK-FORWARD.json").read_text())
@@ -195,6 +229,32 @@ def test_publish_is_atomic_saves_manifest_and_protects_verified_entries(tmp_path
             source_changes={"counts": {"total": 0}},
         )
     assert json.loads((target / "CAP-WALK-FORWARD.json").read_text())["lifecycle"]["status"] == "verified"
+
+
+def test_incomplete_scan_publishes_drafts_without_advancing_baseline(tmp_path: Path) -> None:
+    changeset = _changeset()
+    changeset["coverage_report"]["blocked_sources"] = 1
+    changeset["coverage_report"]["processed_sources"] = 0
+    changeset["coverage_report"]["is_complete"] = False
+
+    result = capability_catalog._publish_drafts(
+        changeset,
+        model="walker_s2",
+        job_id="CAT-PARTIAL",
+        worker_root=tmp_path,
+        snapshot_id="SRC-PARTIAL",
+        source_manifest={"upload/image.png": {"size_bytes": 12, "mtime_ns": 1}},
+        source_changes={"counts": {"total": 1}},
+        wiki_manifest={"sources/image.md": {"size_bytes": 20, "mtime_ns": 2}},
+        scan_mode="full",
+    )
+    target = tmp_path / "wiki" / "capabilities" / "walker_s2"
+
+    assert result["completion_status"] == "partial"
+    assert result["baseline_advanced"] is False
+    assert not (target / "_source-manifest.json").exists()
+    assert not (target / "_organization-manifest.json").exists()
+    assert (target / "CAP-WALK-FORWARD.json").is_file()
 
 
 def test_publish_rejects_browser_triggered_deletion(tmp_path: Path) -> None:
@@ -229,6 +289,7 @@ def test_catalog_jobs_and_source_changes_are_persisted_globally(
         created_by=user_id,
         model_id="walker_s2",
         snapshot_id="SRC-PERSISTED",
+        scan_mode="full",
     )
     database.update_capability_catalog_job(
         created["job_id"],
@@ -249,6 +310,7 @@ def test_catalog_jobs_and_source_changes_are_persisted_globally(
     assert restarted is not None
     assert restarted["status"] == "failed"
     assert restarted["stage"] == "interrupted"
+    assert restarted["scan_mode"] == "full"
     state = database.get_capability_catalog_source_state("walker_s2")
     assert state is not None
     assert state["changes"]["added"] == ["upload/manual.md"]
@@ -263,7 +325,11 @@ def test_admin_page_has_shared_progress_change_window_and_chinese_translation() 
         / "admin_capabilities.html"
     ).read_text(encoding="utf-8")
     assert "Shared organization progress" in page
-    assert "File changes since the last successful organization" in page
-    assert "自上次成功整理以来的文件变更" in page
-    assert "开始整理原子能力" in page
+    assert "Raw file changes since the last successful organization" in page
+    assert "自上次成功整理以来的原始文件变更" in page
+    assert "整理新增变更" in page
+    assert "Full Wiki rescan" in page
+    assert "全量重新扫描 Wiki" in page
+    assert "Organized atomic capabilities" in page
+    assert "已整理的原子能力" in page
     assert "localStorage.getItem('catalog" not in page

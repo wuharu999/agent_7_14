@@ -125,7 +125,12 @@ owner. At `/admin/capabilities`, administrators can review aggregate requested
 gaps, create idempotent evidence-acquisition stubs, inspect added/modified/deleted
 source paths since the last successful organization, and start the atomic
 capability organizer. Organization runs are persisted in SQLite so every admin
-sees the same progress after a refresh. Claude has read-only source access; only
+sees the same progress after a refresh. The first run automatically scans all
+generated Wiki evidence; later runs are incremental, with an explicit full-Wiki
+rescan button for periodic review. The organizer excludes its own generated
+`wiki/capabilities/` tree and does not send raw images directly through the
+text-only Claude evidence pass. Incomplete coverage is reported as partial and
+does not advance the successful baseline. Claude has read-only source access; only
 schema-validated draft entries are atomically published by Python, with a backup.
 Deletion, deprecation, and overwriting reviewed/verified entries are rejected.
 

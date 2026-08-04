@@ -31,11 +31,16 @@ On the deployed pair, verify in this order:
 5. Download `feasibility_report.md` and `feasibility_report.pdf`.
 6. Sign in as admin and open `/admin/capabilities`. Confirm the file-change panel
    shows the selected robot's added/modified/deleted paths.
-7. Start organization and confirm a second admin session and a refreshed page see
-   the same queued/processing/completed state.
-8. Confirm validated drafts appear under `wiki/capabilities/<model>/`, the source
-   change list resets after success, and a backup is retained for an existing catalog.
-9. Create one draft stub. Confirm it appears once after repeating the same request and the audit
+7. Start organization with no prior organization manifest. Confirm it reports a
+   full Wiki scan, and a second admin session plus a refreshed page see the same state.
+8. Add or modify a generated Wiki page and confirm **Organize changes** uses an
+   incremental scan. Then use **Full Wiki rescan** and confirm all generated Wiki
+   evidence is inventoried while `wiki/capabilities/` and raw images are excluded.
+9. Confirm validated drafts appear in both the UI and
+   `wiki/capabilities/<model>/`, the source change list resets only after complete
+   coverage, and a backup is retained for an existing catalog. A partial run must
+   keep the previous successful baseline.
+10. Create one draft stub. Confirm it appears once after repeating the same request and the audit
    log contains `create_capability_draft_stub`.
 
 The final package was checked with:

@@ -510,7 +510,7 @@ def test_admin_catalog_start_and_source_change_snapshot_are_shared(
     model_id = database.get_robot_options()[0]["name"]
     request, csrf = _admin_request()
     gateway.websocket = object()  # The API only needs the persistent Worker online signal here.
-    started: list[tuple[str, str, str]] = []
+    started: list[tuple[str, str, str, str]] = []
 
     async def fake_command(message_type: str, **payload):
         assert message_type == "inspect_capability_source_changes"
@@ -535,8 +535,8 @@ def test_admin_catalog_start_and_source_change_snapshot_are_shared(
     monkeypatch.setattr(
         capability_match_routes,
         "_start_capability_catalog_job",
-        lambda job_id, selected_model, snapshot_id: started.append(
-            (job_id, selected_model, snapshot_id)
+        lambda job_id, selected_model, snapshot_id, scan_mode: started.append(
+            (job_id, selected_model, snapshot_id, scan_mode)
         ),
     )
 
@@ -556,7 +556,9 @@ def test_admin_catalog_start_and_source_change_snapshot_are_shared(
     body = json.loads(start_response.body)
     assert start_response.status_code == 202
     assert body["job"]["status"] == "queued"
+    assert body["job"]["scan_mode"] == "incremental"
     assert started[0][0] == body["job"]["job_id"]
+    assert started[0][3] == "incremental"
 
     shared_response = asyncio.run(capability_gap_analytics(request))
     shared = json.loads(shared_response.body)

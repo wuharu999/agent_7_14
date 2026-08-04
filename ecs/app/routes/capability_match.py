@@ -11,7 +11,7 @@ from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
 from textwrap import wrap
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -61,6 +61,7 @@ class CreateDraftStubRequest(BaseModel):
 
 class OrganizeCapabilitiesRequest(BaseModel):
     model_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    scan_mode: Literal["incremental", "full"] = "incremental"
 
 
 class _AnalysisRateLimiter:
@@ -243,6 +244,7 @@ async def _run_capability_catalog_job(
     job_id: str,
     model_id: str,
     snapshot_id: str,
+    scan_mode: str,
 ) -> None:
     try:
         await asyncio.to_thread(
@@ -258,17 +260,25 @@ async def _run_capability_catalog_job(
             job_id=job_id,
             model_id=model_id,
             snapshot_id=snapshot_id,
+            scan_mode=scan_mode,
         )
         result = worker_result.get("result")
         if worker_result.get("status") != "ok" or not isinstance(result, dict):
             raise RuntimeError(str(worker_result.get("error") or "Worker organization failed"))
         await _save_source_state(model_id, result)
+        completion_status = str(result.get("completion_status") or "completed")
+        partial = completion_status == "partial"
         await asyncio.to_thread(
             update_capability_catalog_job,
             job_id,
-            status="completed",
-            stage="completed",
-            message="Atomic capability organization completed.",
+            status="partial" if partial else "completed",
+            stage="completed_with_warnings" if partial else "completed",
+            message=(
+                "Capability organization completed with blocked or unprocessed Wiki evidence; "
+                "the successful baseline was not advanced."
+                if partial
+                else "Atomic capability organization completed."
+            ),
             result=result,
         )
         log.info("Capability catalog job %s completed for %s", job_id, model_id)
@@ -305,9 +315,11 @@ async def _run_capability_catalog_job(
         )
 
 
-def _start_capability_catalog_job(job_id: str, model_id: str, snapshot_id: str) -> None:
+def _start_capability_catalog_job(
+    job_id: str, model_id: str, snapshot_id: str, scan_mode: str
+) -> None:
     task = asyncio.create_task(
-        _run_capability_catalog_job(job_id, model_id, snapshot_id),
+        _run_capability_catalog_job(job_id, model_id, snapshot_id, scan_mode),
         name=f"capability-catalog-{job_id}",
     )
     _catalog_tasks[job_id] = task
@@ -828,6 +840,7 @@ async def start_capability_catalog_organization(
         created_by=int(session["user_id"]),
         model_id=payload.model_id,
         snapshot_id=snapshot_id,
+        scan_mode=payload.scan_mode,
     )
     if job["job_id"] != job_id:
         return JSONResponse({"status": "already_running", "job": job}, status_code=409)
@@ -838,9 +851,13 @@ async def start_capability_catalog_organization(
         action="organize_atomic_capabilities",
         source_path=payload.model_id,
         result="queued",
-        details=json.dumps({"job_id": job_id, "snapshot_id": snapshot_id}),
+        details=json.dumps(
+            {"job_id": job_id, "snapshot_id": snapshot_id, "scan_mode": payload.scan_mode}
+        ),
     )
-    _start_capability_catalog_job(job_id, payload.model_id, snapshot_id)
+    _start_capability_catalog_job(
+        job_id, payload.model_id, snapshot_id, payload.scan_mode
+    )
     return JSONResponse({"status": "queued", "job": job}, status_code=202)
 
 

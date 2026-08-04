@@ -182,6 +182,7 @@ def initialize_database() -> None:
                 created_by INTEGER NOT NULL,
                 model_id TEXT NOT NULL,
                 snapshot_id TEXT NOT NULL,
+                scan_mode TEXT NOT NULL DEFAULT 'incremental',
                 status TEXT NOT NULL,
                 stage TEXT NOT NULL,
                 message TEXT NOT NULL DEFAULT '',
@@ -270,6 +271,11 @@ def initialize_database() -> None:
         if "analysis_error" not in scenario_columns:
             connection.execute(
                 "ALTER TABLE scenario_assessments ADD COLUMN analysis_error TEXT"
+            )
+        if "scan_mode" not in _columns(connection, "capability_catalog_jobs"):
+            connection.execute(
+                "ALTER TABLE capability_catalog_jobs ADD COLUMN scan_mode "
+                "TEXT NOT NULL DEFAULT 'incremental'"
             )
         if "updated_at" not in scenario_columns:
             connection.execute(
@@ -1814,7 +1820,7 @@ def list_capability_draft_stubs(limit: int = 100) -> list[dict[str, Any]]:
     return results
 
 
-_CAPABILITY_CATALOG_STATUSES = {"queued", "processing", "completed", "failed"}
+_CAPABILITY_CATALOG_STATUSES = {"queued", "processing", "completed", "partial", "failed"}
 
 
 def _catalog_job_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -1832,7 +1838,10 @@ def create_capability_catalog_job(
     created_by: int,
     model_id: str,
     snapshot_id: str,
+    scan_mode: str = "incremental",
 ) -> dict[str, Any]:
+    if scan_mode not in {"incremental", "full"}:
+        raise ValueError("Invalid capability catalog scan mode")
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
         active = connection.execute(
@@ -1848,15 +1857,16 @@ def create_capability_catalog_job(
         connection.execute(
             """
             INSERT INTO capability_catalog_jobs (
-                job_id, created_by, model_id, snapshot_id, status, stage,
+                job_id, created_by, model_id, snapshot_id, scan_mode, status, stage,
                 message, result_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'queued', 'queued', ?, '{}', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, 'queued', 'queued', ?, '{}', ?, ?)
             """,
             (
                 job_id,
                 created_by,
                 model_id,
                 snapshot_id,
+                scan_mode,
                 "Waiting for the Worker.",
                 now,
                 now,
@@ -1888,7 +1898,7 @@ def update_capability_catalog_job(
         if value is not None:
             assignments.append(f"{column} = ?")
             values.append(value)
-    if error is not None or status in {"completed", "failed"}:
+    if error is not None or status in {"completed", "partial", "failed"}:
         assignments.append("error = ?")
         values.append(error)
     if result is not None:

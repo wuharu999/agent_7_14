@@ -642,6 +642,7 @@ class WorkerManager:
                     job_id=job_id,
                     model_id=model_id,
                     snapshot_id=str(data.get("snapshot_id") or ""),
+                    scan_mode=str(data.get("scan_mode") or "incremental"),
                     on_progress=progress,
                 )
                 await self.emit(
