@@ -41,37 +41,17 @@ def _read_skill_bundle() -> str:
 
 
 def _changeset_schema() -> dict[str, Any]:
-    references = _SKILL_ROOT / "references"
     changeset = json.loads(
-        (references / "wiki-capability-changeset.schema.json").read_text(encoding="utf-8")
+        (_SKILL_ROOT / "references" / "wiki-capability-changeset.schema.json").read_text(
+            encoding="utf-8"
+        )
     )
-    entry = json.loads(
-        (references / "atomic-capability-entry.schema.json").read_text(encoding="utf-8")
-    )
-    entry.pop("$schema", None)
-    entry.pop("$id", None)
-    entry_defs = entry.pop("$defs", {})
-
-    def rewrite_refs(value: Any) -> Any:
-        if isinstance(value, dict):
-            return {
-                key: (
-                    f"#/$defs/entry_{item.rsplit('/', 1)[-1]}"
-                    if key == "$ref" and isinstance(item, str) and item.startswith("#/$defs/")
-                    else rewrite_refs(item)
-                )
-                for key, item in value.items()
-            }
-        if isinstance(value, list):
-            return [rewrite_refs(item) for item in value]
-        return value
-
-    entry = rewrite_refs(entry)
     after_entry = changeset["properties"]["operations"]["items"]["properties"]["after_entry"]
-    after_entry["oneOf"][0] = {"$ref": "#/$defs/entry_record"}
-    changeset["$defs"] = {"entry_record": entry}
-    for name, definition in entry_defs.items():
-        changeset["$defs"][f"entry_{name}"] = rewrite_refs(definition)
+    # Claude Code validates structured output as JSON Schema draft-07. Keep the
+    # generation schema focused and let the bundled Python hard gate validate
+    # the complete nested atomic-capability records before any publication.
+    after_entry["oneOf"] = [{"type": "object"}, {"type": "null"}]
+    changeset.pop("$schema", None)
     changeset.pop("$id", None)
     return changeset
 
@@ -107,14 +87,22 @@ def _find_changeset(value: Any) -> dict[str, Any] | None:
 
 
 def _parse_changeset(raw: str) -> dict[str, Any]:
+    changeset = _find_changeset(raw)
+    if changeset is not None:
+        return changeset
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError("Claude returned invalid capability changeset JSON") from exc
-    changeset = _find_changeset(parsed)
-    if changeset is None:
-        raise ValueError("Claude returned no complete capability changeset")
-    return changeset
+    except json.JSONDecodeError:
+        raise ValueError("Claude returned invalid capability changeset JSON") from None
+    if isinstance(parsed, dict):
+        subtype = str(parsed.get("subtype") or "")
+        if subtype == "error_max_structured_output_retries":
+            raise ValueError(
+                "Claude could not satisfy the capability output schema after its retries"
+            )
+        if parsed.get("is_error") is True:
+            raise ValueError(f"Claude capability generation failed ({subtype or 'unknown error'})")
+    raise ValueError("Claude returned no complete capability changeset")
 
 
 async def _validate_changeset(path: Path) -> None:
@@ -464,8 +452,35 @@ async def organize_capability_catalog(
         timeout=CAPABILITY_CATALOG_TIMEOUT,
         json_schema=CATALOG_CHANGESET_SCHEMA,
     )
+    try:
+        changeset = _parse_changeset(raw)
+    except ValueError as first_error:
+        log.warning("Structured capability output needs one fallback attempt: %s", first_error)
+        await on_progress(
+            "retrying_output",
+            "Claude is retrying with a simpler JSON response before hard-gate validation.",
+        )
+        fallback_prompt = (
+            prompt
+            + "\n\nThe previous structured-output attempt did not produce a usable changeset. "
+            "Make one final attempt. Return only the complete JSON changeset, with no Markdown "
+            "fence or explanation. Every nested after_entry must follow the embedded atomic "
+            "capability contract."
+        )
+        fallback_raw = await run_claude_process(
+            fallback_prompt,
+            team=model,
+            system_prompt=system_prompt,
+            timeout=CAPABILITY_CATALOG_TIMEOUT,
+            json_schema=None,
+        )
+        try:
+            changeset = _parse_changeset(fallback_raw)
+        except ValueError as fallback_error:
+            raise ValueError(
+                f"Capability output failed structured and fallback parsing: {fallback_error}"
+            ) from fallback_error
     await on_progress("validating", "Validating the capability changeset and every draft entry.")
-    changeset = _parse_changeset(raw)
     validation_dir = team_config.base_dir / ".agent1-worker" / "capability-catalog-validation"
     await asyncio.to_thread(validation_dir.mkdir, parents=True, exist_ok=True)
     validation_path = validation_dir / f"{job_id}-{uuid.uuid4().hex[:8]}.json"

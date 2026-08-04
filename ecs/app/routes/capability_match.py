@@ -282,15 +282,16 @@ async def _run_capability_catalog_job(
             error="Capability organization was interrupted.",
         )
         raise
-    except (ConnectionError, TimeoutError, asyncio.TimeoutError, RuntimeError, ValueError):
+    except (ConnectionError, TimeoutError, asyncio.TimeoutError, RuntimeError, ValueError) as exc:
         log.exception("Capability catalog job %s failed", job_id)
+        detail = str(exc).strip() or "Capability organization failed."
         await asyncio.to_thread(
             update_capability_catalog_job,
             job_id,
             status="failed",
             stage="failed",
-            message="Capability organization failed. Check the Worker logs.",
-            error="Capability organization failed. Check the Worker logs.",
+            message="Capability organization failed.",
+            error=detail[:1200],
         )
     except Exception:
         log.exception("Unexpected capability catalog failure for %s", job_id)

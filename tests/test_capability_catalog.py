@@ -136,6 +136,35 @@ def test_generated_changeset_passes_the_bundled_hard_gate(tmp_path: Path) -> Non
     asyncio.run(capability_catalog._validate_changeset(path))
 
 
+def test_claude_generation_schema_is_draft7_compatible_and_focused() -> None:
+    schema = capability_catalog.CATALOG_CHANGESET_SCHEMA
+    after_entry = schema["properties"]["operations"]["items"]["properties"][
+        "after_entry"
+    ]
+
+    assert "$schema" not in schema
+    assert "$id" not in schema
+    assert after_entry["oneOf"] == [{"type": "object"}, {"type": "null"}]
+    assert len(json.dumps(schema)) < 15_000
+
+
+def test_changeset_parser_accepts_fenced_fallback_and_reports_retry_exhaustion() -> None:
+    fenced = f"```json\n{json.dumps(_changeset())}\n```"
+    assert capability_catalog._parse_changeset(fenced)["changeset_id"] == "CHG-TEST-WALK"
+
+    with pytest.raises(ValueError, match="could not satisfy.*after its retries"):
+        capability_catalog._parse_changeset(
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "error_max_structured_output_retries",
+                    "is_error": True,
+                    "errors": ["output did not match schema"],
+                }
+            )
+        )
+
+
 def test_publish_is_atomic_saves_manifest_and_protects_verified_entries(tmp_path: Path) -> None:
     manifest = {"upload/manual.md": {"size_bytes": 12, "mtime_ns": 34}}
     result = capability_catalog._publish_drafts(

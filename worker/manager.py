@@ -655,8 +655,9 @@ class WorkerManager:
                 )
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 log.exception("Capability catalog organization failed for %s", command_id)
+                detail = str(exc).strip() or type(exc).__name__
                 await self.emit(
                     {
                         "type": (
@@ -667,7 +668,7 @@ class WorkerManager:
                         "id": command_id,
                         "job_id": job_id,
                         "status": "failed",
-                        "error": "Capability catalog organization failed; see Worker logs",
+                        "error": f"{type(exc).__name__}: {detail}"[:1200],
                     }
                 )
             finally:
