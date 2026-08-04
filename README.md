@@ -121,10 +121,13 @@ Open `/capability-match` to run or review an assessment. The workbench shows the
 scenario, atomic match matrix, hard gates, technical/deployment conclusions,
 R&D person-week estimates, risks, and Markdown/PDF exports. Assessments are
 stored additively in `agent_jobs.db`; anonymous public assessments have no user
-owner. Administrators can review aggregate requested gaps and create idempotent
-evidence-acquisition draft stubs at `/admin/capabilities`. Stub creation is
-admin-only, CSRF-protected, and audit-logged; it does not write to or delete the
-live Wiki.
+owner. At `/admin/capabilities`, administrators can review aggregate requested
+gaps, create idempotent evidence-acquisition stubs, inspect added/modified/deleted
+source paths since the last successful organization, and start the atomic
+capability organizer. Organization runs are persisted in SQLite so every admin
+sees the same progress after a refresh. Claude has read-only source access; only
+schema-validated draft entries are atomically published by Python, with a backup.
+Deletion, deprecation, and overwriting reviewed/verified entries are rejected.
 
 ## Included
 
@@ -145,6 +148,7 @@ live Wiki.
 - Browser-visible ingestion status through LLM Wiki queue/cache monitoring.
 - Scenario feasibility workbench with deterministic L0 hard-gate enforcement.
 - SQLite-backed capability-gap analytics and admin draft-stub generation.
+- Shared capability-organization progress and source-manifest change tracking.
 - Prompt/command-injection hardening for browser QA, WeCom, authoring, and
   retrieved source content.
 - Non-blocking text-source security warnings on upload status pages.
@@ -158,7 +162,8 @@ live Wiki.
 - `/uploads/<upload_id>` — authenticated upload progress
 - `/health` — public service health
 - `/capability-match` — public scenario feasibility workbench
-- `/admin/capabilities` — admin-only R&D gap analytics and draft stubs
+- `/admin/capabilities` — admin-only atomic capability organizer, shared progress,
+  source changes, R&D gap analytics, and draft stubs
 - `/wecom/callback` — WeCom callback
 
 ## Roles

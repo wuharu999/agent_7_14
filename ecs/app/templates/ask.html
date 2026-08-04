@@ -54,7 +54,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .thinking-dots span:nth-child(2){animation-delay:0.2s;}
 .thinking-dots span:nth-child(3){animation-delay:0.4s;}
 @keyframes thinkingDot{0%,80%,100%{opacity:0.2;transform:scale(0.8)}40%{opacity:1;transform:scale(1.2)}}
-.demand-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#334155;white-space:nowrap;cursor:pointer}.demand-toggle input{width:34px;height:18px;accent-color:#2563eb}.analysis-cta{align-self:stretch;background:#eff6ff;border:1px solid #93c5fd;border-radius:12px;padding:13px 15px;color:#1e3a8a}.analysis-cta strong{display:block;margin-bottom:7px}.analysis-cta a{display:inline-flex;background:#2563eb;color:#fff;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:750}.analysis-cta.error{background:#fff1f2;border-color:#fda4af;color:#9f1239}
+.demand-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#334155;white-space:nowrap;cursor:pointer}.demand-toggle input{width:34px;height:18px;accent-color:#2563eb}.analysis-cta{align-self:stretch;background:#eff6ff;border:1px solid #93c5fd;border-radius:12px;padding:13px 15px;color:#1e3a8a}.analysis-cta strong{display:block;margin-bottom:7px}.analysis-cta a{display:inline-flex;background:#2563eb;color:#fff;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:750}.analysis-cta small{display:block;color:#475569;line-height:1.45}.analysis-cta[data-state="working"] strong::before{content:'';display:inline-block;width:13px;height:13px;margin-right:8px;vertical-align:-2px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:demand-spin .9s linear infinite}@keyframes demand-spin{to{transform:rotate(360deg)}}.analysis-cta.error{background:#fff1f2;border-color:#fda4af;color:#9f1239}
 </style>
 </head>
 <body>
@@ -156,15 +156,17 @@ const demandModeKey='agent1_demand_mode';
 const latestAssessmentKey='agent1_latest_scenario_assessment';
 
 const demandI18n={
-  'zh-CN':{mode:'需求分析模式',working:'正在提取场景需求并匹配机器人能力…',ready:'已提取场景需求。是否查看可行性匹配？',open:'📊 打开可行性匹配工作台',failed:'场景需求分析失败。'},
-  'zh-TW':{mode:'需求分析模式',working:'正在提取場景需求並匹配機器人能力…',ready:'已提取場景需求。是否查看可行性匹配？',open:'📊 開啟可行性匹配工作台',failed:'場景需求分析失敗。'},
-  'ko':{mode:'요구 분석 모드',working:'시나리오 요구사항과 로봇 역량을 분석하는 중…',ready:'시나리오 요구사항을 추출했습니다. 타당성 매치를 확인할까요?',open:'📊 타당성 매치 워크벤치 열기',failed:'시나리오 요구 분석에 실패했습니다.'},
-  'ja':{mode:'需要分析モード',working:'シナリオ要件とロボット能力を分析中…',ready:'シナリオ要件を抽出しました。実現可能性を確認しますか？',open:'📊 実現可能性ワークベンチを開く',failed:'シナリオ需要分析に失敗しました。'},
-  'en':{mode:'Analyze Demand Mode',working:'Extracting scenario requirements and matching robot capabilities…',ready:'Scenario requirements extracted. Check feasibility match?',open:'📊 Open Feasibility Match Workbench',failed:'Scenario demand analysis failed.'},
-  'pt':{mode:'Modo de análise da demanda',working:'Extraindo requisitos e combinando capacidades do robô…',ready:'Requisitos do cenário extraídos. Verificar viabilidade?',open:'📊 Abrir bancada de viabilidade',failed:'Falha na análise da demanda.'},
-  'ru':{mode:'Режим анализа требований',working:'Извлечение требований и сопоставление возможностей робота…',ready:'Требования сценария извлечены. Проверить реализуемость?',open:'📊 Открыть рабочую область',failed:'Не удалось проанализировать требования.'},
-  'es':{mode:'Modo de análisis de demanda',working:'Extrayendo requisitos y comparando capacidades del robot…',ready:'Requisitos del escenario extraídos. ¿Comprobar viabilidad?',open:'📊 Abrir banco de viabilidad',failed:'Falló el análisis de demanda.'}
+  'zh-CN':{mode:'需求分析模式',working:'正在提取场景需求并匹配机器人能力…',workingDetail:'分析仍在后台进行，可以安全刷新或离开此页面。',ready:'已提取场景需求。是否查看可行性匹配？',open:'📊 打开可行性匹配工作台',failed:'场景需求分析失败。'},
+  'zh-TW':{mode:'需求分析模式',working:'正在提取場景需求並匹配機器人能力…',workingDetail:'分析仍在背景進行，可以安全重新整理或離開此頁面。',ready:'已提取場景需求。是否查看可行性匹配？',open:'📊 開啟可行性匹配工作台',failed:'場景需求分析失敗。'},
+  'ko':{mode:'요구 분석 모드',working:'시나리오 요구사항과 로봇 역량을 분석하는 중…',workingDetail:'분석은 백그라운드에서 계속됩니다. 페이지를 안전하게 새로고침하거나 나갈 수 있습니다.',ready:'시나리오 요구사항을 추출했습니다. 타당성 매치를 확인할까요?',open:'📊 타당성 매치 워크벤치 열기',failed:'시나리오 요구 분석에 실패했습니다.'},
+  'ja':{mode:'需要分析モード',working:'シナリオ要件とロボット能力を分析中…',workingDetail:'分析はバックグラウンドで続行されます。安全に更新または移動できます。',ready:'シナリオ要件を抽出しました。実現可能性を確認しますか？',open:'📊 実現可能性ワークベンチを開く',failed:'シナリオ需要分析に失敗しました。'},
+  'en':{mode:'Analyze Demand Mode',working:'Extracting scenario requirements and matching robot capabilities…',workingDetail:'Analysis continues in the background. You can safely refresh or leave this page.',ready:'Scenario requirements extracted. Check feasibility match?',open:'📊 Open Feasibility Match Workbench',failed:'Scenario demand analysis failed.'},
+  'pt':{mode:'Modo de análise da demanda',working:'Extraindo requisitos e combinando capacidades do robô…',workingDetail:'A análise continua em segundo plano. Você pode atualizar ou sair desta página com segurança.',ready:'Requisitos do cenário extraídos. Verificar viabilidade?',open:'📊 Abrir bancada de viabilidade',failed:'Falha na análise da demanda.'},
+  'ru':{mode:'Режим анализа требований',working:'Извлечение требований и сопоставление возможностей робота…',workingDetail:'Анализ продолжается в фоне. Страницу можно безопасно обновить или закрыть.',ready:'Требования сценария извлечены. Проверить реализуемость?',open:'📊 Открыть рабочую область',failed:'Не удалось проанализировать требования.'},
+  'es':{mode:'Modo de análisis de demanda',working:'Extrayendo requisitos y comparando capacidades del robot…',workingDetail:'El análisis continúa en segundo plano. Puede actualizar o salir de esta página de forma segura.',ready:'Requisitos del escenario extraídos. ¿Comprobar viabilidad?',open:'📊 Abrir banco de viabilidad',failed:'Falló el análisis de demanda.'}
 };
+
+let demandPollGeneration=0;
 
 let currentLang = 'zh-CN';
 
@@ -244,16 +246,24 @@ function scrollToBottom() {
   chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
-function renderAnalysisCta(state, assessmentId='') {
+function demandElapsed(createdAt){const started=Date.parse(createdAt||'');if(!Number.isFinite(started))return'';const total=Math.max(0,Math.floor((Date.now()-started)/1000));return `${Math.floor(total/60)}:${String(total%60).padStart(2,'0')}`}
+function renderAnalysisCta(state, assessmentId='',info={}) {
   chatHistory.querySelectorAll('.analysis-cta').forEach(node=>node.remove());
   const text=demandI18n[currentLang]||demandI18n.en;
   const card=document.createElement('div');
   card.className='analysis-cta'+(state==='error'?' error':'');
   card.dataset.state=state;
   card.dataset.assessmentId=assessmentId;
+  card.dataset.createdAt=info.created_at||'';
   const title=document.createElement('strong');
   title.textContent=state==='working'?text.working:(state==='ready'?text.ready:text.failed);
   card.appendChild(title);
+  if(state==='working'){
+    const detail=document.createElement('small');
+    const elapsed=demandElapsed(info.created_at);
+    detail.textContent=text.workingDetail+(elapsed?` (${elapsed})`:``);
+    card.appendChild(detail);
+  }
   if(state==='ready'&&assessmentId){
     const link=document.createElement('a');
     link.href=`/capability-match?assessment_id=${encodeURIComponent(assessmentId)}`;
@@ -262,6 +272,37 @@ function renderAnalysisCta(state, assessmentId='') {
   }
   chatHistory.appendChild(card);
   scrollToBottom();
+}
+
+async function monitorDemandAnalysis(assessmentId){
+  const generation=++demandPollGeneration;
+  async function poll(){
+    if(generation!==demandPollGeneration)return;
+    try{
+      const response=await fetch(`/api/capability-match/assessments/${encodeURIComponent(assessmentId)}`,{cache:'no-store'});
+      const data=await response.json();
+      if(!response.ok){const error=new Error(data.error||'Scenario analysis status unavailable');error.terminal=response.status<500;throw error}
+      if(data.analysis_status==='queued'||data.analysis_status==='processing'){
+        renderAnalysisCta('working',assessmentId,data);
+        setTimeout(poll,2000);
+        return;
+      }
+      if(data.analysis_status==='completed'&&data.assessment){
+        localStorage.setItem(latestAssessmentKey,JSON.stringify({assessment_id:assessmentId,conversation_id:getConversationId(),analysis_status:'completed'}));
+        renderAnalysisCta('ready',assessmentId);
+        return;
+      }
+      localStorage.removeItem(latestAssessmentKey);
+      renderAnalysisCta('error');
+    }catch(error){
+      if(error&&error.terminal){localStorage.removeItem(latestAssessmentKey);renderAnalysisCta('error');return}
+      console.warn('Scenario analysis status check will retry',error);
+      const existing=chatHistory.querySelector('.analysis-cta');
+      renderAnalysisCta('working',assessmentId,{created_at:existing?.dataset.createdAt||''});
+      setTimeout(poll,4000);
+    }
+  }
+  await poll();
 }
 
 async function analyzeDemand(scenarioText) {
@@ -276,8 +317,8 @@ async function analyzeDemand(scenarioText) {
     });
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||'Scenario analysis failed');
-    localStorage.setItem(latestAssessmentKey,JSON.stringify({assessment_id:data.assessment_id,conversation_id:getConversationId()}));
-    renderAnalysisCta('ready',data.assessment_id);
+    localStorage.setItem(latestAssessmentKey,JSON.stringify({assessment_id:data.assessment_id,conversation_id:getConversationId(),analysis_status:'queued'}));
+    await monitorDemandAnalysis(data.assessment_id);
   }catch(error){
     console.error('Scenario demand analysis failed',error);
     renderAnalysisCta('error');
@@ -303,7 +344,7 @@ function translateUI() {
   question.placeholder = t.placeholder;
   demandModeLabel.textContent=(demandI18n[currentLang]||demandI18n.en).mode;
   const existingCta=chatHistory.querySelector('.analysis-cta');
-  if(existingCta)renderAnalysisCta(existingCta.dataset.state||'error',existingCta.dataset.assessmentId||'');
+  if(existingCta)renderAnalysisCta(existingCta.dataset.state||'error',existingCta.dataset.assessmentId||'',{created_at:existingCta.dataset.createdAt||''});
   updateHealthStatus();
 }
 
@@ -571,6 +612,7 @@ async function submitQuestion(){
 askButton.onclick=submitQuestion;
 question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter') {event.preventDefault();submitQuestion();}});
 newConversationButton.onclick=()=>{
+  demandPollGeneration++;
   localStorage.setItem(conversationKey,newConversationId());
   localStorage.removeItem(latestAssessmentKey);
   clearChat();
@@ -584,7 +626,7 @@ translateUI();
 loadHistory();
 try{
   const latest=JSON.parse(localStorage.getItem(latestAssessmentKey)||'null');
-  if(latest&&latest.conversation_id===getConversationId()&&latest.assessment_id){renderAnalysisCta('ready',latest.assessment_id)}
+  if(latest&&latest.conversation_id===getConversationId()&&latest.assessment_id){void monitorDemandAnalysis(latest.assessment_id)}
 }catch(_){localStorage.removeItem(latestAssessmentKey)}
 
 </script>

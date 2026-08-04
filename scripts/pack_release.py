@@ -17,7 +17,6 @@ def pack_release():
         ".agents",
         ".codex",
         ".vscode",
-        "maintain-model-atomic-capability-wiki",
     }
     
     exclude_files = {

@@ -149,11 +149,16 @@ def initialize_database() -> None:
                 user_id INTEGER,
                 conversation_id TEXT NOT NULL DEFAULT '',
                 model_id TEXT NOT NULL,
+                scenario_text TEXT NOT NULL DEFAULT '',
+                language TEXT NOT NULL DEFAULT 'en',
                 scenario_spec TEXT NOT NULL,
                 atomic_requirements TEXT NOT NULL DEFAULT '[]',
                 capabilities TEXT NOT NULL DEFAULT '[]',
                 feasibility_assessment TEXT NOT NULL,
+                analysis_status TEXT NOT NULL DEFAULT 'completed',
+                analysis_error TEXT,
                 created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
             );
 
@@ -172,6 +177,29 @@ def initialize_database() -> None:
                 FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
             );
 
+            CREATE TABLE IF NOT EXISTS capability_catalog_jobs (
+                job_id TEXT PRIMARY KEY,
+                created_by INTEGER NOT NULL,
+                model_id TEXT NOT NULL,
+                snapshot_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                message TEXT NOT NULL DEFAULT '',
+                error TEXT,
+                result_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
+            );
+
+            CREATE TABLE IF NOT EXISTS capability_catalog_source_state (
+                model_id TEXT PRIMARY KEY,
+                changes_json TEXT NOT NULL DEFAULT '{}',
+                current_source_files INTEGER NOT NULL DEFAULT 0,
+                last_organized_manifest_files INTEGER NOT NULL DEFAULT 0,
+                checked_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
             CREATE INDEX IF NOT EXISTS idx_sources_upload ON upload_sources(upload_id);
             CREATE INDEX IF NOT EXISTS idx_security_warnings_upload
@@ -187,6 +215,10 @@ def initialize_database() -> None:
                 ON scenario_assessments(model_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_capability_stubs_created
                 ON capability_draft_stubs(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_capability_catalog_jobs_created
+                ON capability_catalog_jobs(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_capability_catalog_jobs_model_status
+                ON capability_catalog_jobs(model_id, status, created_at DESC);
             """
         )
         # Migrate databases created by the earlier prototype.
@@ -222,6 +254,51 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE scenario_assessments ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'"
             )
+        if "scenario_text" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN scenario_text TEXT NOT NULL DEFAULT ''"
+            )
+        if "language" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN language TEXT NOT NULL DEFAULT 'en'"
+            )
+        if "analysis_status" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN analysis_status "
+                "TEXT NOT NULL DEFAULT 'completed'"
+            )
+        if "analysis_error" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN analysis_error TEXT"
+            )
+        if "updated_at" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
+            )
+            connection.execute(
+                "UPDATE scenario_assessments SET updated_at = created_at WHERE updated_at = ''"
+            )
+        connection.execute(
+            """
+            UPDATE scenario_assessments
+            SET analysis_status = 'failed',
+                analysis_error = 'Scenario analysis was interrupted by a server restart. Please start it again.',
+                updated_at = ?
+            WHERE analysis_status IN ('queued', 'processing')
+            """,
+            (utc_now(),),
+        )
+        connection.execute(
+            """
+            UPDATE capability_catalog_jobs
+            SET status = 'failed', stage = 'interrupted',
+                message = 'Catalog organization was interrupted by an ECS restart.',
+                error = 'Catalog organization was interrupted by an ECS restart.',
+                updated_at = ?
+            WHERE status IN ('queued', 'processing')
+            """,
+            (utc_now(),),
+        )
 
         connection.executescript(
             """
@@ -1479,14 +1556,15 @@ def create_scenario_assessment(
     capabilities: list[dict[str, Any]],
     feasibility_assessment: dict[str, Any],
 ) -> None:
+    now = utc_now()
     with _DB_LOCK, _connect() as connection:
         connection.execute(
             """
             INSERT INTO scenario_assessments (
                 assessment_id, user_id, conversation_id, model_id,
                 scenario_spec, atomic_requirements, capabilities,
-                feasibility_assessment, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                feasibility_assessment, analysis_status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)
             """,
             (
                 assessment_id,
@@ -1497,9 +1575,97 @@ def create_scenario_assessment(
                 json.dumps(atomic_requirements, ensure_ascii=False),
                 json.dumps(capabilities, ensure_ascii=False),
                 json.dumps(feasibility_assessment, ensure_ascii=False),
-                utc_now(),
+                now,
+                now,
             ),
         )
+
+
+_ANALYSIS_STATUSES = {"queued", "processing", "completed", "failed"}
+
+
+def create_scenario_analysis_job(
+    *,
+    assessment_id: str,
+    user_id: int | None,
+    conversation_id: str,
+    model_id: str,
+    scenario_text: str,
+    language: str,
+) -> None:
+    """Persist a refresh-safe capability analysis job before Worker dispatch."""
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO scenario_assessments (
+                assessment_id, user_id, conversation_id, model_id,
+                scenario_text, language, scenario_spec, atomic_requirements,
+                capabilities, feasibility_assessment, analysis_status,
+                analysis_error, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, '{}', '[]', '[]', '{}',
+                      'queued', NULL, ?, ?)
+            """,
+            (
+                assessment_id,
+                user_id,
+                conversation_id,
+                model_id,
+                scenario_text,
+                language,
+                now,
+                now,
+            ),
+        )
+
+
+def update_scenario_analysis_status(
+    assessment_id: str,
+    *,
+    status: str,
+    error: str | None = None,
+) -> None:
+    if status not in _ANALYSIS_STATUSES:
+        raise ValueError(f"Unsupported analysis status: {status}")
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            UPDATE scenario_assessments
+            SET analysis_status = ?, analysis_error = ?, updated_at = ?
+            WHERE assessment_id = ?
+            """,
+            (status, error, utc_now(), assessment_id),
+        )
+
+
+def complete_scenario_analysis_job(
+    *,
+    assessment_id: str,
+    scenario_spec: dict[str, Any],
+    atomic_requirements: list[dict[str, Any]],
+    capabilities: list[dict[str, Any]],
+    feasibility_assessment: dict[str, Any],
+) -> None:
+    with _DB_LOCK, _connect() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE scenario_assessments
+            SET scenario_spec = ?, atomic_requirements = ?, capabilities = ?,
+                feasibility_assessment = ?, analysis_status = 'completed',
+                analysis_error = NULL, updated_at = ?
+            WHERE assessment_id = ?
+            """,
+            (
+                json.dumps(scenario_spec, ensure_ascii=False),
+                json.dumps(atomic_requirements, ensure_ascii=False),
+                json.dumps(capabilities, ensure_ascii=False),
+                json.dumps(feasibility_assessment, ensure_ascii=False),
+                utc_now(),
+                assessment_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("Scenario analysis job not found")
 
 
 def _assessment_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -1646,3 +1812,184 @@ def list_capability_draft_stubs(limit: int = 100) -> list[dict[str, Any]]:
             item["details"] = {}
         results.append(item)
     return results
+
+
+_CAPABILITY_CATALOG_STATUSES = {"queued", "processing", "completed", "failed"}
+
+
+def _catalog_job_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    try:
+        item["result"] = json.loads(str(item.pop("result_json")))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        item["result"] = {}
+    return item
+
+
+def create_capability_catalog_job(
+    *,
+    job_id: str,
+    created_by: int,
+    model_id: str,
+    snapshot_id: str,
+) -> dict[str, Any]:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        active = connection.execute(
+            """
+            SELECT * FROM capability_catalog_jobs
+            WHERE model_id = ? AND status IN ('queued', 'processing')
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (model_id,),
+        ).fetchone()
+        if active is not None:
+            return _catalog_job_from_row(active)
+        connection.execute(
+            """
+            INSERT INTO capability_catalog_jobs (
+                job_id, created_by, model_id, snapshot_id, status, stage,
+                message, result_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'queued', 'queued', ?, '{}', ?, ?)
+            """,
+            (
+                job_id,
+                created_by,
+                model_id,
+                snapshot_id,
+                "Waiting for the Worker.",
+                now,
+                now,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM capability_catalog_jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Capability catalog job was not created")
+    return _catalog_job_from_row(row)
+
+
+def update_capability_catalog_job(
+    job_id: str,
+    *,
+    status: str | None = None,
+    stage: str | None = None,
+    message: str | None = None,
+    error: str | None = None,
+    result: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if status is not None and status not in _CAPABILITY_CATALOG_STATUSES:
+        raise ValueError("Invalid capability catalog job status")
+    assignments = ["updated_at = ?"]
+    values: list[Any] = [utc_now()]
+    for column, value in (("status", status), ("stage", stage), ("message", message)):
+        if value is not None:
+            assignments.append(f"{column} = ?")
+            values.append(value)
+    if error is not None or status in {"completed", "failed"}:
+        assignments.append("error = ?")
+        values.append(error)
+    if result is not None:
+        assignments.append("result_json = ?")
+        values.append(json.dumps(result, ensure_ascii=False))
+    values.append(job_id)
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            f"UPDATE capability_catalog_jobs SET {', '.join(assignments)} WHERE job_id = ?",
+            values,
+        )
+        row = connection.execute(
+            "SELECT * FROM capability_catalog_jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    return _catalog_job_from_row(row) if row is not None else None
+
+
+def get_capability_catalog_job(job_id: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM capability_catalog_jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    return _catalog_job_from_row(row) if row is not None else None
+
+
+def get_active_capability_catalog_job(model_id: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT * FROM capability_catalog_jobs
+            WHERE model_id = ? AND status IN ('queued', 'processing')
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (model_id,),
+        ).fetchone()
+    return _catalog_job_from_row(row) if row is not None else None
+
+
+def list_capability_catalog_jobs(limit: int = 20) -> list[dict[str, Any]]:
+    bounded_limit = max(1, min(int(limit), 100))
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM capability_catalog_jobs ORDER BY created_at DESC LIMIT ?",
+            (bounded_limit,),
+        ).fetchall()
+    return [_catalog_job_from_row(row) for row in rows]
+
+
+def upsert_capability_catalog_source_state(
+    *,
+    model_id: str,
+    changes: dict[str, Any],
+    current_source_files: int,
+    last_organized_manifest_files: int,
+) -> dict[str, Any]:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO capability_catalog_source_state (
+                model_id, changes_json, current_source_files,
+                last_organized_manifest_files, checked_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(model_id) DO UPDATE SET
+                changes_json = excluded.changes_json,
+                current_source_files = excluded.current_source_files,
+                last_organized_manifest_files = excluded.last_organized_manifest_files,
+                checked_at = excluded.checked_at
+            """,
+            (
+                model_id,
+                json.dumps(changes, ensure_ascii=False),
+                max(0, int(current_source_files)),
+                max(0, int(last_organized_manifest_files)),
+                now,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM capability_catalog_source_state WHERE model_id = ?",
+            (model_id,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Capability source state was not saved")
+    return _catalog_source_state_from_row(row)
+
+
+def _catalog_source_state_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    try:
+        item["changes"] = json.loads(str(item.pop("changes_json")))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        item["changes"] = {}
+    return item
+
+
+def get_capability_catalog_source_state(model_id: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM capability_catalog_source_state WHERE model_id = ?",
+            (model_id,),
+        ).fetchone()
+    return _catalog_source_state_from_row(row) if row is not None else None

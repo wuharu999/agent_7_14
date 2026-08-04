@@ -9,7 +9,7 @@ python3 /home/eason/Downloads/vscode-copilot-robot-scenario-compiler-agent-v1.0.
 python3 -m compileall -q ecs worker shared scripts
 python3 -m json.tool shared/schemas/atomic-capability.schema.json >/dev/null
 python3 -m json.tool shared/schemas/feasibility-assessment.schema.json >/dev/null
-pytest -q tests/test_capability_match.py tests/test_account_menu.py tests/test_security_migration.py
+pytest -q tests/test_capability_catalog.py tests/test_capability_match.py tests/test_account_menu.py tests/test_security_migration.py
 ```
 
 The capability-match tests cover schema installation, L0-only hard-gate
@@ -29,8 +29,13 @@ On the deployed pair, verify in this order:
 4. Use a scenario with only SDK/driver evidence and confirm the L0 hard gate
    reports `R&D Gap (Composite Skill Missing)`.
 5. Download `feasibility_report.md` and `feasibility_report.pdf`.
-6. Sign in as admin, open `/admin/capabilities`, and create one draft stub.
-7. Confirm the stub appears once after repeating the same request and the audit
+6. Sign in as admin and open `/admin/capabilities`. Confirm the file-change panel
+   shows the selected robot's added/modified/deleted paths.
+7. Start organization and confirm a second admin session and a refreshed page see
+   the same queued/processing/completed state.
+8. Confirm validated drafts appear under `wiki/capabilities/<model>/`, the source
+   change list resets after success, and a backup is retained for an existing catalog.
+9. Create one draft stub. Confirm it appears once after repeating the same request and the audit
    log contains `create_capability_draft_stub`.
 
 The final package was checked with:

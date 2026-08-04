@@ -18,15 +18,24 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, Field
 
 from ecs.app.auth import current_session, require_roles, verify_csrf
-from ecs.app.config import WORKER_TIMEOUT
+from ecs.app.config import CAPABILITY_CATALOG_TIMEOUT, FILE_COMMAND_TIMEOUT, WORKER_TIMEOUT
 from ecs.app.database import (
     aggregate_capability_gaps,
+    complete_scenario_analysis_job,
+    create_capability_catalog_job,
     create_capability_draft_stub,
-    create_scenario_assessment,
+    create_scenario_analysis_job,
+    get_active_capability_catalog_job,
     get_allowed_teams,
+    get_capability_catalog_job,
+    get_capability_catalog_source_state,
     get_robot_options,
     get_scenario_assessment,
+    list_capability_catalog_jobs,
     list_capability_draft_stubs,
+    update_capability_catalog_job,
+    update_scenario_analysis_status,
+    upsert_capability_catalog_source_state,
     write_audit,
 )
 from ecs.app.gateway import gateway
@@ -50,6 +59,10 @@ class CreateDraftStubRequest(BaseModel):
     requirement_id: str = Field(min_length=5, max_length=80, pattern=r"^REQ-[A-Z0-9-]+$")
 
 
+class OrganizeCapabilitiesRequest(BaseModel):
+    model_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
 class _AnalysisRateLimiter:
     def __init__(self) -> None:
         self.history: dict[str, list[float]] = defaultdict(list)
@@ -69,6 +82,8 @@ class _AnalysisRateLimiter:
 
 
 analysis_limiter = _AnalysisRateLimiter()
+_analysis_tasks: dict[str, asyncio.Task[None]] = {}
+_catalog_tasks: dict[str, asyncio.Task[None]] = {}
 
 
 def _template(name: str) -> str:
@@ -79,8 +94,237 @@ def _public_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value
         for key, value in assessment.items()
-        if key not in {"user_id", "conversation_id"}
+        if key not in {"user_id", "conversation_id", "scenario_text", "analysis_error"}
     }
+
+
+async def _mark_analysis_failed(assessment_id: str, error: str) -> None:
+    try:
+        await asyncio.to_thread(
+            update_scenario_analysis_status,
+            assessment_id,
+            status="failed",
+            error=error,
+        )
+    except Exception:
+        log.exception("Could not persist failed state for scenario analysis %s", assessment_id)
+
+
+async def _run_scenario_analysis(
+    assessment_id: str,
+    payload: AnalyzeScenarioRequest,
+) -> None:
+    try:
+        await asyncio.to_thread(
+            update_scenario_analysis_status,
+            assessment_id,
+            status="processing",
+        )
+        worker_result = await gateway.command(
+            "analyze_scenario",
+            timeout=WORKER_TIMEOUT + 30,
+            scenario_text=payload.scenario_text,
+            model_id=payload.model_id,
+            language=payload.language,
+        )
+        if worker_result.get("status") != "ok" or not isinstance(worker_result.get("result"), dict):
+            error = str(worker_result.get("error") or "Scenario analysis failed")
+            log.warning("Scenario analysis %s failed on Worker: %s", assessment_id, error)
+            await _mark_analysis_failed(assessment_id, error)
+            return
+
+        result = worker_result["result"]
+        scenario_spec = result.get("scenario_spec")
+        requirements = result.get("atomic_requirements")
+        capabilities = result.get("capabilities")
+        feasibility = result.get("feasibility_assessment")
+        if not isinstance(scenario_spec, dict) or not isinstance(feasibility, dict):
+            raise ValueError("Worker returned an incomplete assessment")
+        if not isinstance(requirements, list) or not isinstance(capabilities, list):
+            raise ValueError("Worker returned invalid requirement or capability records")
+
+        feasibility["assessment_id"] = assessment_id
+        scenario_id = str(scenario_spec.get("scenario_id") or "")
+        if not scenario_id.startswith("SCN-"):
+            scenario_id = f"SCN-{uuid.uuid4().hex[:12].upper()}"
+            scenario_spec["scenario_id"] = scenario_id
+        feasibility["scenario_id"] = scenario_id
+        await asyncio.to_thread(
+            complete_scenario_analysis_job,
+            assessment_id=assessment_id,
+            scenario_spec=scenario_spec,
+            atomic_requirements=requirements,
+            capabilities=capabilities,
+            feasibility_assessment=feasibility,
+        )
+        log.info("Scenario analysis %s completed", assessment_id)
+    except asyncio.CancelledError:
+        await _mark_analysis_failed(
+            assessment_id,
+            "Scenario analysis was interrupted. Please start it again.",
+        )
+        raise
+    except (ConnectionError, TimeoutError, asyncio.TimeoutError):
+        log.exception("Worker unavailable during scenario analysis %s", assessment_id)
+        await _mark_analysis_failed(
+            assessment_id,
+            "Scenario analysis is temporarily unavailable. Please try again.",
+        )
+    except (TypeError, ValueError, RuntimeError):
+        log.exception("Invalid result for scenario analysis %s", assessment_id)
+        await _mark_analysis_failed(
+            assessment_id,
+            "Scenario analysis returned an invalid result. Please try again.",
+        )
+    except Exception:
+        log.exception("Unexpected failure during scenario analysis %s", assessment_id)
+        await _mark_analysis_failed(
+            assessment_id,
+            "Scenario analysis failed. Please try again.",
+        )
+
+
+def _start_scenario_analysis(assessment_id: str, payload: AnalyzeScenarioRequest) -> None:
+    task = asyncio.create_task(
+        _run_scenario_analysis(assessment_id, payload),
+        name=f"scenario-analysis-{assessment_id}",
+    )
+    _analysis_tasks[assessment_id] = task
+
+    def forget(completed: asyncio.Task[None]) -> None:
+        if _analysis_tasks.get(assessment_id) is completed:
+            _analysis_tasks.pop(assessment_id, None)
+        if completed.cancelled():
+            return
+        error = completed.exception()
+        if error is not None:
+            log.error(
+                "Scenario analysis task %s escaped its error boundary",
+                assessment_id,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+    task.add_done_callback(forget)
+
+
+def _model_is_available(model_id: str) -> bool:
+    return model_id in {str(item["name"]) for item in get_robot_options()}
+
+
+def _source_state_from_worker(result: dict[str, Any]) -> dict[str, Any]:
+    changes = result.get("source_changes")
+    if not isinstance(changes, dict):
+        changes = result.get("changes")
+    if not isinstance(changes, dict):
+        changes = {}
+    current_files = result.get("current_source_files")
+    if current_files is None:
+        current_files = result.get("source_file_count", 0)
+    manifest_files = result.get("last_organized_manifest_files")
+    if manifest_files is None:
+        manifest_files = result.get("manifest_file_count", 0)
+    return {
+        "changes": changes,
+        "current_source_files": int(current_files or 0),
+        "last_organized_manifest_files": int(manifest_files or 0),
+    }
+
+
+async def _save_source_state(model_id: str, result: dict[str, Any]) -> None:
+    state = _source_state_from_worker(result)
+    await asyncio.to_thread(
+        upsert_capability_catalog_source_state,
+        model_id=model_id,
+        **state,
+    )
+
+
+async def _run_capability_catalog_job(
+    job_id: str,
+    model_id: str,
+    snapshot_id: str,
+) -> None:
+    try:
+        await asyncio.to_thread(
+            update_capability_catalog_job,
+            job_id,
+            status="processing",
+            stage="dispatching",
+            message="Sending the source snapshot to the Worker.",
+        )
+        worker_result = await gateway.command(
+            "organize_capability_catalog",
+            timeout=CAPABILITY_CATALOG_TIMEOUT,
+            job_id=job_id,
+            model_id=model_id,
+            snapshot_id=snapshot_id,
+        )
+        result = worker_result.get("result")
+        if worker_result.get("status") != "ok" or not isinstance(result, dict):
+            raise RuntimeError(str(worker_result.get("error") or "Worker organization failed"))
+        await _save_source_state(model_id, result)
+        await asyncio.to_thread(
+            update_capability_catalog_job,
+            job_id,
+            status="completed",
+            stage="completed",
+            message="Atomic capability organization completed.",
+            result=result,
+        )
+        log.info("Capability catalog job %s completed for %s", job_id, model_id)
+    except asyncio.CancelledError:
+        await asyncio.to_thread(
+            update_capability_catalog_job,
+            job_id,
+            status="failed",
+            stage="interrupted",
+            message="Capability organization was interrupted.",
+            error="Capability organization was interrupted.",
+        )
+        raise
+    except (ConnectionError, TimeoutError, asyncio.TimeoutError, RuntimeError, ValueError):
+        log.exception("Capability catalog job %s failed", job_id)
+        await asyncio.to_thread(
+            update_capability_catalog_job,
+            job_id,
+            status="failed",
+            stage="failed",
+            message="Capability organization failed. Check the Worker logs.",
+            error="Capability organization failed. Check the Worker logs.",
+        )
+    except Exception:
+        log.exception("Unexpected capability catalog failure for %s", job_id)
+        await asyncio.to_thread(
+            update_capability_catalog_job,
+            job_id,
+            status="failed",
+            stage="failed",
+            message="Capability organization failed. Check the Worker logs.",
+            error="Capability organization failed. Check the Worker logs.",
+        )
+
+
+def _start_capability_catalog_job(job_id: str, model_id: str, snapshot_id: str) -> None:
+    task = asyncio.create_task(
+        _run_capability_catalog_job(job_id, model_id, snapshot_id),
+        name=f"capability-catalog-{job_id}",
+    )
+    _catalog_tasks[job_id] = task
+
+    def forget(completed: asyncio.Task[None]) -> None:
+        if _catalog_tasks.get(job_id) is completed:
+            _catalog_tasks.pop(job_id, None)
+        if completed.cancelled():
+            return
+        error = completed.exception()
+        if error is not None:
+            log.error(
+                "Capability catalog task %s escaped its error boundary",
+                job_id,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+    task.add_done_callback(forget)
 
 
 def _display_value(value: Any) -> str:
@@ -415,59 +659,30 @@ async def analyze_capability_match(payload: AnalyzeScenarioRequest, request: Req
         return JSONResponse({"error": "Unknown robot model"}, status_code=400)
     if not gateway.online:
         return JSONResponse({"error": "Worker is offline"}, status_code=503)
+    assessment_id = f"ASM-{uuid.uuid4().hex.upper()}"
+    session = current_session(request)
     try:
-        worker_result = await gateway.command(
-            "analyze_scenario",
-            timeout=WORKER_TIMEOUT + 30,
-            scenario_text=payload.scenario_text,
-            model_id=payload.model_id,
-            language=payload.language,
-        )
-        if worker_result.get("status") != "ok" or not isinstance(worker_result.get("result"), dict):
-            return JSONResponse(
-                {"error": str(worker_result.get("error") or "Scenario analysis failed")},
-                status_code=502,
-            )
-        result = worker_result["result"]
-        scenario_spec = result.get("scenario_spec")
-        requirements = result.get("atomic_requirements")
-        capabilities = result.get("capabilities")
-        feasibility = result.get("feasibility_assessment")
-        if not isinstance(scenario_spec, dict) or not isinstance(feasibility, dict):
-            raise ValueError("Worker returned an incomplete assessment")
-        if not isinstance(requirements, list) or not isinstance(capabilities, list):
-            raise ValueError("Worker returned invalid requirement or capability records")
-        assessment_id = f"ASM-{uuid.uuid4().hex.upper()}"
-        feasibility["assessment_id"] = assessment_id
-        scenario_id = str(scenario_spec.get("scenario_id") or "")
-        if not scenario_id.startswith("SCN-"):
-            scenario_id = f"SCN-{uuid.uuid4().hex[:12].upper()}"
-            scenario_spec["scenario_id"] = scenario_id
-        feasibility["scenario_id"] = scenario_id
-        session = current_session(request)
         await asyncio.to_thread(
-            create_scenario_assessment,
+            create_scenario_analysis_job,
             assessment_id=assessment_id,
             user_id=int(session["user_id"]) if session else None,
             conversation_id=payload.conversation_id,
             model_id=payload.model_id,
-            scenario_spec=scenario_spec,
-            atomic_requirements=requirements,
-            capabilities=capabilities,
-            feasibility_assessment=feasibility,
+            scenario_text=payload.scenario_text,
+            language=payload.language,
         )
-        saved = get_scenario_assessment(assessment_id)
-        if saved is None:
-            raise RuntimeError("Assessment persistence failed")
+        _start_scenario_analysis(assessment_id, payload)
         return JSONResponse(
-            {"status": "ok", "assessment_id": assessment_id, "assessment": _public_assessment(saved)}
+            {
+                "status": "accepted",
+                "analysis_status": "queued",
+                "assessment_id": assessment_id,
+            },
+            status_code=202,
         )
-    except (ConnectionError, TimeoutError, asyncio.TimeoutError):
-        log.exception("Worker unavailable during scenario analysis")
-        return JSONResponse({"error": "Scenario analysis is temporarily unavailable"}, status_code=503)
-    except (TypeError, ValueError, RuntimeError):
-        log.exception("Invalid scenario analysis result")
-        return JSONResponse({"error": "Scenario analysis returned an invalid result"}, status_code=502)
+    except Exception:
+        log.exception("Could not create scenario analysis job")
+        return JSONResponse({"error": "Scenario analysis could not be started"}, status_code=500)
 
 
 @router.get("/api/capability-match/assessments/{assessment_id}")
@@ -475,7 +690,19 @@ async def get_capability_match(assessment_id: str) -> JSONResponse:
     assessment = get_scenario_assessment(assessment_id)
     if assessment is None:
         return JSONResponse({"error": "Assessment not found"}, status_code=404)
-    return JSONResponse({"status": "ok", "assessment": _public_assessment(assessment)})
+    analysis_status = str(assessment.get("analysis_status") or "completed")
+    response: dict[str, Any] = {
+        "status": "ok",
+        "analysis_status": analysis_status,
+        "assessment_id": assessment_id,
+        "created_at": assessment.get("created_at"),
+        "updated_at": assessment.get("updated_at") or assessment.get("created_at"),
+    }
+    if analysis_status == "completed":
+        response["assessment"] = _public_assessment(assessment)
+    elif analysis_status == "failed":
+        response["error"] = str(assessment.get("analysis_error") or "Scenario analysis failed")
+    return JSONResponse(response)
 
 
 @router.get("/api/capability-match/export")
@@ -487,6 +714,11 @@ async def export_capability_match(
     assessment = get_scenario_assessment(assessment_id)
     if assessment is None:
         return JSONResponse({"error": "Assessment not found"}, status_code=404)
+    if str(assessment.get("analysis_status") or "completed") != "completed":
+        return JSONResponse(
+            {"error": "Assessment is not complete yet"},
+            status_code=409,
+        )
     report = _markdown_report(assessment, language=language)
     if format == "pdf":
         pdf = await asyncio.to_thread(_pdf_bytes, report)
@@ -512,6 +744,10 @@ async def admin_capabilities_page(request: Request) -> Response:
     page = _template("admin_capabilities.html")
     page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
     page = page.replace("__USERNAME__", html.escape(str(session["username"])))
+    page = page.replace(
+        "__ROBOTS__",
+        json.dumps(get_robot_options(), ensure_ascii=False).replace("</", "<\\/"),
+    )
     return HTMLResponse(page)
 
 
@@ -523,8 +759,88 @@ async def capability_gap_analytics(request: Request) -> JSONResponse:
             "status": "ok",
             "gaps": aggregate_capability_gaps(),
             "draft_stubs": list_capability_draft_stubs(),
+            "catalog_jobs": list_capability_catalog_jobs(),
         }
     )
+
+
+@router.get("/api/admin/capabilities/source-changes")
+async def capability_source_changes(
+    request: Request,
+    model_id: str = Query(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$"),
+) -> JSONResponse:
+    require_roles(request, {"admin"})
+    if not _model_is_available(model_id):
+        return JSONResponse({"error": "Robot model not found"}, status_code=404)
+    if gateway.online:
+        try:
+            worker_result = await gateway.command(
+                "inspect_capability_source_changes",
+                timeout=FILE_COMMAND_TIMEOUT,
+                model_id=model_id,
+            )
+            result = worker_result.get("result")
+            if worker_result.get("status") != "ok" or not isinstance(result, dict):
+                raise RuntimeError(str(worker_result.get("error") or "Worker inspection failed"))
+            await _save_source_state(model_id, result)
+            return JSONResponse({"status": "ok", "stale": False, **result})
+        except (ConnectionError, TimeoutError, asyncio.TimeoutError, RuntimeError, ValueError):
+            log.exception("Could not refresh capability source changes for %s", model_id)
+    cached = await asyncio.to_thread(get_capability_catalog_source_state, model_id)
+    if cached is not None:
+        return JSONResponse({"status": "ok", "stale": True, **cached})
+    return JSONResponse(
+        {"error": "Worker is offline and no source-change snapshot is available."},
+        status_code=503,
+    )
+
+
+@router.get("/api/admin/capabilities/jobs/{job_id}")
+async def capability_catalog_job(job_id: str, request: Request) -> JSONResponse:
+    require_roles(request, {"admin"})
+    job = await asyncio.to_thread(get_capability_catalog_job, job_id)
+    if job is None:
+        return JSONResponse({"error": "Organization job not found"}, status_code=404)
+    return JSONResponse({"status": "ok", "job": job})
+
+
+@router.post("/api/admin/capabilities/organize")
+async def start_capability_catalog_organization(
+    payload: OrganizeCapabilitiesRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+) -> JSONResponse:
+    session = require_roles(request, {"admin"})
+    verify_csrf(session, x_csrf_token)
+    if not _model_is_available(payload.model_id):
+        return JSONResponse({"error": "Robot model not found"}, status_code=404)
+    active = await asyncio.to_thread(get_active_capability_catalog_job, payload.model_id)
+    if active is not None:
+        return JSONResponse({"status": "already_running", "job": active}, status_code=409)
+    if not gateway.online:
+        return JSONResponse({"error": "Worker is offline"}, status_code=503)
+    job_id = f"CAT-{uuid.uuid4().hex[:16].upper()}"
+    snapshot_id = f"SRCSET-{payload.model_id.upper()}-{uuid.uuid4().hex[:12].upper()}"
+    job = await asyncio.to_thread(
+        create_capability_catalog_job,
+        job_id=job_id,
+        created_by=int(session["user_id"]),
+        model_id=payload.model_id,
+        snapshot_id=snapshot_id,
+    )
+    if job["job_id"] != job_id:
+        return JSONResponse({"status": "already_running", "job": job}, status_code=409)
+    await asyncio.to_thread(
+        write_audit,
+        user_id=int(session["user_id"]),
+        username=str(session.get("username") or ""),
+        action="organize_atomic_capabilities",
+        source_path=payload.model_id,
+        result="queued",
+        details=json.dumps({"job_id": job_id, "snapshot_id": snapshot_id}),
+    )
+    _start_capability_catalog_job(job_id, payload.model_id, snapshot_id)
+    return JSONResponse({"status": "queued", "job": job}, status_code=202)
 
 
 @router.post("/api/admin/capabilities/stubs")

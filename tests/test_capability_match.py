@@ -14,14 +14,21 @@ from ecs.app.gateway import gateway
 from ecs.app.routes.capability_match import (
     AnalyzeScenarioRequest,
     CreateDraftStubRequest,
+    OrganizeCapabilitiesRequest,
+    _analysis_tasks,
     admin_capabilities_page,
     analysis_limiter,
     analyze_capability_match,
     capability_gap_analytics,
     capability_match_page,
+    capability_catalog_job,
+    capability_source_changes,
     create_gap_stub,
     export_capability_match,
+    get_capability_match,
+    start_capability_catalog_organization,
 )
+from ecs.app.routes import capability_match as capability_match_routes
 from worker.capability_matcher import R_AND_D_CLASSIFICATION, enforce_abstraction_hard_gate
 from worker import capability_matcher
 from worker.manager import WorkerManager
@@ -100,6 +107,7 @@ def isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(database, "DATABASE_PATH", tmp_path / "agent_jobs.db")
     database.initialize_database()
     analysis_limiter.history.clear()
+    _analysis_tasks.clear()
     gateway.websocket = None
     async def immediate_to_thread(function, /, *args, **kwargs):
         return function(*args, **kwargs)
@@ -275,6 +283,14 @@ def test_assessment_migration_is_additive_and_idempotent(tmp_path: Path, monkeyp
         )
         """
     )
+    connection.execute(
+        """
+        INSERT INTO scenario_assessments (
+            assessment_id, user_id, model_id, scenario_spec,
+            feasibility_assessment, created_at
+        ) VALUES ('ASM-LEGACY', NULL, 'walker_s2', '{}', '{}', '2026-01-01T00:00:00+00:00')
+        """
+    )
     connection.commit()
     connection.close()
 
@@ -289,14 +305,48 @@ def test_assessment_migration_is_additive_and_idempotent(tmp_path: Path, monkeyp
         connection.close()
     assert "scenario_assessments" in tables
     assert "capability_draft_stubs" in tables
+    assert "capability_catalog_jobs" in tables
+    assert "capability_catalog_source_state" in tables
     connection = sqlite3.connect(old_path)
     try:
         assessment_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(scenario_assessments)")
         }
+        legacy_status = connection.execute(
+            "SELECT analysis_status, updated_at FROM scenario_assessments "
+            "WHERE assessment_id = 'ASM-LEGACY'"
+        ).fetchone()
     finally:
         connection.close()
-    assert {"conversation_id", "atomic_requirements", "capabilities"} <= assessment_columns
+    assert {
+        "conversation_id",
+        "atomic_requirements",
+        "capabilities",
+        "scenario_text",
+        "language",
+        "analysis_status",
+        "analysis_error",
+        "updated_at",
+    } <= assessment_columns
+    assert legacy_status == ("completed", "2026-01-01T00:00:00+00:00")
+
+
+def test_database_restart_marks_active_analysis_as_interrupted() -> None:
+    database.create_scenario_analysis_job(
+        assessment_id="ASM-RESTARTED",
+        user_id=None,
+        conversation_id="web:restart",
+        model_id=database.get_allowed_teams()[0],
+        scenario_text="Move boxes",
+        language="en",
+    )
+
+    database.initialize_database()
+
+    recovered = database.get_scenario_assessment("ASM-RESTARTED")
+    assert recovered is not None
+    assert recovered["analysis_status"] == "failed"
+    assert "server restart" in recovered["analysis_error"]
 
 
 def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -310,8 +360,8 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
         return {"status": "ok", "result": enforce_abstraction_hard_gate(_worker_payload())}
 
     monkeypatch.setattr(gateway, "command", fake_command)
-    response = asyncio.run(
-        analyze_capability_match(
+    async def run_analysis() -> tuple[object, dict, object, dict]:
+        response = await analyze_capability_match(
             AnalyzeScenarioRequest(
                 scenario_text="Serve popcorn outdoors at 15 cups per minute",
                 model_id=model_id,
@@ -320,13 +370,33 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
             ),
             _request(),
         )
+        response_data = json.loads(response.body)
+        assessment_id = response_data["assessment_id"]
+        active_response = await get_capability_match(assessment_id)
+        active_data = json.loads(active_response.body)
+        active_export = await export_capability_match(
+            assessment_id=assessment_id,
+            format="markdown",
+            language="en",
+        )
+        await asyncio.gather(*list(_analysis_tasks.values()))
+        completed_response = await get_capability_match(assessment_id)
+        return response, active_data, active_export, json.loads(completed_response.body)
+
+    response, active_data, active_export, completed_data = asyncio.run(
+        run_analysis()
     )
     response_data = json.loads(response.body)
-    assert response.status_code == 200, response_data
+    assert response.status_code == 202, response_data
+    assert active_data["analysis_status"] in {"queued", "processing"}
+    assert active_export.status_code == 409
     assessment_id = response_data["assessment_id"]
+    assert completed_data["analysis_status"] == "completed"
+    assert completed_data["assessment"]["assessment_id"] == assessment_id
     saved = database.get_scenario_assessment(assessment_id)
     assert saved is not None
     assert saved["model_id"] == model_id
+    assert saved["analysis_status"] == "completed"
 
     workbench = asyncio.run(capability_match_page(assessment_id))
     assert workbench.status_code == 200
@@ -335,6 +405,15 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
     assert '<option value="zh-CN">简体中文</option>' in workbench_html
     assert "机器人场景可行性与能力匹配工作台" in workbench_html
     assert "language:uiLanguage.value" in workbench_html
+    assert 'id="analysisProgress"' in workbench_html
+    assert "monitorAssessment(data.assessment_id)" in workbench_html
+    assert "可以安全刷新或离开此页面" in workbench_html
+
+    ask_html = (
+        Path(__file__).resolve().parents[1] / "ecs" / "app" / "templates" / "ask.html"
+    ).read_text(encoding="utf-8")
+    assert "monitorDemandAnalysis(latest.assessment_id)" in ask_html
+    assert "Analysis continues in the background" in ask_html
 
     markdown = asyncio.run(
         export_capability_match(
@@ -423,3 +502,65 @@ def test_admin_gap_analytics_and_stub_generator_require_admin_and_csrf(
     )
     assert duplicate.status_code == 200
     assert json.loads(duplicate.body)["stub"]["stub_id"] == created_data["stub"]["stub_id"]
+
+
+def test_admin_catalog_start_and_source_change_snapshot_are_shared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_id = database.get_robot_options()[0]["name"]
+    request, csrf = _admin_request()
+    gateway.websocket = object()  # The API only needs the persistent Worker online signal here.
+    started: list[tuple[str, str, str]] = []
+
+    async def fake_command(message_type: str, **payload):
+        assert message_type == "inspect_capability_source_changes"
+        assert payload["model_id"] == model_id
+        return {
+            "status": "ok",
+            "result": {
+                "model_id": model_id,
+                "current_source_files": 2,
+                "last_organized_manifest_files": 1,
+                "changes": {
+                    "baseline_exists": True,
+                    "added": ["upload/new.md"],
+                    "modified": [],
+                    "deleted": [],
+                    "counts": {"added": 1, "modified": 0, "deleted": 0, "total": 1},
+                },
+            },
+        }
+
+    monkeypatch.setattr(gateway, "command", fake_command)
+    monkeypatch.setattr(
+        capability_match_routes,
+        "_start_capability_catalog_job",
+        lambda job_id, selected_model, snapshot_id: started.append(
+            (job_id, selected_model, snapshot_id)
+        ),
+    )
+
+    changes_response = asyncio.run(capability_source_changes(request, model_id=model_id))
+    changes = json.loads(changes_response.body)
+    assert changes_response.status_code == 200
+    assert changes["changes"]["added"] == ["upload/new.md"]
+    assert database.get_capability_catalog_source_state(model_id)["current_source_files"] == 2
+
+    start_response = asyncio.run(
+        start_capability_catalog_organization(
+            OrganizeCapabilitiesRequest(model_id=model_id),
+            request,
+            x_csrf_token=csrf,
+        )
+    )
+    body = json.loads(start_response.body)
+    assert start_response.status_code == 202
+    assert body["job"]["status"] == "queued"
+    assert started[0][0] == body["job"]["job_id"]
+
+    shared_response = asyncio.run(capability_gap_analytics(request))
+    shared = json.loads(shared_response.body)
+    assert shared["catalog_jobs"][0]["job_id"] == body["job"]["job_id"]
+    job_response = asyncio.run(capability_catalog_job(body["job"]["job_id"], request))
+    assert json.loads(job_response.body)["job"]["model_id"] == model_id
+    assert database.list_audit_log(limit=1)[0]["action"] == "organize_atomic_capabilities"

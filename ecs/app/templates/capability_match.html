@@ -10,7 +10,7 @@
 :root{color-scheme:light;--ink:#172033;--muted:#64748b;--line:#dbe2ee;--blue:#2563eb;--panel:#fff;--bg:#f5f7fb}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
 .shell{width:min(1800px,100%);margin:auto;padding:18px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}.title h1{font-size:clamp(20px,2vw,28px);margin:0}.title p{color:var(--muted);margin:4px 0 0}.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
-.composer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 30px #1f29370a}.composer-grid{display:grid;grid-template-columns:minmax(180px,260px) minmax(140px,180px) 1fr auto;gap:12px;align-items:end}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:800;color:#475569}.field select,.field textarea{border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:10px 12px;font:inherit;width:100%}.field textarea{min-height:74px;resize:vertical}.status{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}.status.error{color:#b91c1c}
+.composer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 30px #1f29370a}.composer-grid{display:grid;grid-template-columns:minmax(180px,260px) minmax(140px,180px) 1fr auto;gap:12px;align-items:end}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:800;color:#475569}.field select,.field textarea{border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:10px 12px;font:inherit;width:100%}.field textarea{min-height:74px;resize:vertical}.status{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}.status.error{color:#b91c1c}.analysis-progress{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;border:1px solid #93c5fd;border-radius:10px;background:#eff6ff;color:#1e3a8a}.analysis-progress strong,.analysis-progress span,.analysis-progress small{display:block}.analysis-progress span{margin-top:2px}.analysis-progress small{margin-top:4px;color:#475569}.spinner{width:22px;height:22px;flex:0 0 22px;border:3px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:analysis-spin .9s linear infinite}@keyframes analysis-spin{to{transform:rotate(360deg)}}
 .workbench{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(420px,1.65fr) minmax(260px,.85fr);gap:14px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px #1f29370a;overflow:hidden;min-width:0}.panel-header{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:850;background:#f8fafc}.panel-body{padding:16px}.meta{display:grid;gap:10px;margin:0}.meta dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}.meta dd{margin:2px 0 0;line-height:1.45}.requirements{margin:16px 0 0;padding-left:20px}.requirements li{margin:8px 0}.match{border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:12px}.match:last-child{margin-bottom:0}.match-title{font-weight:850;margin-bottom:8px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:5px 0}.badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;background:#e2e8f0;color:#334155}.badge.good{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.gate{font-size:13px;padding:7px 9px;border-radius:8px;background:#f8fafc;margin:6px 0}.gate.fail{background:#fff1f2;color:#9f1239}.gap{background:#fff1f2;color:#9f1239;border-left:4px solid #e11d48;padding:9px;margin-top:8px;border-radius:5px}.conclusion{border-radius:11px;padding:12px;margin-bottom:12px;background:#eff6ff}.conclusion strong{display:block;margin-top:3px;font-size:17px}.metric{font-size:30px;font-weight:900;color:#1d4ed8;margin:5px 0}.list{padding-left:20px;margin:8px 0}.empty{color:var(--muted);font-style:italic}.exports{display:flex;gap:8px;flex-wrap:wrap}.hidden{display:none!important}
 @media(max-width:1100px){.workbench{grid-template-columns:1fr 1.35fr}.summary-panel{grid-column:1/-1}.composer-grid{grid-template-columns:1fr 1fr}.composer-grid .scenario-field{grid-column:1/-1}}
 @media(max-width:720px){.shell{padding:10px}.topbar{align-items:flex-start;flex-direction:column}.workbench,.composer-grid{grid-template-columns:1fr}.composer-grid .scenario-field{grid-column:auto}}
@@ -54,6 +54,14 @@
       <button id="analyze" type="button" data-i18n="analyze">Analyze</button>
     </div>
     <div class="status" id="status" role="status"></div>
+    <div class="analysis-progress hidden" id="analysisProgress" role="status" aria-live="polite">
+      <span class="spinner" aria-hidden="true"></span>
+      <div>
+        <strong id="analysisProgressTitle"></strong>
+        <span id="analysisProgressDetail"></span>
+        <small id="analysisProgressSafe"></small>
+      </div>
+    </div>
   </section>
 
   <section class="workbench" id="workbench">
@@ -85,10 +93,16 @@ const scenarioInput=document.getElementById('scenario');
 const analyzeButton=document.getElementById('analyze');
 const statusEl=document.getElementById('status');
 const exportsEl=document.getElementById('exports');
+const analysisProgress=document.getElementById('analysisProgress');
+const analysisProgressTitle=document.getElementById('analysisProgressTitle');
+const analysisProgressDetail=document.getElementById('analysisProgressDetail');
+const analysisProgressSafe=document.getElementById('analysisProgressSafe');
+let analysisPollGeneration=0;
+let activeAnalysisInfo=null;
 
 const translations={
-  en:{documentTitle:'Robot Scenario Feasibility Workbench',title:'🤖 Robot Scenario Feasibility & Capability Match Workbench',subtitle:'Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.',questions:'← Questions',robotModel:'Robot model',language:'Language',customerScenario:'Customer scenario',scenarioPlaceholder:'Describe the task, environment, payload, speed, people, constraints, and acceptance criteria.',analyze:'Analyze',extractedRequirements:'Extracted requirements',matchMatrix:'🧩 Atomic Skill Matchup Matrix',technicalConclusionPanel:'📊 Technical Conclusion',emptyAssessment:'Run or open an assessment.',noResults:'No match results yet.',noConclusion:'No conclusion yet.',unknown:'Unknown',id:'ID',target:'Target',businessGoal:'Business goal',environment:'Environment',payloadFacts:'Payload / facts',throughputOperations:'Throughput / operations',requirement:'Requirement',confidence:'confidence',unknownCapability:'Unknown capability',unknownLayer:'Unknown layer',hard:'Hard',soft:'Soft',gate:'gate',personWeeks:'person-weeks',next:'Next',notSpecified:'Not specified',noMatchRecords:'No match records.',technicalConclusion:'Technical conclusion',deploymentConclusion:'Deployment conclusion',rdPowerNeeded:'R&D power needed',pw:'PW',noRdDomains:'No R&D domains recorded',residualRisks:'Residual risks',nextExperiment:'Next experiment',loading:'Loading assessment…',unableLoad:'Unable to load assessment',loaded:'Assessment loaded.',enterScenario:'Enter a customer scenario first.',noRobot:'No robot model is available.',analyzing:'Extracting requirements and matching evidence-backed capabilities…',analysisFailed:'Analysis failed',completed:'Assessment completed and saved.'},
-  'zh-CN':{documentTitle:'机器人场景可行性工作台',title:'🤖 机器人场景可行性与能力匹配工作台',subtitle:'基于证据的原子需求、能力分层、硬门槛与研发投入评估。',questions:'← 返回问答',robotModel:'机器人型号',language:'语言',customerScenario:'客户场景',scenarioPlaceholder:'请描述任务、环境、负载、速度、人员、约束条件和验收标准。',analyze:'开始分析',extractedRequirements:'提取的需求',matchMatrix:'🧩 原子技能匹配矩阵',technicalConclusionPanel:'📊 技术结论',emptyAssessment:'请运行或打开一个评估。',noResults:'暂无匹配结果。',noConclusion:'暂无结论。',unknown:'未知',id:'编号',target:'目标',businessGoal:'业务目标',environment:'环境',payloadFacts:'负载 / 已知事实',throughputOperations:'吞吐量 / 作业情况',requirement:'需求',confidence:'置信度',unknownCapability:'未知能力',unknownLayer:'未知层级',hard:'硬性',soft:'软性',gate:'门槛',personWeeks:'人周',next:'下一步',notSpecified:'未指定',noMatchRecords:'暂无匹配记录。',technicalConclusion:'技术结论',deploymentConclusion:'部署结论',rdPowerNeeded:'所需研发投入',pw:'人周',noRdDomains:'未记录研发领域',residualRisks:'剩余风险',nextExperiment:'下一项实验',loading:'正在加载评估……',unableLoad:'无法加载评估',loaded:'评估已加载。',enterScenario:'请先输入客户场景。',noRobot:'没有可用的机器人型号。',analyzing:'正在提取需求并匹配有证据支持的能力……',analysisFailed:'分析失败',completed:'评估已完成并保存。'}
+  en:{documentTitle:'Robot Scenario Feasibility Workbench',title:'🤖 Robot Scenario Feasibility & Capability Match Workbench',subtitle:'Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.',questions:'← Questions',robotModel:'Robot model',language:'Language',customerScenario:'Customer scenario',scenarioPlaceholder:'Describe the task, environment, payload, speed, people, constraints, and acceptance criteria.',analyze:'Analyze',extractedRequirements:'Extracted requirements',matchMatrix:'🧩 Atomic Skill Matchup Matrix',technicalConclusionPanel:'📊 Technical Conclusion',emptyAssessment:'Run or open an assessment.',noResults:'No match results yet.',noConclusion:'No conclusion yet.',unknown:'Unknown',id:'ID',target:'Target',businessGoal:'Business goal',environment:'Environment',payloadFacts:'Payload / facts',throughputOperations:'Throughput / operations',requirement:'Requirement',confidence:'confidence',unknownCapability:'Unknown capability',unknownLayer:'Unknown layer',hard:'Hard',soft:'Soft',gate:'gate',personWeeks:'person-weeks',next:'Next',notSpecified:'Not specified',noMatchRecords:'No match records.',technicalConclusion:'Technical conclusion',deploymentConclusion:'Deployment conclusion',rdPowerNeeded:'R&D power needed',pw:'PW',noRdDomains:'No R&D domains recorded',residualRisks:'Residual risks',nextExperiment:'Next experiment',loading:'Loading assessment…',unableLoad:'Unable to load assessment',loaded:'Assessment loaded.',enterScenario:'Enter a customer scenario first.',noRobot:'No robot model is available.',analyzing:'Extracting requirements and matching evidence-backed capabilities…',analysisFailed:'Analysis failed',completed:'Assessment completed and saved.',progressTitle:'Analysis in progress',progressQueued:'Waiting for an analysis Worker…',progressProcessing:'Claude is checking the Wiki and matching atomic capabilities.',progressReconnect:'Reconnecting to the analysis status…',refreshSafe:'You can safely refresh or leave this page. The analysis will continue.',elapsed:'Elapsed'},
+  'zh-CN':{documentTitle:'机器人场景可行性工作台',title:'🤖 机器人场景可行性与能力匹配工作台',subtitle:'基于证据的原子需求、能力分层、硬门槛与研发投入评估。',questions:'← 返回问答',robotModel:'机器人型号',language:'语言',customerScenario:'客户场景',scenarioPlaceholder:'请描述任务、环境、负载、速度、人员、约束条件和验收标准。',analyze:'开始分析',extractedRequirements:'提取的需求',matchMatrix:'🧩 原子技能匹配矩阵',technicalConclusionPanel:'📊 技术结论',emptyAssessment:'请运行或打开一个评估。',noResults:'暂无匹配结果。',noConclusion:'暂无结论。',unknown:'未知',id:'编号',target:'目标',businessGoal:'业务目标',environment:'环境',payloadFacts:'负载 / 已知事实',throughputOperations:'吞吐量 / 作业情况',requirement:'需求',confidence:'置信度',unknownCapability:'未知能力',unknownLayer:'未知层级',hard:'硬性',soft:'软性',gate:'门槛',personWeeks:'人周',next:'下一步',notSpecified:'未指定',noMatchRecords:'暂无匹配记录。',technicalConclusion:'技术结论',deploymentConclusion:'部署结论',rdPowerNeeded:'所需研发投入',pw:'人周',noRdDomains:'未记录研发领域',residualRisks:'剩余风险',nextExperiment:'下一项实验',loading:'正在加载评估……',unableLoad:'无法加载评估',loaded:'评估已加载。',enterScenario:'请先输入客户场景。',noRobot:'没有可用的机器人型号。',analyzing:'正在提取需求并匹配有证据支持的能力……',analysisFailed:'分析失败',completed:'评估已完成并保存。',progressTitle:'正在分析',progressQueued:'正在等待分析 Worker…',progressProcessing:'Claude 正在检查知识库并匹配原子能力。',progressReconnect:'正在重新连接分析状态…',refreshSafe:'可以安全刷新或离开此页面，分析会在后台继续。',elapsed:'已用时'}
 };
 const stateTranslations={'zh-CN':{verified_satisfied:'已验证满足',feasible:'可行',viable:'可落地',pass:'通过',not_satisfied:'不满足',infeasible:'不可行',not_viable:'不可落地',fail:'失败',conditional:'有条件满足',feasible_with_conditions:'有条件可行',viable_with_conditions:'有条件可落地',prototype_required:'需要原型验证',business_case_incomplete:'商业方案不完整',unknown:'未知',draft:'草稿',verified:'已验证'}};
 function tr(key){return(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key}
@@ -147,9 +161,70 @@ function applyLanguage(){
   uiLanguage.setAttribute('aria-label',uiLanguage.value==='zh-CN'?'界面和报告语言':'Interface and report language');
   renderRobotOptions();
   if(currentAssessment){renderAssessment(currentAssessment)}else{document.getElementById('scenarioMeta').innerHTML=`<dd class="empty">${tr('emptyAssessment')}</dd>`;document.getElementById('matches').innerHTML=`<p class="empty">${tr('noResults')}</p>`;document.getElementById('summary').innerHTML=`<p class="empty">${tr('noConclusion')}</p>`}
+  if(activeAnalysisInfo)showAnalysisProgress(activeAnalysisInfo);
 }
-async function loadAssessment(id){statusEl.textContent=tr('loading');statusEl.className='status';const response=await fetch(`/api/capability-match/assessments/${encodeURIComponent(id)}`);const data=await response.json();if(!response.ok)throw new Error(data.error||tr('unableLoad'));renderAssessment(data.assessment);statusEl.textContent=tr('loaded')}
-async function analyze(){const scenario=scenarioInput.value.trim();if(!scenario){statusEl.textContent=tr('enterScenario');statusEl.className='status error';return}if(!model.value){statusEl.textContent=tr('noRobot');statusEl.className='status error';return}analyzeButton.disabled=true;statusEl.className='status';statusEl.textContent=tr('analyzing');try{const response=await fetch('/api/capability-match/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:uiLanguage.value})});const data=await response.json();if(!response.ok)throw new Error(data.error||tr('analysisFailed'));renderAssessment(data.assessment);statusEl.textContent=tr('completed')}catch(error){statusEl.textContent=error instanceof Error?error.message:tr('analysisFailed');statusEl.className='status error'}finally{analyzeButton.disabled=false}}
+function elapsedSeconds(createdAt){const started=Date.parse(createdAt||'');return Number.isFinite(started)?Math.max(0,Math.floor((Date.now()-started)/1000)):0}
+function elapsedText(createdAt){const total=elapsedSeconds(createdAt);const minutes=Math.floor(total/60);const seconds=total%60;return `${tr('elapsed')}: ${minutes}:${String(seconds).padStart(2,'0')}`}
+function showAnalysisProgress(info){activeAnalysisInfo=info;analysisProgress.classList.remove('hidden');analysisProgressTitle.textContent=tr('progressTitle');const detail=info.reconnecting?tr('progressReconnect'):(info.analysis_status==='queued'?tr('progressQueued'):tr('progressProcessing'));analysisProgressDetail.textContent=`${detail} ${elapsedText(info.created_at)}`;analysisProgressSafe.textContent=tr('refreshSafe')}
+function hideAnalysisProgress(){activeAnalysisInfo=null;analysisProgress.classList.add('hidden')}
+async function monitorAssessment(id){
+  const generation=++analysisPollGeneration;
+  assessmentId=id;
+  analyzeButton.disabled=true;
+  statusEl.className='status';
+  statusEl.textContent=tr('analyzing');
+  history.replaceState(null,'',`/capability-match?assessment_id=${encodeURIComponent(id)}`);
+  showAnalysisProgress({analysis_status:'queued',created_at:new Date().toISOString()});
+  async function poll(){
+    if(generation!==analysisPollGeneration)return;
+    try{
+      const response=await fetch(`/api/capability-match/assessments/${encodeURIComponent(id)}`,{cache:'no-store'});
+      const data=await response.json();
+      if(!response.ok){const error=new Error(data.error||tr('unableLoad'));error.terminal=response.status<500;throw error}
+      if(data.analysis_status==='queued'||data.analysis_status==='processing'){
+        showAnalysisProgress(data);
+        setTimeout(poll,2000);
+        return;
+      }
+      hideAnalysisProgress();
+      analyzeButton.disabled=false;
+      if(data.analysis_status==='failed'){
+        statusEl.textContent=data.error||tr('analysisFailed');
+        statusEl.className='status error';
+        return;
+      }
+      if(!data.assessment)throw new Error(tr('unableLoad'));
+      renderAssessment(data.assessment);
+      statusEl.textContent=tr('completed');
+    }catch(error){
+      if(generation!==analysisPollGeneration)return;
+      if(error&&error.terminal){hideAnalysisProgress();analyzeButton.disabled=false;statusEl.textContent=error.message||tr('unableLoad');statusEl.className='status error';return}
+      showAnalysisProgress({...activeAnalysisInfo,reconnecting:true});
+      statusEl.textContent=tr('analyzing');
+      setTimeout(poll,4000);
+    }
+  }
+  await poll();
+}
+async function loadAssessment(id){return monitorAssessment(id)}
+async function analyze(){
+  const scenario=scenarioInput.value.trim();
+  if(!scenario){statusEl.textContent=tr('enterScenario');statusEl.className='status error';return}
+  if(!model.value){statusEl.textContent=tr('noRobot');statusEl.className='status error';return}
+  analyzeButton.disabled=true;statusEl.className='status';statusEl.textContent=tr('analyzing');
+  try{
+    const response=await fetch('/api/capability-match/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:uiLanguage.value})});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||tr('analysisFailed'));
+    if(!data.assessment_id)throw new Error(tr('analysisFailed'));
+    await monitorAssessment(data.assessment_id);
+  }catch(error){
+    hideAnalysisProgress();
+    analyzeButton.disabled=false;
+    statusEl.textContent=error instanceof Error?error.message:tr('analysisFailed');
+    statusEl.className='status error';
+  }
+}
 const savedLanguage=localStorage.getItem('agent1_ui_language');
 uiLanguage.value=['en','zh-CN'].includes(savedLanguage)?savedLanguage:'en';
 applyLanguage();

@@ -18,6 +18,10 @@ from worker.claude_runner import (
     run_claude_stream,
 )
 from worker.capability_matcher import analyze_scenario
+from worker.capability_catalog import (
+    inspect_capability_source_changes,
+    organize_capability_catalog,
+)
 from worker.authoring import AuthoringError, chat as authoring_chat, create_session as create_authoring_session
 from worker.authoring import generate_article as generate_authoring_article, get_session as get_authoring_session
 from worker.conversation_store import ConversationStore
@@ -27,6 +31,8 @@ from worker.config import (
     AUTHORING_WORKERS,
     CAPABILITY_MATCH_QUEUE_MAX,
     CAPABILITY_MATCH_WORKERS,
+    CAPABILITY_CATALOG_QUEUE_MAX,
+    CAPABILITY_CATALOG_WORKERS,
     DOWNLOAD_WORKERS,
     FILE_OPERATION_WORKERS,
     QA_WORKERS,
@@ -78,6 +84,9 @@ class WorkerManager:
         self.capability_match_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
             maxsize=CAPABILITY_MATCH_QUEUE_MAX
         )
+        self.capability_catalog_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+            maxsize=CAPABILITY_CATALOG_QUEUE_MAX
+        )
         self.authoring_locks = tuple(
             asyncio.Lock() for _ in range(AUTHORING_LOCK_STRIPES)
         )
@@ -88,6 +97,7 @@ class WorkerManager:
         self.active_command_ids: set[str] = set()
         self.active_authoring_ids: set[str] = set()
         self.active_capability_match_ids: set[str] = set()
+        self.active_capability_catalog_ids: set[str] = set()
         self.monitor_tasks: set[asyncio.Task[None]] = set()
         self.wiki_snapshot_refresh = asyncio.Event()
 
@@ -135,6 +145,13 @@ class WorkerManager:
                 name=f"capability-match-{index + 1}",
             )
             for index in range(CAPABILITY_MATCH_WORKERS)
+        )
+        tasks.extend(
+            asyncio.create_task(
+                self.capability_catalog_worker(index + 1),
+                name=f"capability-catalog-{index + 1}",
+            )
+            for index in range(CAPABILITY_CATALOG_WORKERS)
         )
         await asyncio.gather(*tasks)
 
@@ -253,6 +270,30 @@ class WorkerManager:
                         "id": command_id,
                         "status": "failed",
                         "error": "Scenario analysis queue is full; try again shortly",
+                    }
+                )
+            return
+
+        if message_type in {"organize_capability_catalog", "inspect_capability_source_changes"}:
+            command_id = str(data.get("id") or "")
+            if not command_id or command_id in self.active_capability_catalog_ids:
+                return
+            self.active_capability_catalog_ids.add(command_id)
+            try:
+                self.capability_catalog_queue.put_nowait(data)
+            except asyncio.QueueFull:
+                self.active_capability_catalog_ids.discard(command_id)
+                await self.emit(
+                    {
+                        "type": (
+                            "capability_source_changes_result"
+                            if message_type == "inspect_capability_source_changes"
+                            else "capability_catalog_result"
+                        ),
+                        "id": command_id,
+                        "job_id": str(data.get("job_id") or ""),
+                        "status": "failed",
+                        "error": "Capability catalog queue is full; try again later",
                     }
                 )
             return
@@ -555,6 +596,83 @@ class WorkerManager:
             finally:
                 self.active_capability_match_ids.discard(command_id)
                 self.capability_match_queue.task_done()
+
+    async def capability_catalog_worker(self, worker_number: int) -> None:
+        while True:
+            data = await self.capability_catalog_queue.get()
+            command_id = str(data.get("id") or "")
+            job_id = str(data.get("job_id") or "")
+            model_id = str(data.get("model_id") or "")
+
+            async def progress(stage: str, message: str) -> None:
+                await self.emit(
+                    {
+                        "type": "capability_catalog_progress",
+                        "id": command_id,
+                        "job_id": job_id,
+                        "model_id": model_id,
+                        "status": "processing",
+                        "stage": stage,
+                        "message": message,
+                    }
+                )
+
+            try:
+                log.info(
+                    "Capability catalog worker %d handling %s for %s",
+                    worker_number,
+                    command_id,
+                    model_id,
+                )
+                if data.get("type") == "inspect_capability_source_changes":
+                    result = await asyncio.to_thread(
+                        inspect_capability_source_changes,
+                        model_id,
+                    )
+                    await self.emit(
+                        {
+                            "type": "capability_source_changes_result",
+                            "id": command_id,
+                            "status": "ok",
+                            "result": result,
+                        }
+                    )
+                    continue
+                result = await organize_capability_catalog(
+                    job_id=job_id,
+                    model_id=model_id,
+                    snapshot_id=str(data.get("snapshot_id") or ""),
+                    on_progress=progress,
+                )
+                await self.emit(
+                    {
+                        "type": "capability_catalog_result",
+                        "id": command_id,
+                        "job_id": job_id,
+                        "status": "ok",
+                        "result": result,
+                    }
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("Capability catalog organization failed for %s", command_id)
+                await self.emit(
+                    {
+                        "type": (
+                            "capability_source_changes_result"
+                            if data.get("type") == "inspect_capability_source_changes"
+                            else "capability_catalog_result"
+                        ),
+                        "id": command_id,
+                        "job_id": job_id,
+                        "status": "failed",
+                        "error": "Capability catalog organization failed; see Worker logs",
+                    }
+                )
+            finally:
+                self.active_capability_catalog_ids.discard(command_id)
+                self.capability_catalog_queue.task_done()
 
     def _authoring_lock(self, data: dict[str, Any]) -> asyncio.Lock:
         identity = str(

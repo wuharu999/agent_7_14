@@ -14,6 +14,7 @@ from ecs.app.database import (
     upsert_source,
     update_authoring_article,
     reconcile_existing_uploads,
+    update_capability_catalog_job,
 )
 from ecs.app.gateway import gateway
 from ecs.app.routes.uploads import dispatch_upload
@@ -61,6 +62,20 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
 
             elif message_type == "capability_match_result":
                 gateway.resolve_command(str(data.get("id") or ""), data)
+
+            elif message_type in {"capability_catalog_result", "capability_source_changes_result"}:
+                gateway.resolve_command(str(data.get("id") or ""), data)
+
+            elif message_type == "capability_catalog_progress":
+                job_id = str(data.get("job_id") or "")
+                if job_id:
+                    await asyncio.to_thread(
+                        update_capability_catalog_job,
+                        job_id,
+                        status="processing",
+                        stage=str(data.get("stage") or "processing"),
+                        message=str(data.get("message") or "Organization is in progress."),
+                    )
 
             elif message_type == "authoring_progress":
                 article_id = str(data.get("article_id") or data.get("upload_id") or "")
