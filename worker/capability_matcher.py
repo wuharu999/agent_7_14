@@ -305,25 +305,50 @@ def _skill_text(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+_MATCHER_REQUIRED_KEYS = {
+    "scenario_spec",
+    "atomic_requirements",
+    "capabilities",
+    "feasibility_assessment",
+}
+
+
+def _find_structured_payload(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        if _MATCHER_REQUIRED_KEYS <= value.keys():
+            return value
+        for key in ("structured_output", "result", "content"):
+            found = _find_structured_payload(value.get(key))
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_structured_payload(item)
+            if found is not None:
+                return found
+    elif isinstance(value, str):
+        candidate = value.strip()
+        if candidate.startswith("```json") and candidate.endswith("```"):
+            candidate = candidate[7:-3].strip()
+        elif candidate.startswith("```") and candidate.endswith("```"):
+            candidate = candidate[3:-3].strip()
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            return None
+        return _find_structured_payload(parsed)
+    return None
+
+
 def _structured_payload(raw: str) -> dict[str, Any]:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError("Claude returned invalid feasibility JSON") from exc
-    if not isinstance(parsed, dict):
-        raise ValueError("Claude returned a non-object feasibility result")
-    structured = parsed.get("structured_output")
-    if isinstance(structured, dict):
-        return structured
-    result = parsed.get("result")
-    if isinstance(result, str):
-        try:
-            nested = json.loads(result)
-        except json.JSONDecodeError:
-            nested = None
-        if isinstance(nested, dict):
-            return nested
-    return parsed
+    structured = _find_structured_payload(parsed)
+    if structured is None:
+        raise ValueError("Claude returned no complete structured feasibility result")
+    return structured
 
 
 def _nonnegative_number(value: Any) -> float:

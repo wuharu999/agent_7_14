@@ -46,7 +46,7 @@ from worker.file_manager import (
     soft_delete_robot,
     soft_delete_source,
 )
-from worker.knowledge import has_wiki_content, log_unanswered
+from worker.knowledge import log_unanswered
 from worker.llm_wiki_monitor import monitor_source, monitor_global_queue
 from worker.models import DownloadJob, FileOperationJob, QuestionJob
 from worker.publisher import (
@@ -383,9 +383,6 @@ class WorkerManager:
                         }
                     )
                     continue
-                has_content = await asyncio.to_thread(has_wiki_content, job.team, job.question)
-                if not has_content:
-                    await asyncio.to_thread(log_unanswered, job.team, job.question)
                 history = self.conversations.history(job.conversation_id)
 
                 if job.stream:

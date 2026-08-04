@@ -195,6 +195,21 @@ def test_worker_analysis_embeds_skills_and_reapplies_hard_gate(
     assert result["feasibility_assessment"]["matches"][0]["match_state"] == "not_satisfied"
 
 
+def test_worker_unwraps_nested_structured_result_and_rejects_incomplete_envelope() -> None:
+    payload = _worker_payload()
+    nested = capability_matcher._structured_payload(json.dumps({"result": payload}))
+    fenced = capability_matcher._structured_payload(
+        json.dumps({"result": f"```json\n{json.dumps(payload)}\n```"})
+    )
+
+    assert nested == payload
+    assert fenced == payload
+    with pytest.raises(ValueError, match="no complete structured feasibility result"):
+        capability_matcher._structured_payload(
+            json.dumps({"type": "result", "result": "Analysis was incomplete"})
+        )
+
+
 def test_worker_capability_analysis_queue_is_bounded() -> None:
     manager = WorkerManager()
 

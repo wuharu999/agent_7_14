@@ -384,20 +384,49 @@ class NoPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(
                     return_value=GuardDecision(True, "prompt_exfiltration", "en")
                 ),
-            ), patch("worker.manager.has_wiki_content") as has_content, patch(
-                "worker.manager.log_unanswered"
-            ) as log_unanswered, patch.object(
+            ), patch("worker.manager.log_unanswered") as log_unanswered, patch.object(
                 manager.conversations,
                 "append",
             ) as append:
                 await queue.put(job)
                 await asyncio.wait_for(queue.join(), timeout=1)
-            has_content.assert_not_called()
             log_unanswered.assert_not_called()
             append.assert_not_called()
             response = manager.outgoing.get_nowait()
             self.assertEqual(response["id"], "blocked-1")
             self.assertNotIn(job.question, response["text"])
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
+    async def test_unblocked_qa_starts_claude_without_wiki_prescan(self) -> None:
+        manager = WorkerManager()
+        queue = manager.question_queues[0]
+        job = QuestionJob(
+            job_id="qa-no-prescan",
+            question="Classify glass and move it by voice command",
+            team="tian_gong",
+            conversation_id="conversation-no-prescan",
+            language="en",
+        )
+        worker = asyncio.create_task(manager.qa_worker(1, queue))
+        try:
+            with patch(
+                "worker.manager.guard_user_input",
+                new=AsyncMock(return_value=GuardDecision(False, "none", "en")),
+            ), patch(
+                "worker.knowledge.has_wiki_content",
+                side_effect=AssertionError("QA must not pre-scan the complete Wiki"),
+            ), patch(
+                "worker.manager.run_claude",
+                new=AsyncMock(return_value="Evidence-backed answer"),
+            ) as run_claude:
+                await queue.put(job)
+                await asyncio.wait_for(queue.join(), timeout=1)
+            run_claude.assert_awaited_once()
+            response = manager.outgoing.get_nowait()
+            self.assertEqual(response["id"], job.job_id)
+            self.assertEqual(response["text"], "Evidence-backed answer")
         finally:
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)
