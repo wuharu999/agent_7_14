@@ -8,6 +8,7 @@ import pytest
 
 from ecs.app import database
 from worker import capability_catalog
+from worker import config as worker_config
 
 
 def _draft_entry(model: str = "walker_s2") -> dict:
@@ -151,6 +152,21 @@ def test_first_run_is_full_then_normal_runs_are_incremental() -> None:
     baseline = {"wiki_files": {"sources/manual.md": {}}}
     assert capability_catalog._effective_scan_mode("incremental", baseline) == "incremental"
     assert capability_catalog._effective_scan_mode("full", baseline) == "full"
+
+
+def test_worker_websocket_url_never_contains_shared_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        worker_config,
+        "SERVER_URL",
+        "wss://example.test/ws/client?project=agent&secret=legacy-value",
+    )
+
+    url = worker_config.websocket_url()
+
+    assert url == "wss://example.test/ws/client?project=agent"
+    assert "secret" not in url
 
 
 def test_generated_changeset_passes_the_bundled_hard_gate(tmp_path: Path) -> None:

@@ -133,6 +133,10 @@ text-only Claude evidence pass. Incomplete coverage is reported as partial and
 does not advance the successful baseline. Claude has read-only source access; only
 schema-validated draft entries are atomically published by Python, with a backup.
 Deletion, deprecation, and overwriting reviewed/verified entries are rejected.
+The persistent Worker WebSocket sends its shared secret in the
+`X-Worker-Secret` handshake header, not in the URL, so access logs do not record
+the credential. ECS temporarily accepts the older query parameter to support a
+rolling Worker upgrade.
 
 ## Included
 

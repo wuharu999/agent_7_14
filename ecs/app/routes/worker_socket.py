@@ -31,7 +31,10 @@ async def _dispatch_waiting_uploads() -> None:
 
 @router.websocket("/ws/client")
 async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
-    if not WORKER_SHARED_SECRET or secret != WORKER_SHARED_SECRET:
+    # Accept the legacy query value during rolling upgrades, but new Workers
+    # use the header so the credential cannot appear in Uvicorn access logs.
+    provided_secret = ws.headers.get("x-worker-secret") or secret
+    if not WORKER_SHARED_SECRET or provided_secret != WORKER_SHARED_SECRET:
         await ws.close(code=1008)
         return
 

@@ -158,7 +158,9 @@ LLM_WIKI_RESCAN_AFTER_PUBLISH = os.environ.get(
 def websocket_url() -> str:
     parts = urlsplit(SERVER_URL)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query["secret"] = WORKER_SHARED_SECRET
+    # Authentication is sent in an HTTP header so access logs never contain
+    # the shared secret. Remove a legacy secret parameter if one was configured.
+    query.pop("secret", None)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 

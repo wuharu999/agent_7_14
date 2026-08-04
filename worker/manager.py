@@ -185,6 +185,7 @@ class WorkerManager:
                 log.info("Connecting to %s", url.split("?", 1)[0])
                 async with websockets.connect(
                     url,
+                    additional_headers={"X-Worker-Secret": WORKER_SHARED_SECRET},
                     ping_interval=20,
                     ping_timeout=10,
                     proxy=None,
