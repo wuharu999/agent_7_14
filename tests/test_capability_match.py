@@ -291,6 +291,7 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
     async def fake_command(message_type: str, **payload):
         assert message_type == "analyze_scenario"
         assert payload["model_id"] == model_id
+        assert payload["language"] == "zh-CN"
         return {"status": "ok", "result": enforce_abstraction_hard_gate(_worker_payload())}
 
     monkeypatch.setattr(gateway, "command", fake_command)
@@ -300,7 +301,7 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
                 scenario_text="Serve popcorn outdoors at 15 cups per minute",
                 model_id=model_id,
                 conversation_id="web:test",
-                language="en",
+                language="zh-CN",
             ),
             _request(),
         )
@@ -314,14 +315,33 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
 
     workbench = asyncio.run(capability_match_page(assessment_id))
     assert workbench.status_code == 200
-    assert "Atomic Skill Matchup Matrix" in workbench.body.decode()
+    workbench_html = workbench.body.decode()
+    assert "Atomic Skill Matchup Matrix" in workbench_html
+    assert '<option value="zh-CN">简体中文</option>' in workbench_html
+    assert "机器人场景可行性与能力匹配工作台" in workbench_html
+    assert "language:uiLanguage.value" in workbench_html
 
-    markdown = asyncio.run(export_capability_match(assessment_id=assessment_id, format="markdown"))
+    markdown = asyncio.run(
+        export_capability_match(
+            assessment_id=assessment_id,
+            format="markdown",
+            language="zh-CN",
+        )
+    )
     assert markdown.status_code == 200
-    assert "R&D Gap (Composite Skill Missing)" in markdown.body.decode()
+    markdown_text = markdown.body.decode()
+    assert "# 机器人场景可行性报告" in markdown_text
+    assert "## 原子需求匹配矩阵" in markdown_text
+    assert "R&D Gap (Composite Skill Missing)" in markdown_text
     assert markdown.headers["content-disposition"].endswith('"feasibility_report.md"')
 
-    pdf = asyncio.run(export_capability_match(assessment_id=assessment_id, format="pdf"))
+    pdf = asyncio.run(
+        export_capability_match(
+            assessment_id=assessment_id,
+            format="pdf",
+            language="zh-CN",
+        )
+    )
     assert pdf.status_code == 200
     assert pdf.body.startswith(b"%PDF-")
     assert pdf.headers["content-type"] == "application/pdf"

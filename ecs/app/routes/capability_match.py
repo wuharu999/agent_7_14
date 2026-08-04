@@ -111,7 +111,78 @@ def _scenario_summary(scenario: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _markdown_report(assessment: dict[str, Any]) -> str:
+_REPORT_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "title": "Robot Scenario Feasibility Report",
+        "assessment": "Assessment",
+        "model": "Model",
+        "scenario": "Scenario",
+        "created": "Created",
+        "business_goal": "Business goal",
+        "target": "Target",
+        "environment": "Environment",
+        "payload": "Payload / facts",
+        "throughput": "Throughput / operations",
+        "matrix": "Atomic Requirement Match Matrix",
+        "required_layer": "Required layer",
+        "match_state": "Match state",
+        "confidence": "Confidence",
+        "capabilities": "Matched capabilities",
+        "evidence": "Evidence",
+        "gate": "Gate",
+        "gap": "Gap",
+        "rd_estimate": "R&D estimate",
+        "person_weeks": "person-weeks",
+        "next_action": "Next action",
+        "conclusions": "Conclusions",
+        "technical": "Technical",
+        "deployment": "Deployment",
+        "rd_effort": "R&D effort",
+        "domains": "Domains",
+        "none": "None",
+        "residual_risks": "Residual Risks",
+        "no_risks": "No residual risks recorded",
+        "next_experiment": "Next Experiment",
+        "not_specified": "Not specified",
+    },
+    "zh-CN": {
+        "title": "机器人场景可行性报告",
+        "assessment": "评估编号",
+        "model": "机器人型号",
+        "scenario": "场景",
+        "created": "创建时间",
+        "business_goal": "业务目标",
+        "target": "目标",
+        "environment": "环境",
+        "payload": "负载 / 已知事实",
+        "throughput": "吞吐量 / 作业情况",
+        "matrix": "原子需求匹配矩阵",
+        "required_layer": "所需能力层级",
+        "match_state": "匹配状态",
+        "confidence": "置信度",
+        "capabilities": "已匹配能力",
+        "evidence": "证据",
+        "gate": "门槛",
+        "gap": "能力缺口",
+        "rd_estimate": "研发投入估算",
+        "person_weeks": "人周",
+        "next_action": "下一步行动",
+        "conclusions": "结论",
+        "technical": "技术结论",
+        "deployment": "部署结论",
+        "rd_effort": "研发投入",
+        "domains": "研发领域",
+        "none": "无",
+        "residual_risks": "剩余风险",
+        "no_risks": "未记录剩余风险",
+        "next_experiment": "下一项实验",
+        "not_specified": "未指定",
+    },
+}
+
+
+def _markdown_report(assessment: dict[str, Any], *, language: str = "en") -> str:
+    labels = _REPORT_LABELS.get(language, _REPORT_LABELS["en"])
     scenario = assessment["scenario_spec"]
     requirements = {
         str(item.get("requirement_id") or ""): item
@@ -126,26 +197,26 @@ def _markdown_report(assessment: dict[str, Any]) -> str:
     feasibility = assessment["feasibility_assessment"]
     summary = _scenario_summary(scenario)
     lines = [
-        "# Robot Scenario Feasibility Report",
+        f"# {labels['title']}",
         "",
-        f"- Assessment: `{assessment['assessment_id']}`",
-        f"- Model: `{assessment['model_id']}`",
-        f"- Scenario: `{scenario.get('scenario_id', '')}` — {scenario.get('title', '')}",
-        f"- Created: {assessment['created_at']}",
+        f"- {labels['assessment']}: `{assessment['assessment_id']}`",
+        f"- {labels['model']}: `{assessment['model_id']}`",
+        f"- {labels['scenario']}: `{scenario.get('scenario_id', '')}` — {scenario.get('title', '')}",
+        f"- {labels['created']}: {assessment['created_at']}",
         "",
-        "## Scenario",
+        f"## {labels['scenario']}",
         "",
-        f"**Business goal:** {scenario.get('business_goal', '')}",
+        f"**{labels['business_goal']}:** {scenario.get('business_goal', '')}",
         "",
-        f"**Target:** {summary['target']}",
+        f"**{labels['target']}:** {summary['target']}",
         "",
-        f"**Environment:** {summary['environment']}",
+        f"**{labels['environment']}:** {summary['environment']}",
         "",
-        f"**Payload / facts:** {summary['payload']}",
+        f"**{labels['payload']}:** {summary['payload']}",
         "",
-        f"**Throughput / operations:** {summary['throughput']}",
+        f"**{labels['throughput']}:** {summary['throughput']}",
         "",
-        "## Atomic Requirement Match Matrix",
+        f"## {labels['matrix']}",
         "",
     ]
     for match in feasibility.get("matches", []):
@@ -155,14 +226,14 @@ def _markdown_report(assessment: dict[str, Any]) -> str:
             [
                 f"### {requirement_id}: {requirement.get('name', '')}",
                 "",
-                f"- Required layer: `{requirement.get('required_abstraction_level', '')}`",
-                f"- Match state: `{match.get('match_state', '')}`",
-                f"- Confidence: {match.get('confidence', 0)}",
+                f"- {labels['required_layer']}: `{requirement.get('required_abstraction_level', '')}`",
+                f"- {labels['match_state']}: `{match.get('match_state', '')}`",
+                f"- {labels['confidence']}: {match.get('confidence', 0)}",
             ]
         )
         capability_ids = [str(value) for value in match.get("capability_ids", [])]
         if capability_ids:
-            lines.append("- Matched capabilities:")
+            lines.append(f"- {labels['capabilities']}:")
             for capability_id in capability_ids:
                 capability = capabilities.get(capability_id, {})
                 lines.append(
@@ -174,42 +245,50 @@ def _markdown_report(assessment: dict[str, Any]) -> str:
                 for evidence in evidence_items:
                     if isinstance(evidence, dict):
                         evidence = f"{evidence.get('wiki_entry', '')}#{evidence.get('locator', '')}"
-                    lines.append(f"    - Evidence: `{evidence}`")
+                    lines.append(f"    - {labels['evidence']}: `{evidence}`")
         for gate in match.get("gates", []):
             basis = gate.get("basis") or (
                 f"requirement={_display_value(gate.get('requirement_value'))}; "
                 f"capability={_display_value(gate.get('capability_value'))}"
             )
             lines.append(
-                f"- Gate `{gate.get('name', '')}`: **{gate.get('status', '')}** — "
+                f"- {labels['gate']} `{gate.get('name', '')}`: **{gate.get('status', '')}** — "
                 f"{basis}"
             )
         for gap in match.get("gaps", []):
-            lines.append(f"- Gap: {gap}")
+            lines.append(f"- {labels['gap']}: {gap}")
         rd_gap = match.get("rd_gap")
         if isinstance(rd_gap, dict):
             lines.append(
-                f"- R&D estimate: **{rd_gap.get('person_weeks', 0)} person-weeks** "
+                f"- {labels['rd_estimate']}: **{rd_gap.get('person_weeks', 0)} {labels['person_weeks']}** "
                 f"({', '.join(str(value) for value in rd_gap.get('domains', []))})"
             )
-        lines.extend(["", f"Next action: {match.get('next_action', '')}", ""])
+        lines.extend(["", f"{labels['next_action']}: {match.get('next_action', '')}", ""])
     effort = feasibility.get("rd_effort", {})
     lines.extend(
         [
-            "## Conclusions",
+            f"## {labels['conclusions']}",
             "",
-            f"- Technical: **{feasibility.get('technical_conclusion', '')}**",
-            f"- Deployment: **{feasibility.get('deployment_conclusion', '')}**",
-            f"- R&D effort: **{effort.get('total_person_weeks', 0)} person-weeks**",
-            f"- Domains: {', '.join(str(value) for value in effort.get('domains', [])) or 'None'}",
+            f"- {labels['technical']}: **{feasibility.get('technical_conclusion', '')}**",
+            f"- {labels['deployment']}: **{feasibility.get('deployment_conclusion', '')}**",
+            f"- {labels['rd_effort']}: **{effort.get('total_person_weeks', 0)} {labels['person_weeks']}**",
+            f"- {labels['domains']}: {', '.join(str(value) for value in effort.get('domains', [])) or labels['none']}",
             "",
-            "## Residual Risks",
+            f"## {labels['residual_risks']}",
             "",
         ]
     )
-    risks = feasibility.get("residual_risks", []) or ["No residual risks recorded"]
+    risks = feasibility.get("residual_risks", []) or [labels["no_risks"]]
     lines.extend(f"- {risk}" for risk in risks)
-    lines.extend(["", "## Next Experiment", "", str(feasibility.get("next_experiment") or "Not specified"), ""])
+    lines.extend(
+        [
+            "",
+            f"## {labels['next_experiment']}",
+            "",
+            str(feasibility.get("next_experiment") or labels["not_specified"]),
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -403,11 +482,12 @@ async def get_capability_match(assessment_id: str) -> JSONResponse:
 async def export_capability_match(
     assessment_id: str = Query(...),
     format: str = Query(default="markdown", pattern=r"^(markdown|pdf)$"),
+    language: str = Query(default="en", pattern=r"^(en|zh-CN)$"),
 ) -> Response:
     assessment = get_scenario_assessment(assessment_id)
     if assessment is None:
         return JSONResponse({"error": "Assessment not found"}, status_code=404)
-    report = _markdown_report(assessment)
+    report = _markdown_report(assessment, language=language)
     if format == "pdf":
         pdf = await asyncio.to_thread(_pdf_bytes, report)
         return Response(

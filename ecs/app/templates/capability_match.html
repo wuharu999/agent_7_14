@@ -10,7 +10,7 @@
 :root{color-scheme:light;--ink:#172033;--muted:#64748b;--line:#dbe2ee;--blue:#2563eb;--panel:#fff;--bg:#f5f7fb}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
 .shell{width:min(1800px,100%);margin:auto;padding:18px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}.title h1{font-size:clamp(20px,2vw,28px);margin:0}.title p{color:var(--muted);margin:4px 0 0}.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
-.composer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 30px #1f29370a}.composer-grid{display:grid;grid-template-columns:minmax(180px,260px) 1fr auto;gap:12px;align-items:end}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:800;color:#475569}.field select,.field textarea{border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:10px 12px;font:inherit;width:100%}.field textarea{min-height:74px;resize:vertical}.status{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}.status.error{color:#b91c1c}
+.composer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 30px #1f29370a}.composer-grid{display:grid;grid-template-columns:minmax(180px,260px) minmax(140px,180px) 1fr auto;gap:12px;align-items:end}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:800;color:#475569}.field select,.field textarea{border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:10px 12px;font:inherit;width:100%}.field textarea{min-height:74px;resize:vertical}.status{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}.status.error{color:#b91c1c}
 .workbench{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(420px,1.65fr) minmax(260px,.85fr);gap:14px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px #1f29370a;overflow:hidden;min-width:0}.panel-header{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:850;background:#f8fafc}.panel-body{padding:16px}.meta{display:grid;gap:10px;margin:0}.meta dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}.meta dd{margin:2px 0 0;line-height:1.45}.requirements{margin:16px 0 0;padding-left:20px}.requirements li{margin:8px 0}.match{border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:12px}.match:last-child{margin-bottom:0}.match-title{font-weight:850;margin-bottom:8px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:5px 0}.badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;background:#e2e8f0;color:#334155}.badge.good{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.gate{font-size:13px;padding:7px 9px;border-radius:8px;background:#f8fafc;margin:6px 0}.gate.fail{background:#fff1f2;color:#9f1239}.gap{background:#fff1f2;color:#9f1239;border-left:4px solid #e11d48;padding:9px;margin-top:8px;border-radius:5px}.conclusion{border-radius:11px;padding:12px;margin-bottom:12px;background:#eff6ff}.conclusion strong{display:block;margin-top:3px;font-size:17px}.metric{font-size:30px;font-weight:900;color:#1d4ed8;margin:5px 0}.list{padding-left:20px;margin:8px 0}.empty{color:var(--muted);font-style:italic}.exports{display:flex;gap:8px;flex-wrap:wrap}.hidden{display:none!important}
 @media(max-width:1100px){.workbench{grid-template-columns:1fr 1.35fr}.summary-panel{grid-column:1/-1}.composer-grid{grid-template-columns:1fr 1fr}.composer-grid .scenario-field{grid-column:1/-1}}
 @media(max-width:720px){.shell{padding:10px}.topbar{align-items:flex-start;flex-direction:column}.workbench,.composer-grid{grid-template-columns:1fr}.composer-grid .scenario-field{grid-column:auto}}
@@ -21,11 +21,11 @@
 <main class="shell">
   <header class="topbar">
     <div class="title">
-      <h1>🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
-      <p>Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.</p>
+      <h1 data-i18n="title">🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
+      <p data-i18n="subtitle">Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.</p>
     </div>
     <div class="actions">
-      <a class="button secondary back-link" href="/">← Questions</a>
+      <a class="button secondary back-link" href="/" data-i18n="questions">← Questions</a>
       <div class="exports hidden" id="exports">
         <a class="button secondary" id="markdownExport">Markdown</a>
         <a class="button secondary" id="pdfExport">PDF</a>
@@ -37,14 +37,21 @@
   <section class="composer" aria-label="Scenario analyzer">
     <div class="composer-grid">
       <div class="field">
-        <label for="model">Robot model</label>
+        <label for="model" data-i18n="robotModel">Robot model</label>
         <select id="model"></select>
       </div>
-      <div class="field scenario-field">
-        <label for="scenario">Customer scenario</label>
-        <textarea id="scenario" placeholder="Describe the task, environment, payload, speed, people, constraints, and acceptance criteria."></textarea>
+      <div class="field">
+        <label for="ui-language" data-i18n="language">Language</label>
+        <select id="ui-language" aria-label="Interface and report language">
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+        </select>
       </div>
-      <button id="analyze" type="button">Analyze</button>
+      <div class="field scenario-field">
+        <label for="scenario" data-i18n="customerScenario">Customer scenario</label>
+        <textarea id="scenario" data-i18n-placeholder="scenarioPlaceholder" placeholder="Describe the task, environment, payload, speed, people, constraints, and acceptance criteria."></textarea>
+      </div>
+      <button id="analyze" type="button" data-i18n="analyze">Analyze</button>
     </div>
     <div class="status" id="status" role="status"></div>
   </section>
@@ -54,16 +61,16 @@
       <div class="panel-header">📋 ScenarioSpec</div>
       <div class="panel-body">
         <dl class="meta" id="scenarioMeta"><dd class="empty">Run or open an assessment.</dd></dl>
-        <h3>Extracted requirements</h3>
+        <h3 data-i18n="extractedRequirements">Extracted requirements</h3>
         <ol class="requirements" id="requirements"></ol>
       </div>
     </article>
     <article class="panel">
-      <div class="panel-header">🧩 Atomic Skill Matchup Matrix</div>
+      <div class="panel-header" data-i18n="matchMatrix">🧩 Atomic Skill Matchup Matrix</div>
       <div class="panel-body" id="matches"><p class="empty">No match results yet.</p></div>
     </article>
     <article class="panel summary-panel">
-      <div class="panel-header">📊 Technical Conclusion</div>
+      <div class="panel-header" data-i18n="technicalConclusionPanel">📊 Technical Conclusion</div>
       <div class="panel-body" id="summary"><p class="empty">No conclusion yet.</p></div>
     </article>
   </section>
@@ -71,20 +78,30 @@
 <script>
 const robots=__ROBOTS__;
 let assessmentId=__ASSESSMENT_ID__;
+let currentAssessment=null;
 const model=document.getElementById('model');
+const uiLanguage=document.getElementById('ui-language');
 const scenarioInput=document.getElementById('scenario');
 const analyzeButton=document.getElementById('analyze');
 const statusEl=document.getElementById('status');
 const exportsEl=document.getElementById('exports');
 
+const translations={
+  en:{documentTitle:'Robot Scenario Feasibility Workbench',title:'🤖 Robot Scenario Feasibility & Capability Match Workbench',subtitle:'Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.',questions:'← Questions',robotModel:'Robot model',language:'Language',customerScenario:'Customer scenario',scenarioPlaceholder:'Describe the task, environment, payload, speed, people, constraints, and acceptance criteria.',analyze:'Analyze',extractedRequirements:'Extracted requirements',matchMatrix:'🧩 Atomic Skill Matchup Matrix',technicalConclusionPanel:'📊 Technical Conclusion',emptyAssessment:'Run or open an assessment.',noResults:'No match results yet.',noConclusion:'No conclusion yet.',unknown:'Unknown',id:'ID',target:'Target',businessGoal:'Business goal',environment:'Environment',payloadFacts:'Payload / facts',throughputOperations:'Throughput / operations',requirement:'Requirement',confidence:'confidence',unknownCapability:'Unknown capability',unknownLayer:'Unknown layer',hard:'Hard',soft:'Soft',gate:'gate',personWeeks:'person-weeks',next:'Next',notSpecified:'Not specified',noMatchRecords:'No match records.',technicalConclusion:'Technical conclusion',deploymentConclusion:'Deployment conclusion',rdPowerNeeded:'R&D power needed',pw:'PW',noRdDomains:'No R&D domains recorded',residualRisks:'Residual risks',nextExperiment:'Next experiment',loading:'Loading assessment…',unableLoad:'Unable to load assessment',loaded:'Assessment loaded.',enterScenario:'Enter a customer scenario first.',noRobot:'No robot model is available.',analyzing:'Extracting requirements and matching evidence-backed capabilities…',analysisFailed:'Analysis failed',completed:'Assessment completed and saved.'},
+  'zh-CN':{documentTitle:'机器人场景可行性工作台',title:'🤖 机器人场景可行性与能力匹配工作台',subtitle:'基于证据的原子需求、能力分层、硬门槛与研发投入评估。',questions:'← 返回问答',robotModel:'机器人型号',language:'语言',customerScenario:'客户场景',scenarioPlaceholder:'请描述任务、环境、负载、速度、人员、约束条件和验收标准。',analyze:'开始分析',extractedRequirements:'提取的需求',matchMatrix:'🧩 原子技能匹配矩阵',technicalConclusionPanel:'📊 技术结论',emptyAssessment:'请运行或打开一个评估。',noResults:'暂无匹配结果。',noConclusion:'暂无结论。',unknown:'未知',id:'编号',target:'目标',businessGoal:'业务目标',environment:'环境',payloadFacts:'负载 / 已知事实',throughputOperations:'吞吐量 / 作业情况',requirement:'需求',confidence:'置信度',unknownCapability:'未知能力',unknownLayer:'未知层级',hard:'硬性',soft:'软性',gate:'门槛',personWeeks:'人周',next:'下一步',notSpecified:'未指定',noMatchRecords:'暂无匹配记录。',technicalConclusion:'技术结论',deploymentConclusion:'部署结论',rdPowerNeeded:'所需研发投入',pw:'人周',noRdDomains:'未记录研发领域',residualRisks:'剩余风险',nextExperiment:'下一项实验',loading:'正在加载评估……',unableLoad:'无法加载评估',loaded:'评估已加载。',enterScenario:'请先输入客户场景。',noRobot:'没有可用的机器人型号。',analyzing:'正在提取需求并匹配有证据支持的能力……',analysisFailed:'分析失败',completed:'评估已完成并保存。'}
+};
+const stateTranslations={'zh-CN':{verified_satisfied:'已验证满足',feasible:'可行',viable:'可落地',pass:'通过',not_satisfied:'不满足',infeasible:'不可行',not_viable:'不可落地',fail:'失败',conditional:'有条件满足',feasible_with_conditions:'有条件可行',viable_with_conditions:'有条件可落地',prototype_required:'需要原型验证',business_case_incomplete:'商业方案不完整',unknown:'未知',draft:'草稿',verified:'已验证'}};
+function tr(key){return(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key}
+function stateLabel(value){return(stateTranslations[uiLanguage.value]||{})[value]||value||tr('unknown')}
 function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node}
-function displayValue(value){if(value===null||value===undefined||value==='')return'Unknown';if(typeof value==='string')return value;try{return JSON.stringify(value)}catch(_){return String(value)}}
-function appendMeta(host,label,value){const wrap=el('div');wrap.append(el('dt','',label),el('dd','',value||'Unknown'));host.append(wrap)}
-function labelForRobot(robot){return robot.english_name||robot.name}
-robots.forEach(robot=>{const option=el('option','',labelForRobot(robot));option.value=robot.name;model.append(option)});
+function displayValue(value){if(value===null||value===undefined||value==='')return tr('unknown');if(typeof value==='string')return value;try{return JSON.stringify(value)}catch(_){return String(value)}}
+function appendMeta(host,label,value){const wrap=el('div');wrap.append(el('dt','',label),el('dd','',value||tr('unknown')));host.append(wrap)}
+function labelForRobot(robot){return uiLanguage.value==='zh-CN'?(robot.chinese_name||robot.english_name||robot.name):(robot.english_name||robot.name)}
+function renderRobotOptions(){const selected=model.value;model.replaceChildren();robots.forEach(robot=>{const option=el('option','',labelForRobot(robot));option.value=robot.name;model.append(option)});model.value=selected||robots[0]?.name||''}
 
 function stateClass(state){if(['verified_satisfied','feasible','viable','pass'].includes(state))return'good';if(['not_satisfied','infeasible','not_viable','fail'].includes(state))return'bad';return'warn'}
 function renderAssessment(assessment){
+  currentAssessment=assessment;
   assessmentId=assessment.assessment_id;
   model.value=assessment.model_id;
   const spec=assessment.scenario_spec||{};
@@ -95,35 +112,48 @@ function renderAssessment(assessment){
   const capById=new Map(capabilities.map(item=>[item.capability_id,item]));
   const meta=document.getElementById('scenarioMeta');meta.replaceChildren();
   const factText=(spec.facts||[]).map(item=>item&&item.text).filter(Boolean).join('; ');
-  appendMeta(meta,'ID',spec.scenario_id);appendMeta(meta,'Target',spec.target||spec.boundary?.end_state||spec.business_goal);appendMeta(meta,'Business goal',spec.business_goal);appendMeta(meta,'Environment',spec.environment||displayValue(spec.environment_profile));appendMeta(meta,'Payload / facts',spec.payload||factText);appendMeta(meta,'Throughput / operations',spec.throughput||displayValue(spec.operations_profile));
+  appendMeta(meta,tr('id'),spec.scenario_id);appendMeta(meta,tr('target'),spec.target||spec.boundary?.end_state||spec.business_goal);appendMeta(meta,tr('businessGoal'),spec.business_goal);appendMeta(meta,tr('environment'),spec.environment||displayValue(spec.environment_profile));appendMeta(meta,tr('payloadFacts'),spec.payload||factText);appendMeta(meta,tr('throughputOperations'),spec.throughput||displayValue(spec.operations_profile));
   const reqHost=document.getElementById('requirements');reqHost.replaceChildren();
   requirements.forEach(req=>{const item=el('li');item.append(el('strong','',`${req.requirement_id}: ${req.name}`),el('div','',displayValue(req.effect)),el('span','badge',req.required_abstraction_level));reqHost.append(item)});
   const matchHost=document.getElementById('matches');matchHost.replaceChildren();
   (feasibility.matches||[]).forEach(match=>{
     const req=reqById.get(match.requirement_id)||{};const card=el('section','match');
-    card.append(el('div','match-title',`${match.requirement_id}: ${req.name||'Requirement'}`));
-    const stateRow=el('div','row');stateRow.append(el('span',`badge ${stateClass(match.match_state)}`,match.match_state),el('span','badge',`confidence ${Math.round(Number(match.confidence||0)*100)}%`),el('span','badge',match.evidence_level));card.append(stateRow);
-    (match.capability_ids||[]).forEach(id=>{const cap=capById.get(id)||{};const row=el('div','row');row.append(el('span','',`→ ${id}: ${cap.name||'Unknown capability'}`),el('span','badge',cap.abstraction_level||'Unknown layer'),el('span','badge',cap.status||''),el('span','badge',cap.evidence_level||''));card.append(row)});
-    (match.gates||[]).forEach(gate=>{const basis=gate.basis||`requirement=${displayValue(gate.requirement_value)}; capability=${displayValue(gate.capability_value)}`;card.append(el('div',`gate ${gate.status==='fail'?'fail':''}`,`${gate.hard?'Hard':'Soft'} gate — ${gate.name}: ${gate.status}. ${basis}`))});
+    card.append(el('div','match-title',`${match.requirement_id}: ${req.name||tr('requirement')}`));
+    const stateRow=el('div','row');stateRow.append(el('span',`badge ${stateClass(match.match_state)}`,stateLabel(match.match_state)),el('span','badge',`${tr('confidence')} ${Math.round(Number(match.confidence||0)*100)}%`),el('span','badge',match.evidence_level));card.append(stateRow);
+    (match.capability_ids||[]).forEach(id=>{const cap=capById.get(id)||{};const row=el('div','row');row.append(el('span','',`→ ${id}: ${cap.name||tr('unknownCapability')}`),el('span','badge',cap.abstraction_level||tr('unknownLayer')),el('span','badge',stateLabel(cap.status)),el('span','badge',cap.evidence_level||''));card.append(row)});
+    (match.gates||[]).forEach(gate=>{const basis=gate.basis||`requirement=${displayValue(gate.requirement_value)}; capability=${displayValue(gate.capability_value)}`;card.append(el('div',`gate ${gate.status==='fail'?'fail':''}`,`${gate.hard?tr('hard'):tr('soft')} ${tr('gate')} — ${gate.name}: ${stateLabel(gate.status)}. ${basis}`))});
     (match.gaps||[]).forEach(gap=>card.append(el('div','gap',`🔴 ${gap}`)));
-    if(match.rd_gap){card.append(el('div','gap',`🛠 ${match.rd_gap.person_weeks} person-weeks — ${(match.rd_gap.domains||[]).join(', ')}`))}
-    card.append(el('div','gate',`Next: ${match.next_action||'Not specified'}`));matchHost.append(card)
+    if(match.rd_gap){card.append(el('div','gap',`🛠 ${match.rd_gap.person_weeks} ${tr('personWeeks')} — ${(match.rd_gap.domains||[]).join(', ')}`))}
+    card.append(el('div','gate',`${tr('next')}: ${match.next_action||tr('notSpecified')}`));matchHost.append(card)
   });
-  if(!(feasibility.matches||[]).length)matchHost.append(el('p','empty','No match records.'));
+  if(!(feasibility.matches||[]).length)matchHost.append(el('p','empty',tr('noMatchRecords')));
   const summary=document.getElementById('summary');summary.replaceChildren();
-  const tech=el('div','conclusion');tech.append(el('span','','Technical conclusion'),el('strong',`badge ${stateClass(feasibility.technical_conclusion)}`,feasibility.technical_conclusion||'Unknown'));summary.append(tech);
-  const deploy=el('div','conclusion');deploy.append(el('span','','Deployment conclusion'),el('strong',`badge ${stateClass(feasibility.deployment_conclusion)}`,feasibility.deployment_conclusion||'Unknown'));summary.append(deploy);
-  const effort=feasibility.rd_effort||{};summary.append(el('h3','','R&D power needed'),el('div','metric',`${Number(effort.total_person_weeks||0)} PW`),el('p','',(effort.domains||[]).join(' + ')||'No R&D domains recorded'));
-  summary.append(el('h3','','Residual risks'));const risks=el('ol','list');(feasibility.residual_risks||[]).forEach(risk=>risks.append(el('li','',risk)));summary.append(risks);
-  summary.append(el('h3','','Next experiment'),el('p','',feasibility.next_experiment||'Not specified'));
+  const tech=el('div','conclusion');tech.append(el('span','',tr('technicalConclusion')),el('strong',`badge ${stateClass(feasibility.technical_conclusion)}`,stateLabel(feasibility.technical_conclusion)));summary.append(tech);
+  const deploy=el('div','conclusion');deploy.append(el('span','',tr('deploymentConclusion')),el('strong',`badge ${stateClass(feasibility.deployment_conclusion)}`,stateLabel(feasibility.deployment_conclusion)));summary.append(deploy);
+  const effort=feasibility.rd_effort||{};summary.append(el('h3','',tr('rdPowerNeeded')),el('div','metric',`${Number(effort.total_person_weeks||0)} ${tr('pw')}`),el('p','',(effort.domains||[]).join(' + ')||tr('noRdDomains')));
+  summary.append(el('h3','',tr('residualRisks')));const risks=el('ol','list');(feasibility.residual_risks||[]).forEach(risk=>risks.append(el('li','',risk)));summary.append(risks);
+  summary.append(el('h3','',tr('nextExperiment')),el('p','',feasibility.next_experiment||tr('notSpecified')));
   exportsEl.classList.remove('hidden');
-  document.getElementById('markdownExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=markdown`;
-  document.getElementById('pdfExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=pdf`;
+  document.getElementById('markdownExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=markdown&language=${encodeURIComponent(uiLanguage.value)}`;
+  document.getElementById('pdfExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=pdf&language=${encodeURIComponent(uiLanguage.value)}`;
   history.replaceState(null,'',`/capability-match?assessment_id=${encodeURIComponent(assessmentId)}`);
 }
 
-async function loadAssessment(id){statusEl.textContent='Loading assessment…';statusEl.className='status';const response=await fetch(`/api/capability-match/assessments/${encodeURIComponent(id)}`);const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to load assessment');renderAssessment(data.assessment);statusEl.textContent='Assessment loaded.'}
-async function analyze(){const scenario=scenarioInput.value.trim();if(!scenario){statusEl.textContent='Enter a customer scenario first.';statusEl.className='status error';return}if(!model.value){statusEl.textContent='No robot model is available.';statusEl.className='status error';return}analyzeButton.disabled=true;statusEl.className='status';statusEl.textContent='Extracting requirements and matching evidence-backed capabilities…';try{const response=await fetch('/api/capability-match/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:'en'})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Analysis failed');renderAssessment(data.assessment);statusEl.textContent='Assessment completed and saved.'}catch(error){statusEl.textContent=error instanceof Error?error.message:'Analysis failed';statusEl.className='status error'}finally{analyzeButton.disabled=false}}
+function applyLanguage(){
+  document.documentElement.lang=uiLanguage.value;
+  document.title=tr('documentTitle');
+  document.querySelectorAll('[data-i18n]').forEach(node=>{node.textContent=tr(node.dataset.i18n)});
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(node=>{node.placeholder=tr(node.dataset.i18nPlaceholder)});
+  uiLanguage.setAttribute('aria-label',uiLanguage.value==='zh-CN'?'界面和报告语言':'Interface and report language');
+  renderRobotOptions();
+  if(currentAssessment){renderAssessment(currentAssessment)}else{document.getElementById('scenarioMeta').innerHTML=`<dd class="empty">${tr('emptyAssessment')}</dd>`;document.getElementById('matches').innerHTML=`<p class="empty">${tr('noResults')}</p>`;document.getElementById('summary').innerHTML=`<p class="empty">${tr('noConclusion')}</p>`}
+}
+async function loadAssessment(id){statusEl.textContent=tr('loading');statusEl.className='status';const response=await fetch(`/api/capability-match/assessments/${encodeURIComponent(id)}`);const data=await response.json();if(!response.ok)throw new Error(data.error||tr('unableLoad'));renderAssessment(data.assessment);statusEl.textContent=tr('loaded')}
+async function analyze(){const scenario=scenarioInput.value.trim();if(!scenario){statusEl.textContent=tr('enterScenario');statusEl.className='status error';return}if(!model.value){statusEl.textContent=tr('noRobot');statusEl.className='status error';return}analyzeButton.disabled=true;statusEl.className='status';statusEl.textContent=tr('analyzing');try{const response=await fetch('/api/capability-match/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:uiLanguage.value})});const data=await response.json();if(!response.ok)throw new Error(data.error||tr('analysisFailed'));renderAssessment(data.assessment);statusEl.textContent=tr('completed')}catch(error){statusEl.textContent=error instanceof Error?error.message:tr('analysisFailed');statusEl.className='status error'}finally{analyzeButton.disabled=false}}
+const savedLanguage=localStorage.getItem('agent1_ui_language');
+uiLanguage.value=['en','zh-CN'].includes(savedLanguage)?savedLanguage:'en';
+applyLanguage();
+uiLanguage.addEventListener('change',()=>{localStorage.setItem('agent1_ui_language',uiLanguage.value);applyLanguage()});
 analyzeButton.addEventListener('click',analyze);
 if(assessmentId){loadAssessment(assessmentId).catch(error=>{statusEl.textContent=error.message;statusEl.className='status error'})}
 </script>
