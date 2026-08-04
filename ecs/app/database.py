@@ -144,6 +144,34 @@ def initialize_database() -> None:
                 FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS scenario_assessments (
+                assessment_id TEXT PRIMARY KEY,
+                user_id INTEGER,
+                conversation_id TEXT NOT NULL DEFAULT '',
+                model_id TEXT NOT NULL,
+                scenario_spec TEXT NOT NULL,
+                atomic_requirements TEXT NOT NULL DEFAULT '[]',
+                capabilities TEXT NOT NULL DEFAULT '[]',
+                feasibility_assessment TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS capability_draft_stubs (
+                stub_id TEXT PRIMARY KEY,
+                assessment_id TEXT NOT NULL,
+                requirement_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                details TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(assessment_id, requirement_id),
+                FOREIGN KEY(assessment_id) REFERENCES scenario_assessments(assessment_id) ON DELETE CASCADE,
+                FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
             CREATE INDEX IF NOT EXISTS idx_sources_upload ON upload_sources(upload_id);
             CREATE INDEX IF NOT EXISTS idx_security_warnings_upload
@@ -153,6 +181,12 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_audit_created ON file_audit_log(created_at);
             CREATE INDEX IF NOT EXISTS idx_authoring_sessions_user ON authoring_sessions(created_by, updated_at);
             CREATE INDEX IF NOT EXISTS idx_authoring_articles_session ON authoring_articles(session_id, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_scenario_assessments_created
+                ON scenario_assessments(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_scenario_assessments_model
+                ON scenario_assessments(model_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_capability_stubs_created
+                ON capability_draft_stubs(created_at DESC);
             """
         )
         # Migrate databases created by the earlier prototype.
@@ -175,6 +209,19 @@ def initialize_database() -> None:
             connection.execute("ALTER TABLE users ADD COLUMN email TEXT")
             connection.execute("UPDATE users SET email = username || '@localhost' WHERE email IS NULL")
             connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        scenario_columns = _columns(connection, "scenario_assessments")
+        if "conversation_id" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''"
+            )
+        if "atomic_requirements" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN atomic_requirements TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "capabilities" not in scenario_columns:
+            connection.execute(
+                "ALTER TABLE scenario_assessments ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'"
+            )
 
         connection.executescript(
             """
@@ -1415,3 +1462,187 @@ def get_robot_options() -> list[dict[str, str]]:
         }
         for robot in get_all_robots()
     ]
+
+
+# ---------------------------------------------------------------------------
+# Scenario feasibility assessments and R&D gap drafts
+# ---------------------------------------------------------------------------
+
+def create_scenario_assessment(
+    *,
+    assessment_id: str,
+    user_id: int | None,
+    conversation_id: str,
+    model_id: str,
+    scenario_spec: dict[str, Any],
+    atomic_requirements: list[dict[str, Any]],
+    capabilities: list[dict[str, Any]],
+    feasibility_assessment: dict[str, Any],
+) -> None:
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO scenario_assessments (
+                assessment_id, user_id, conversation_id, model_id,
+                scenario_spec, atomic_requirements, capabilities,
+                feasibility_assessment, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                assessment_id,
+                user_id,
+                conversation_id,
+                model_id,
+                json.dumps(scenario_spec, ensure_ascii=False),
+                json.dumps(atomic_requirements, ensure_ascii=False),
+                json.dumps(capabilities, ensure_ascii=False),
+                json.dumps(feasibility_assessment, ensure_ascii=False),
+                utc_now(),
+            ),
+        )
+
+
+def _assessment_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    for field, fallback in (
+        ("scenario_spec", {}),
+        ("atomic_requirements", []),
+        ("capabilities", []),
+        ("feasibility_assessment", {}),
+    ):
+        try:
+            result[field] = json.loads(str(result.get(field) or ""))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            result[field] = fallback
+    return result
+
+
+def get_scenario_assessment(assessment_id: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM scenario_assessments WHERE assessment_id = ?",
+            (assessment_id,),
+        ).fetchone()
+    return _assessment_from_row(row) if row is not None else None
+
+
+def list_scenario_assessments(limit: int = 100) -> list[dict[str, Any]]:
+    bounded_limit = max(1, min(int(limit), 500))
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM scenario_assessments ORDER BY created_at DESC LIMIT ?",
+            (bounded_limit,),
+        ).fetchall()
+    return [_assessment_from_row(row) for row in rows]
+
+
+def aggregate_capability_gaps(limit: int = 100) -> list[dict[str, Any]]:
+    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
+    for assessment in list_scenario_assessments(limit=500):
+        requirements = {
+            str(item.get("requirement_id") or ""): item
+            for item in assessment["atomic_requirements"]
+            if isinstance(item, dict)
+        }
+        feasibility = assessment["feasibility_assessment"]
+        for match in feasibility.get("matches", []):
+            if not isinstance(match, dict):
+                continue
+            requirement_id = str(match.get("requirement_id") or "")
+            rd_gap = match.get("rd_gap")
+            gaps = [str(value) for value in match.get("gaps", []) if str(value)]
+            if not isinstance(rd_gap, dict) and not gaps:
+                continue
+            requirement = requirements.get(requirement_id, {})
+            name = str(requirement.get("name") or requirement_id or "Unknown gap")
+            key = (str(assessment["model_id"]), name.casefold())
+            item = aggregated.setdefault(
+                key,
+                {
+                    "model_id": str(assessment["model_id"]),
+                    "requirement_name": name,
+                    "occurrence_count": 0,
+                    "total_person_weeks": 0.0,
+                    "domains": set(),
+                    "latest_assessment_id": str(assessment["assessment_id"]),
+                    "latest_requirement_id": requirement_id,
+                    "latest_created_at": str(assessment["created_at"]),
+                },
+            )
+            item["occurrence_count"] += 1
+            if isinstance(rd_gap, dict):
+                try:
+                    person_weeks = float(rd_gap.get("person_weeks") or 0.0)
+                except (TypeError, ValueError):
+                    person_weeks = 0.0
+                item["total_person_weeks"] += max(0.0, person_weeks)
+                item["domains"].update(str(value) for value in rd_gap.get("domains", []))
+    results: list[dict[str, Any]] = []
+    for item in aggregated.values():
+        count = int(item["occurrence_count"])
+        item["average_person_weeks"] = round(float(item.pop("total_person_weeks")) / count, 2)
+        item["domains"] = sorted(item["domains"])
+        results.append(item)
+    results.sort(key=lambda item: (-int(item["occurrence_count"]), str(item["requirement_name"])))
+    return results[: max(1, min(int(limit), 500))]
+
+
+def create_capability_draft_stub(
+    *,
+    stub_id: str,
+    assessment_id: str,
+    requirement_id: str,
+    model_id: str,
+    name: str,
+    details: dict[str, Any],
+    created_by: int,
+) -> dict[str, Any]:
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO capability_draft_stubs (
+                stub_id, assessment_id, requirement_id, model_id, name,
+                details, status, created_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+            """,
+            (
+                stub_id,
+                assessment_id,
+                requirement_id,
+                model_id,
+                name,
+                json.dumps(details, ensure_ascii=False),
+                created_by,
+                utc_now(),
+            ),
+        )
+        row = connection.execute(
+            """
+            SELECT * FROM capability_draft_stubs
+            WHERE assessment_id = ? AND requirement_id = ?
+            """,
+            (assessment_id, requirement_id),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Capability draft stub was not created")
+    result = dict(row)
+    result["details"] = json.loads(str(result["details"]))
+    return result
+
+
+def list_capability_draft_stubs(limit: int = 100) -> list[dict[str, Any]]:
+    bounded_limit = max(1, min(int(limit), 500))
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM capability_draft_stubs ORDER BY created_at DESC LIMIT ?",
+            (bounded_limit,),
+        ).fetchall()
+    results = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["details"] = json.loads(str(item["details"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            item["details"] = {}
+        results.append(item)
+    return results

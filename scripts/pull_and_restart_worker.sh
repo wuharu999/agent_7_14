@@ -32,7 +32,7 @@ git fetch origin "$DEPLOY_BRANCH"
 git merge --ff-only "origin/$DEPLOY_BRANCH"
 
 .venv-worker/bin/python -m pip install -r worker/requirements.txt
-.venv-worker/bin/python -m compileall -q worker scripts
+.venv-worker/bin/python -m compileall -q worker shared scripts
 chmod 600 worker/.env
 ./scripts/check_worker_machine.sh
 

@@ -59,6 +59,9 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
             elif message_type == "authoring_result":
                 gateway.resolve_command(str(data.get("id") or ""), data)
 
+            elif message_type == "capability_match_result":
+                gateway.resolve_command(str(data.get("id") or ""), data)
+
             elif message_type == "authoring_progress":
                 article_id = str(data.get("article_id") or data.get("upload_id") or "")
                 if article_id:

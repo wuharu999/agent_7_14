@@ -17,6 +17,8 @@ ACCOUNT_MENU_TEMPLATES = (
     "upload_status.html",
     "settings.html",
     "admin_users.html",
+    "capability_match.html",
+    "admin_capabilities.html",
 )
 
 
@@ -27,7 +29,7 @@ def test_shared_account_settings_menu_is_loaded_on_every_application_page(
     page = (TEMPLATE_ROOT / template_name).read_text(encoding="utf-8")
 
     assert 'href="/static/account_menu.css"' in page
-    assert 'src="/static/account_menu.js?v=20260729-3"' in page
+    assert 'src="/static/account_menu.js?v=20260804-1"' in page
     assert "data-account-menu" in page
 
 
@@ -77,6 +79,8 @@ def test_shared_component_contains_role_gated_admin_and_account_actions() -> Non
     assert "users.href = '/admin/users'" in script
     assert "manage.href = '/manage'" in script
     assert "upload.href = '/upload'" in script
+    assert "workbench.href = '/capability-match'" in script
+    assert "capabilities.href = '/admin/capabilities'" in script
     assert "fetch('/api/export/wiki')" in script
     assert "fetch('/logout'" in script
     assert "accountSettings" in script
@@ -97,7 +101,7 @@ def test_shared_component_javascript_parses() -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("template_name", ["ask.html", "settings.html"])
+@pytest.mark.parametrize("template_name", ["ask.html", "settings.html", "capability_match.html", "admin_capabilities.html"])
 def test_account_menu_javascript_parses(template_name: str) -> None:
     page = (TEMPLATE_ROOT / template_name).read_text(encoding="utf-8")
     scripts = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)
@@ -106,6 +110,8 @@ def test_account_menu_javascript_parses(template_name: str) -> None:
     for script in scripts:
         rendered_script = script.replace("__ALLOWED_TEAMS__", "[]")
         rendered_script = rendered_script.replace("__ROBOTS__", "[]")
+        rendered_script = rendered_script.replace("__ASSESSMENT_ID__", '""')
+        rendered_script = rendered_script.replace("__CSRF_TOKEN__", "test-token")
         result = subprocess.run(
             ["node", "-e", f"new Function({json.dumps(rendered_script)})"],
             check=False,

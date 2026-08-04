@@ -17,6 +17,7 @@ from worker.claude_runner import (
     run_claude,
     run_claude_stream,
 )
+from worker.capability_matcher import analyze_scenario
 from worker.authoring import AuthoringError, chat as authoring_chat, create_session as create_authoring_session
 from worker.authoring import generate_article as generate_authoring_article, get_session as get_authoring_session
 from worker.conversation_store import ConversationStore
@@ -24,6 +25,8 @@ from worker.config import (
     AUTHORING_LOCK_STRIPES,
     AUTHORING_QUEUE_MAX,
     AUTHORING_WORKERS,
+    CAPABILITY_MATCH_QUEUE_MAX,
+    CAPABILITY_MATCH_WORKERS,
     DOWNLOAD_WORKERS,
     FILE_OPERATION_WORKERS,
     QA_WORKERS,
@@ -72,6 +75,9 @@ class WorkerManager:
         self.authoring_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
             maxsize=AUTHORING_QUEUE_MAX
         )
+        self.capability_match_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+            maxsize=CAPABILITY_MATCH_QUEUE_MAX
+        )
         self.authoring_locks = tuple(
             asyncio.Lock() for _ in range(AUTHORING_LOCK_STRIPES)
         )
@@ -81,6 +87,7 @@ class WorkerManager:
         self.active_download_ids: set[str] = set()
         self.active_command_ids: set[str] = set()
         self.active_authoring_ids: set[str] = set()
+        self.active_capability_match_ids: set[str] = set()
         self.monitor_tasks: set[asyncio.Task[None]] = set()
         self.wiki_snapshot_refresh = asyncio.Event()
 
@@ -121,6 +128,13 @@ class WorkerManager:
                 name=f"authoring-{index + 1}",
             )
             for index in range(AUTHORING_WORKERS)
+        )
+        tasks.extend(
+            asyncio.create_task(
+                self.capability_match_worker(index + 1),
+                name=f"capability-match-{index + 1}",
+            )
+            for index in range(CAPABILITY_MATCH_WORKERS)
         )
         await asyncio.gather(*tasks)
 
@@ -222,6 +236,25 @@ class WorkerManager:
                 conversation_id,
                 lane + 1,
             )
+            return
+
+        if message_type == "analyze_scenario":
+            command_id = str(data.get("id") or "")
+            if not command_id or command_id in self.active_capability_match_ids:
+                return
+            self.active_capability_match_ids.add(command_id)
+            try:
+                self.capability_match_queue.put_nowait(data)
+            except asyncio.QueueFull:
+                self.active_capability_match_ids.discard(command_id)
+                await self.emit(
+                    {
+                        "type": "capability_match_result",
+                        "id": command_id,
+                        "status": "failed",
+                        "error": "Scenario analysis queue is full; try again shortly",
+                    }
+                )
             return
 
         if message_type == "download_file":
@@ -490,6 +523,41 @@ class WorkerManager:
                     )
             finally:
                 queue.task_done()
+
+    async def capability_match_worker(self, worker_number: int) -> None:
+        while True:
+            data = await self.capability_match_queue.get()
+            command_id = str(data.get("id") or "")
+            try:
+                log.info("Capability match worker %d handling %s", worker_number, command_id)
+                result = await analyze_scenario(
+                    str(data.get("scenario_text") or ""),
+                    model_id=str(data.get("model_id") or ""),
+                    language=str(data.get("language") or "en"),
+                )
+                await self.emit(
+                    {
+                        "type": "capability_match_result",
+                        "id": command_id,
+                        "status": "ok",
+                        "result": result,
+                    }
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("Scenario capability analysis failed for %s", command_id)
+                await self.emit(
+                    {
+                        "type": "capability_match_result",
+                        "id": command_id,
+                        "status": "failed",
+                        "error": "Scenario analysis failed; see Worker logs",
+                    }
+                )
+            finally:
+                self.active_capability_match_ids.discard(command_id)
+                self.capability_match_queue.task_done()
 
     def _authoring_lock(self, data: dict[str, Any]) -> asyncio.Lock:
         identity = str(

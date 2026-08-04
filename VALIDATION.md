@@ -1,5 +1,38 @@
 # Validation
 
+## Robot scenario feasibility compiler
+
+From the repository root:
+
+```bash
+python3 /home/eason/Downloads/vscode-copilot-robot-scenario-compiler-agent-v1.0.0-20260730/scripts/validate_agent_package.py
+python3 -m compileall -q ecs worker shared scripts
+python3 -m json.tool shared/schemas/atomic-capability.schema.json >/dev/null
+python3 -m json.tool shared/schemas/feasibility-assessment.schema.json >/dev/null
+pytest -q tests/test_capability_match.py tests/test_account_menu.py tests/test_security_migration.py
+```
+
+The capability-match tests cover schema installation, L0-only hard-gate
+reclassification, additive/idempotent SQLite migration, public persistence,
+Markdown/PDF exports, admin analytics, CSRF enforcement, and idempotent draft
+stub creation. Run the HTTP tests in a supported project test environment; some
+sandboxed Python 3.14 TestClient builds cannot create the internal stream file
+descriptor and may hang before sending an ASGI request.
+
+On the deployed pair, verify in this order:
+
+1. `/health` reports `worker_online: true`.
+2. Select a specific robot on `/`, enable Analyze Demand Mode, and submit a
+   bounded customer scenario.
+3. Open the CTA and confirm `SCN-*`/`REQ-*` records and the three workbench
+   columns.
+4. Use a scenario with only SDK/driver evidence and confirm the L0 hard gate
+   reports `R&D Gap (Composite Skill Missing)`.
+5. Download `feasibility_report.md` and `feasibility_report.pdf`.
+6. Sign in as admin, open `/admin/capabilities`, and create one draft stub.
+7. Confirm the stub appears once after repeating the same request and the audit
+   log contains `create_capability_draft_stub`.
+
 The final package was checked with:
 
 - Python compilation of ECS, Worker and user-management code.

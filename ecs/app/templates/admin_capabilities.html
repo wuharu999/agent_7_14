@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Capability Gap Analytics</title>
+<link rel="stylesheet" href="/static/account_menu.css">
+<script src="/static/account_menu.js?v=20260804-1" defer></script>
+<style>
+body{font-family:system-ui,sans-serif;max-width:1280px;margin:36px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}.top h1{margin:0;font-size:26px}.top p{margin:4px 0;color:#64748b}.actions{display:flex;align-items:center;gap:10px}.button{display:inline-flex;padding:9px 14px;border-radius:8px;background:#475569;color:#fff;text-decoration:none;font-weight:700}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:20px;box-shadow:0 8px 30px #1f29370a;margin-bottom:20px}.card h2{margin:0 0 14px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #e2e8f0;vertical-align:top}th{background:#f8fafc;color:#475569}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#e2e8f0;font-size:12px;font-weight:700;margin:2px}.badge.gap{background:#fee2e2;color:#991b1b}.badge.draft{background:#fef3c7;color:#92400e}button{border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;padding:8px 11px;cursor:pointer}button:disabled{opacity:.55}.status{min-height:20px;color:#64748b}.status.error{color:#b91c1c}.empty{color:#64748b;font-style:italic}@media(max-width:760px){.top{align-items:flex-start;flex-direction:column}.table-wrap{overflow-x:auto}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div><h1>Top Requested Capability Gaps</h1><p>Evidence-acquisition backlog from saved customer scenario assessments. Admin: <strong>__USERNAME__</strong></p></div>
+  <div class="actions"><a class="button" href="/capability-match">Workbench</a><div data-account-menu data-account-return="/admin/capabilities"></div></div>
+</header>
+<div class="status" id="status" role="status"></div>
+<section class="card"><h2>Aggregated R&D gaps</h2><div class="table-wrap"><table><thead><tr><th>Model / requested capability</th><th>Occurrences</th><th>Domains</th><th>Average effort</th><th>Action</th></tr></thead><tbody id="gaps"></tbody></table></div></section>
+<section class="card"><h2>Capability draft stubs</h2><div class="table-wrap"><table><thead><tr><th>Draft ID</th><th>Model</th><th>Requirement</th><th>Status</th><th>Created</th></tr></thead><tbody id="stubs"></tbody></table></div></section>
+<script>
+const csrfToken='__CSRF_TOKEN__';
+const statusEl=document.getElementById('status');
+function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node}
+function cell(text){return el('td','',text)}
+function render(data){
+  const gapHost=document.getElementById('gaps');gapHost.replaceChildren();
+  (data.gaps||[]).forEach(gap=>{const row=el('tr');const name=el('td');name.append(el('strong','',gap.requirement_name),el('div','',gap.model_id));const domains=el('td');(gap.domains||[]).forEach(domain=>domains.append(el('span','badge gap',domain)));const action=el('td');const button=el('button','','Create Capability Draft Stub');button.type='button';button.addEventListener('click',()=>createStub(gap,button));action.append(button);row.append(name,cell(gap.occurrence_count),domains,cell(`${gap.average_person_weeks} person-weeks`),action);gapHost.append(row)});
+  if(!(data.gaps||[]).length){const row=el('tr');const empty=el('td','empty','No capability gaps have been recorded.');empty.colSpan=5;row.append(empty);gapHost.append(row)}
+  const stubHost=document.getElementById('stubs');stubHost.replaceChildren();
+  (data.draft_stubs||[]).forEach(stub=>{const row=el('tr');const id=el('td');const link=el('a','',stub.stub_id);link.href=`/capability-match?assessment_id=${encodeURIComponent(stub.assessment_id)}`;id.append(link);const status=el('td');status.append(el('span','badge draft',stub.status));row.append(id,cell(stub.model_id),cell(`${stub.requirement_id}: ${stub.name}`),status,cell(stub.created_at));stubHost.append(row)});
+  if(!(data.draft_stubs||[]).length){const row=el('tr');const empty=el('td','empty','No draft stubs yet.');empty.colSpan=5;row.append(empty);stubHost.append(row)}
+}
+async function refresh(){statusEl.textContent='Loading analytics…';statusEl.className='status';const response=await fetch('/api/admin/capabilities');const data=await response.json();if(!response.ok)throw new Error(data.detail||data.error||'Unable to load analytics');render(data);statusEl.textContent=`Loaded ${(data.gaps||[]).length} aggregated gaps.`}
+async function createStub(gap,button){button.disabled=true;statusEl.textContent='Creating an evidence-acquisition draft…';try{const response=await fetch('/api/admin/capabilities/stubs',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({assessment_id:gap.latest_assessment_id,requirement_id:gap.latest_requirement_id})});const data=await response.json();if(!response.ok)throw new Error(data.error||data.detail||'Unable to create draft');statusEl.textContent=`Draft ${data.stub.stub_id} is ready for evidence acquisition.`;await refresh()}catch(error){statusEl.textContent=error instanceof Error?error.message:'Unable to create draft';statusEl.className='status error'}finally{button.disabled=false}}
+refresh().catch(error=>{statusEl.textContent=error.message;statusEl.className='status error'});
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/trace-link.schema.json",
+  "title": "Scenario Compiler Trace Link",
+  "type": "object",
+  "required": ["trace_id", "source_type", "source_id", "target_type", "target_id", "relation", "evidence", "status"],
+  "properties": {
+    "trace_id": {"type": "string", "pattern": "^TRACE-[A-Z0-9-]+$"},
+    "source_type": {"enum": ["source_statement", "scenario", "requirement", "capability", "composition", "task_node", "behavior_tree_node", "test_case", "measurement"]},
+    "source_id": {"type": "string"},
+    "target_type": {"enum": ["scenario", "requirement", "capability", "composition", "task_node", "behavior_tree_node", "test_case", "measurement"]},
+    "target_id": {"type": "string"},
+    "relation": {"enum": ["defines", "decomposes_to", "satisfied_by", "composed_by", "compiled_to", "verified_by", "measured_by", "updates_boundary"]},
+    "evidence": {"type": ["string", "null"]},
+    "status": {"enum": ["draft", "confirmed", "verified", "invalidated"]}
+  },
+  "additionalProperties": false
+}

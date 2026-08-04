@@ -12,6 +12,8 @@ FILE_MANAGER_MAX_ENTRIES=10000
 AUTHORING_WORKERS=2
 AUTHORING_QUEUE_MAX=8
 AUTHORING_LOCK_STRIPES=64
+CAPABILITY_MATCH_WORKERS=1
+CAPABILITY_MATCH_QUEUE_MAX=8
 AUTHORING_MAX_CONTEXT_BYTES=768000
 PROMPT_GUARD_ENABLED=true
 PROMPT_GUARD_TIMEOUT=20
@@ -30,6 +32,11 @@ Different authoring sessions can run concurrently, while commands for the same
 session are serialized to preserve message order. Each authoring worker starts at
 most one Claude subprocess, so increase `AUTHORING_WORKERS` only after checking
 Worker memory, Claude account limits, and observed latency.
+
+Scenario feasibility analysis has its own bounded queue. Keep one analysis
+worker initially because each item starts a read-only Claude subprocess and may
+read many Wiki records. Increase `CAPABILITY_MATCH_WORKERS` only after checking
+memory, account concurrency, and latency; do not make the queue unbounded.
 
 Public QA, WeCom QA, and authoring share one hardened Claude launcher. Messages
 are sent through stdin, only `--model` is accepted from `CLAUDE_EXTRA_ARGS`, and

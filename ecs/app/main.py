@@ -10,7 +10,19 @@ from fastapi.staticfiles import StaticFiles
 
 from ecs.app.config import APP_NAME, APP_VERSION, ensure_directories
 from ecs.app.database import delete_expired_sessions, initialize_database
-from ecs.app.routes import auth, ask, authoring, manage, pages, status, uploads, wecom, worker_socket, admin_users
+from ecs.app.routes import (
+    admin_users,
+    ask,
+    auth,
+    authoring,
+    capability_match,
+    manage,
+    pages,
+    status,
+    uploads,
+    wecom,
+    worker_socket,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -41,3 +53,4 @@ app.include_router(status.router)
 app.include_router(worker_socket.router)
 app.include_router(wecom.router)
 app.include_router(admin_users.router)
+app.include_router(capability_match.router)

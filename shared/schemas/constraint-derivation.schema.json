@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/constraint-derivation.schema.json",
+  "title": "Cross-Dimension Constraint Derivation",
+  "type": "object",
+  "required": [
+    "derivation_id",
+    "scenario_id",
+    "source_refs",
+    "target_requirement_id",
+    "source_dimension",
+    "target_dimension",
+    "rule",
+    "derived_metric",
+    "derived_operator",
+    "derived_value",
+    "unit",
+    "assumptions",
+    "confidence",
+    "state"
+  ],
+  "properties": {
+    "derivation_id": {"type": "string", "pattern": "^CD-[A-Z0-9-]+$"},
+    "scenario_id": {"type": "string", "pattern": "^SCN-[A-Z0-9-]+$"},
+    "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+    "target_requirement_id": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
+    "source_dimension": {"enum": ["time", "space", "information", "energy", "safety", "regulatory"]},
+    "target_dimension": {"enum": ["time", "space", "information", "energy", "safety", "regulatory"]},
+    "rule": {"type": "string", "minLength": 5},
+    "derived_metric": {"type": "string"},
+    "derived_operator": {"enum": ["eq", "ne", "lt", "lte", "gt", "gte", "in", "range"]},
+    "derived_value": {},
+    "unit": {"type": ["string", "null"]},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "state": {"enum": ["assumed", "confirmed", "verified", "invalidated"]}
+  },
+  "additionalProperties": false
+}

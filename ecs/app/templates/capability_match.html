@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot Scenario Feasibility Workbench</title>
+<link rel="stylesheet" href="/static/account_menu.css">
+<script src="/static/account_menu.js?v=20260804-1" defer></script>
+<style>
+:root{color-scheme:light;--ink:#172033;--muted:#64748b;--line:#dbe2ee;--blue:#2563eb;--panel:#fff;--bg:#f5f7fb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.shell{width:min(1800px,100%);margin:auto;padding:18px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}.title h1{font-size:clamp(20px,2vw,28px);margin:0}.title p{color:var(--muted);margin:4px 0 0}.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
+.composer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 30px #1f29370a}.composer-grid{display:grid;grid-template-columns:minmax(180px,260px) 1fr auto;gap:12px;align-items:end}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:800;color:#475569}.field select,.field textarea{border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:10px 12px;font:inherit;width:100%}.field textarea{min-height:74px;resize:vertical}.status{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}.status.error{color:#b91c1c}
+.workbench{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(420px,1.65fr) minmax(260px,.85fr);gap:14px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px #1f29370a;overflow:hidden;min-width:0}.panel-header{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:850;background:#f8fafc}.panel-body{padding:16px}.meta{display:grid;gap:10px;margin:0}.meta dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}.meta dd{margin:2px 0 0;line-height:1.45}.requirements{margin:16px 0 0;padding-left:20px}.requirements li{margin:8px 0}.match{border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:12px}.match:last-child{margin-bottom:0}.match-title{font-weight:850;margin-bottom:8px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:5px 0}.badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;background:#e2e8f0;color:#334155}.badge.good{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.gate{font-size:13px;padding:7px 9px;border-radius:8px;background:#f8fafc;margin:6px 0}.gate.fail{background:#fff1f2;color:#9f1239}.gap{background:#fff1f2;color:#9f1239;border-left:4px solid #e11d48;padding:9px;margin-top:8px;border-radius:5px}.conclusion{border-radius:11px;padding:12px;margin-bottom:12px;background:#eff6ff}.conclusion strong{display:block;margin-top:3px;font-size:17px}.metric{font-size:30px;font-weight:900;color:#1d4ed8;margin:5px 0}.list{padding-left:20px;margin:8px 0}.empty{color:var(--muted);font-style:italic}.exports{display:flex;gap:8px;flex-wrap:wrap}.hidden{display:none!important}
+@media(max-width:1100px){.workbench{grid-template-columns:1fr 1.35fr}.summary-panel{grid-column:1/-1}.composer-grid{grid-template-columns:1fr 1fr}.composer-grid .scenario-field{grid-column:1/-1}}
+@media(max-width:720px){.shell{padding:10px}.topbar{align-items:flex-start;flex-direction:column}.workbench,.composer-grid{grid-template-columns:1fr}.composer-grid .scenario-field{grid-column:auto}}
+@media print{body{background:#fff}.composer,[data-account-menu],.exports,.back-link{display:none!important}.shell{width:100%;padding:0}.workbench{grid-template-columns:1fr}.panel{box-shadow:none;break-inside:avoid}.summary-panel{grid-column:auto}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="title">
+      <h1>🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
+      <p>Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary back-link" href="/">← Questions</a>
+      <div class="exports hidden" id="exports">
+        <a class="button secondary" id="markdownExport">Markdown</a>
+        <a class="button secondary" id="pdfExport">PDF</a>
+      </div>
+      <div data-account-menu data-account-return="/capability-match"></div>
+    </div>
+  </header>
+
+  <section class="composer" aria-label="Scenario analyzer">
+    <div class="composer-grid">
+      <div class="field">
+        <label for="model">Robot model</label>
+        <select id="model"></select>
+      </div>
+      <div class="field scenario-field">
+        <label for="scenario">Customer scenario</label>
+        <textarea id="scenario" placeholder="Describe the task, environment, payload, speed, people, constraints, and acceptance criteria."></textarea>
+      </div>
+      <button id="analyze" type="button">Analyze</button>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </section>
+
+  <section class="workbench" id="workbench">
+    <article class="panel">
+      <div class="panel-header">📋 ScenarioSpec</div>
+      <div class="panel-body">
+        <dl class="meta" id="scenarioMeta"><dd class="empty">Run or open an assessment.</dd></dl>
+        <h3>Extracted requirements</h3>
+        <ol class="requirements" id="requirements"></ol>
+      </div>
+    </article>
+    <article class="panel">
+      <div class="panel-header">🧩 Atomic Skill Matchup Matrix</div>
+      <div class="panel-body" id="matches"><p class="empty">No match results yet.</p></div>
+    </article>
+    <article class="panel summary-panel">
+      <div class="panel-header">📊 Technical Conclusion</div>
+      <div class="panel-body" id="summary"><p class="empty">No conclusion yet.</p></div>
+    </article>
+  </section>
+</main>
+<script>
+const robots=__ROBOTS__;
+let assessmentId=__ASSESSMENT_ID__;
+const model=document.getElementById('model');
+const scenarioInput=document.getElementById('scenario');
+const analyzeButton=document.getElementById('analyze');
+const statusEl=document.getElementById('status');
+const exportsEl=document.getElementById('exports');
+
+function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node}
+function displayValue(value){if(value===null||value===undefined||value==='')return'Unknown';if(typeof value==='string')return value;try{return JSON.stringify(value)}catch(_){return String(value)}}
+function appendMeta(host,label,value){const wrap=el('div');wrap.append(el('dt','',label),el('dd','',value||'Unknown'));host.append(wrap)}
+function labelForRobot(robot){return robot.english_name||robot.name}
+robots.forEach(robot=>{const option=el('option','',labelForRobot(robot));option.value=robot.name;model.append(option)});
+
+function stateClass(state){if(['verified_satisfied','feasible','viable','pass'].includes(state))return'good';if(['not_satisfied','infeasible','not_viable','fail'].includes(state))return'bad';return'warn'}
+function renderAssessment(assessment){
+  assessmentId=assessment.assessment_id;
+  model.value=assessment.model_id;
+  const spec=assessment.scenario_spec||{};
+  const requirements=Array.isArray(assessment.atomic_requirements)?assessment.atomic_requirements:[];
+  const capabilities=Array.isArray(assessment.capabilities)?assessment.capabilities:[];
+  const feasibility=assessment.feasibility_assessment||{};
+  const reqById=new Map(requirements.map(item=>[item.requirement_id,item]));
+  const capById=new Map(capabilities.map(item=>[item.capability_id,item]));
+  const meta=document.getElementById('scenarioMeta');meta.replaceChildren();
+  const factText=(spec.facts||[]).map(item=>item&&item.text).filter(Boolean).join('; ');
+  appendMeta(meta,'ID',spec.scenario_id);appendMeta(meta,'Target',spec.target||spec.boundary?.end_state||spec.business_goal);appendMeta(meta,'Business goal',spec.business_goal);appendMeta(meta,'Environment',spec.environment||displayValue(spec.environment_profile));appendMeta(meta,'Payload / facts',spec.payload||factText);appendMeta(meta,'Throughput / operations',spec.throughput||displayValue(spec.operations_profile));
+  const reqHost=document.getElementById('requirements');reqHost.replaceChildren();
+  requirements.forEach(req=>{const item=el('li');item.append(el('strong','',`${req.requirement_id}: ${req.name}`),el('div','',displayValue(req.effect)),el('span','badge',req.required_abstraction_level));reqHost.append(item)});
+  const matchHost=document.getElementById('matches');matchHost.replaceChildren();
+  (feasibility.matches||[]).forEach(match=>{
+    const req=reqById.get(match.requirement_id)||{};const card=el('section','match');
+    card.append(el('div','match-title',`${match.requirement_id}: ${req.name||'Requirement'}`));
+    const stateRow=el('div','row');stateRow.append(el('span',`badge ${stateClass(match.match_state)}`,match.match_state),el('span','badge',`confidence ${Math.round(Number(match.confidence||0)*100)}%`),el('span','badge',match.evidence_level));card.append(stateRow);
+    (match.capability_ids||[]).forEach(id=>{const cap=capById.get(id)||{};const row=el('div','row');row.append(el('span','',`→ ${id}: ${cap.name||'Unknown capability'}`),el('span','badge',cap.abstraction_level||'Unknown layer'),el('span','badge',cap.status||''),el('span','badge',cap.evidence_level||''));card.append(row)});
+    (match.gates||[]).forEach(gate=>{const basis=gate.basis||`requirement=${displayValue(gate.requirement_value)}; capability=${displayValue(gate.capability_value)}`;card.append(el('div',`gate ${gate.status==='fail'?'fail':''}`,`${gate.hard?'Hard':'Soft'} gate — ${gate.name}: ${gate.status}. ${basis}`))});
+    (match.gaps||[]).forEach(gap=>card.append(el('div','gap',`🔴 ${gap}`)));
+    if(match.rd_gap){card.append(el('div','gap',`🛠 ${match.rd_gap.person_weeks} person-weeks — ${(match.rd_gap.domains||[]).join(', ')}`))}
+    card.append(el('div','gate',`Next: ${match.next_action||'Not specified'}`));matchHost.append(card)
+  });
+  if(!(feasibility.matches||[]).length)matchHost.append(el('p','empty','No match records.'));
+  const summary=document.getElementById('summary');summary.replaceChildren();
+  const tech=el('div','conclusion');tech.append(el('span','','Technical conclusion'),el('strong',`badge ${stateClass(feasibility.technical_conclusion)}`,feasibility.technical_conclusion||'Unknown'));summary.append(tech);
+  const deploy=el('div','conclusion');deploy.append(el('span','','Deployment conclusion'),el('strong',`badge ${stateClass(feasibility.deployment_conclusion)}`,feasibility.deployment_conclusion||'Unknown'));summary.append(deploy);
+  const effort=feasibility.rd_effort||{};summary.append(el('h3','','R&D power needed'),el('div','metric',`${Number(effort.total_person_weeks||0)} PW`),el('p','',(effort.domains||[]).join(' + ')||'No R&D domains recorded'));
+  summary.append(el('h3','','Residual risks'));const risks=el('ol','list');(feasibility.residual_risks||[]).forEach(risk=>risks.append(el('li','',risk)));summary.append(risks);
+  summary.append(el('h3','','Next experiment'),el('p','',feasibility.next_experiment||'Not specified'));
+  exportsEl.classList.remove('hidden');
+  document.getElementById('markdownExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=markdown`;
+  document.getElementById('pdfExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=pdf`;
+  history.replaceState(null,'',`/capability-match?assessment_id=${encodeURIComponent(assessmentId)}`);
+}
+
+async function loadAssessment(id){statusEl.textContent='Loading assessment…';statusEl.className='status';const response=await fetch(`/api/capability-match/assessments/${encodeURIComponent(id)}`);const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to load assessment');renderAssessment(data.assessment);statusEl.textContent='Assessment loaded.'}
+async function analyze(){const scenario=scenarioInput.value.trim();if(!scenario){statusEl.textContent='Enter a customer scenario first.';statusEl.className='status error';return}if(!model.value){statusEl.textContent='No robot model is available.';statusEl.className='status error';return}analyzeButton.disabled=true;statusEl.className='status';statusEl.textContent='Extracting requirements and matching evidence-backed capabilities…';try{const response=await fetch('/api/capability-match/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:'en'})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Analysis failed');renderAssessment(data.assessment);statusEl.textContent='Assessment completed and saved.'}catch(error){statusEl.textContent=error instanceof Error?error.message:'Analysis failed';statusEl.className='status error'}finally{analyzeButton.disabled=false}}
+analyzeButton.addEventListener('click',analyze);
+if(assessmentId){loadAssessment(assessmentId).catch(error=>{statusEl.textContent=error.message;statusEl.className='status error'})}
+</script>
+</body>
+</html>

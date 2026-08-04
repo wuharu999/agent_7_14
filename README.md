@@ -103,6 +103,29 @@ names exactly as written in the knowledge base. The Worker also corrects known
 generated translations of `Thinkerstudio` and `Thinkercosmos` before streaming
 them to users.
 
+### Robot scenario feasibility compiler
+
+The public QA page now has an **Analyze Demand Mode** switch. When enabled, the
+browser sends the recent customer-side conversation turns to the private Worker
+after the normal answer completes. The Worker applies the bundled scenario
+requirements and feasibility skills, reads only the selected robot's local Wiki,
+and returns structured `SCN-*`, `REQ-*`, and `CAP-*` records.
+
+The deterministic matcher enforces four explicit capability layers:
+`L0_primitive_driver`, `L1_atomic_skill`, `L2_composite_skill`, and
+`L3_scenario_module`. L0 drivers cannot satisfy L1-L3 scenario requirements. A
+match backed only by L0 primitives is always rewritten to
+`R&D Gap (Composite Skill Missing)`, even if the LLM proposed a passing match.
+
+Open `/capability-match` to run or review an assessment. The workbench shows the
+scenario, atomic match matrix, hard gates, technical/deployment conclusions,
+R&D person-week estimates, risks, and Markdown/PDF exports. Assessments are
+stored additively in `agent_jobs.db`; anonymous public assessments have no user
+owner. Administrators can review aggregate requested gaps and create idempotent
+evidence-acquisition draft stubs at `/admin/capabilities`. Stub creation is
+admin-only, CSRF-protected, and audit-logged; it does not write to or delete the
+live Wiki.
+
 ## Included
 
 - Public question page and WeCom callback.
@@ -120,6 +143,8 @@ them to users.
 - Safe ZIP extraction.
 - Existing LLM Wiki GUI used for Source Watch, Auto Ingest and wiki writing.
 - Browser-visible ingestion status through LLM Wiki queue/cache monitoring.
+- Scenario feasibility workbench with deterministic L0 hard-gate enforcement.
+- SQLite-backed capability-gap analytics and admin draft-stub generation.
 - Prompt/command-injection hardening for browser QA, WeCom, authoring, and
   retrieved source content.
 - Non-blocking text-source security warnings on upload status pages.
@@ -132,6 +157,8 @@ them to users.
 - `/upload` — editor/admin upload page
 - `/uploads/<upload_id>` — authenticated upload progress
 - `/health` — public service health
+- `/capability-match` — public scenario feasibility workbench
+- `/admin/capabilities` — admin-only R&D gap analytics and draft stubs
 - `/wecom/callback` — WeCom callback
 
 ## Roles
@@ -187,6 +214,36 @@ The local LLM Wiki API token is not required for queue/cache monitoring or Auto 
 ## Deployment
 
 Read [FINAL_SETUP.md](FINAL_SETUP.md) for full first-run and upgrade instructions.
+
+For this feature, deploy ECS first so the additive assessment tables and routes
+exist, then deploy the one active Worker so it understands the new correlated
+`analyze_scenario` command. The normal preserving upgrade is:
+
+```bash
+# Existing ECS: backs up ecs/.env and ecs-data, then migrates additively.
+cd /root/agent_7_14
+./scripts/pull_and_restart_ecs.sh
+curl -fsS http://127.0.0.1:8000/health | python3 -m json.tool
+
+# New Worker computer: preserves worker/.env and the complete live Wiki project.
+cd "$HOME/Documents/agent_7_14"
+./scripts/pull_and_restart_worker.sh
+curl -fsS http://47.239.12.206:8000/health | python3 -m json.tool
+```
+
+Keep the old Worker stopped. The two optional Worker settings default safely to
+one bounded analysis worker and eight queued analyses:
+
+```env
+CAPABILITY_MATCH_WORKERS=1
+CAPABILITY_MATCH_QUEUE_MAX=8
+```
+
+After both restarts, confirm `worker_online: true`, run one small demand-mode
+scenario for a specific model, verify Markdown and PDF exports, and create one
+draft stub as an admin. Existing `.env` files, SQLite data, virtual environments,
+`raw/`, `wiki/`, `.llm-wiki/`, `.agent1-trash/`, and `.agent1-worker/` remain
+preserved by the deployment scripts.
 
 For a Worker computer that receives the release manually, download the newest
 `release.zip` into `~/Downloads`, then run:

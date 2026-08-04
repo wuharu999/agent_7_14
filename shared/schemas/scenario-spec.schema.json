@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/scenario-spec.schema.json",
+  "title": "Robot Deployment Scenario Specification",
+  "type": "object",
+  "required": [
+    "scenario_id",
+    "title",
+    "version",
+    "business_goal",
+    "boundary",
+    "actors",
+    "objects",
+    "external_systems",
+    "environment_profile",
+    "operations_profile",
+    "economics_profile",
+    "success_criteria",
+    "facts",
+    "assumptions",
+    "unknowns",
+    "exclusions",
+    "requirement_ids",
+    "status"
+  ],
+  "properties": {
+    "scenario_id": {"type": "string", "pattern": "^SCN-[A-Z0-9-]+$"},
+    "title": {"type": "string", "minLength": 3},
+    "version": {"type": "string", "minLength": 1},
+    "business_goal": {"type": "string", "minLength": 5},
+    "boundary": {
+      "type": "object",
+      "required": ["initiator", "start_state", "end_state", "spatial", "temporal"],
+      "properties": {
+        "initiator": {"type": "string"},
+        "start_state": {"type": "string"},
+        "end_state": {"type": "string"},
+        "spatial": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "temporal": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "actors": {"type": "array", "items": {"$ref": "#/$defs/entity"}},
+    "objects": {"type": "array", "items": {"$ref": "#/$defs/entity"}},
+    "external_systems": {"type": "array", "items": {"$ref": "#/$defs/entity"}},
+    "environment_profile": {
+      "type": "object",
+      "required": ["openness", "dynamics", "human_robot_mixing", "object_standardization", "task_variability", "modification_allowed"],
+      "properties": {
+        "openness": {"enum": ["controlled", "semi_controlled", "open"]},
+        "dynamics": {"enum": ["low", "medium", "high"]},
+        "human_robot_mixing": {"enum": ["none", "managed", "unmanaged"]},
+        "object_standardization": {"enum": ["fixed", "bounded_variation", "unbounded"]},
+        "task_variability": {"enum": ["fixed", "parameterized", "open_ended"]},
+        "modification_allowed": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "operations_profile": {
+      "type": "object",
+      "required": ["frequency_per_day", "target_duration_minutes", "allowed_human_interventions_per_run", "operating_days_per_year"],
+      "properties": {
+        "frequency_per_day": {"$ref": "#/$defs/known_value"},
+        "target_duration_minutes": {"$ref": "#/$defs/known_value"},
+        "allowed_human_interventions_per_run": {"$ref": "#/$defs/known_value"},
+        "operating_days_per_year": {"$ref": "#/$defs/known_value"}
+      },
+      "additionalProperties": false
+    },
+    "economics_profile": {
+      "type": "object",
+      "required": ["human_minutes_per_run", "human_cost_per_run", "failure_loss_per_event", "environment_modification_cost", "annual_robot_opex", "target_payback_months"],
+      "properties": {
+        "human_minutes_per_run": {"$ref": "#/$defs/known_value"},
+        "human_cost_per_run": {"$ref": "#/$defs/known_value"},
+        "failure_loss_per_event": {"$ref": "#/$defs/known_value"},
+        "environment_modification_cost": {"$ref": "#/$defs/known_value"},
+        "annual_robot_opex": {"$ref": "#/$defs/known_value"},
+        "target_payback_months": {"$ref": "#/$defs/known_value"}
+      },
+      "additionalProperties": false
+    },
+    "success_criteria": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/criterion"}},
+    "facts": {"type": "array", "items": {"$ref": "#/$defs/statement"}},
+    "assumptions": {"type": "array", "items": {"$ref": "#/$defs/statement"}},
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "blocking", "impact"],
+        "properties": {
+          "question": {"type": "string"},
+          "blocking": {"type": "boolean"},
+          "impact": {"enum": ["safety", "feasibility", "architecture", "cost", "acceptance"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "exclusions": {"type": "array", "items": {"type": "string"}},
+    "requirement_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
+      "uniqueItems": true
+    },
+    "status": {"enum": ["draft", "confirmed", "frozen", "deprecated"]}
+  },
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "required": ["id", "type", "description"],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "description": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "known_value": {
+      "type": "object",
+      "required": ["value", "unit", "state", "source"],
+      "properties": {
+        "value": {},
+        "unit": {"type": ["string", "null"]},
+        "state": {"enum": ["known", "assumed", "unknown"]},
+        "source": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "criterion": {
+      "type": "object",
+      "required": ["metric", "operator", "value", "unit", "hard", "test_method"],
+      "properties": {
+        "metric": {"type": "string"},
+        "operator": {"enum": ["eq", "ne", "lt", "lte", "gt", "gte", "in", "range"]},
+        "value": {},
+        "unit": {"type": ["string", "null"]},
+        "hard": {"type": "boolean"},
+        "test_method": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "statement": {
+      "type": "object",
+      "required": ["text", "source"],
+      "properties": {
+        "text": {"type": "string"},
+        "source": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

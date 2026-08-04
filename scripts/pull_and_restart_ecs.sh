@@ -25,7 +25,7 @@ git fetch origin "$DEPLOY_BRANCH"
 git merge --ff-only "origin/$DEPLOY_BRANCH"
 
 .venv-ecs/bin/python -m pip install -r ecs/requirements.txt
-.venv-ecs/bin/python -m compileall -q ecs scripts
+.venv-ecs/bin/python -m compileall -q ecs shared scripts
 chmod 600 ecs/.env
 
 if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then

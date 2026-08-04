@@ -17,6 +17,7 @@ def pack_release():
         ".agents",
         ".codex",
         ".vscode",
+        "maintain-model-atomic-capability-wiki",
     }
     
     exclude_files = {
@@ -50,7 +51,7 @@ def pack_release():
                 file_str = file_path.as_posix()
                 
                 # Apply exclusions
-                if file_str in exclude_files or file.endswith('.pyc') or file.endswith('.pyo'):
+                if file_str in exclude_files or file == '.DS_Store' or file.endswith('.pyc') or file.endswith('.pyo'):
                     continue
                 if any(file_str.startswith(pref) for pref in exclude_prefixes):
                     continue

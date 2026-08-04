@@ -5,7 +5,7 @@
 <title>Uchat Knowledge Base</title>
 <link rel="stylesheet" href="/petdex/styles.css">
 <link rel="stylesheet" href="/static/account_menu.css">
-<script src="/static/account_menu.js?v=20260729-3" defer></script>
+<script src="/static/account_menu.js?v=20260804-1" defer></script>
 <style>
 body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#f5f7fb;color:#172033;display:flex;min-height:100vh;overflow-x:hidden}
 .layout{display:flex;width:100%;justify-content:center;align-items:center;min-height:100vh;}
@@ -54,6 +54,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .thinking-dots span:nth-child(2){animation-delay:0.2s;}
 .thinking-dots span:nth-child(3){animation-delay:0.4s;}
 @keyframes thinkingDot{0%,80%,100%{opacity:0.2;transform:scale(0.8)}40%{opacity:1;transform:scale(1.2)}}
+.demand-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#334155;white-space:nowrap;cursor:pointer}.demand-toggle input{width:34px;height:18px;accent-color:#2563eb}.analysis-cta{align-self:stretch;background:#eff6ff;border:1px solid #93c5fd;border-radius:12px;padding:13px 15px;color:#1e3a8a}.analysis-cta strong{display:block;margin-bottom:7px}.analysis-cta a{display:inline-flex;background:#2563eb;color:#fff;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:750}.analysis-cta.error{background:#fff1f2;border-color:#fda4af;color:#9f1239}
 </style>
 </head>
 <body>
@@ -94,6 +95,10 @@ button:disabled{opacity:.55;cursor:not-allowed}
           <option value="es">Español</option>
         </select>
       </div>
+      <label class="demand-toggle" for="demandMode">
+        <input id="demandMode" type="checkbox" role="switch">
+        <span id="demandModeLabel">Analyze Demand Mode</span>
+      </label>
     </div>
     <div class="chat-history" id="chatHistory">
       <!-- Chat bubbles will go here -->
@@ -140,11 +145,26 @@ const question=document.getElementById('question');
 const chatHistory=document.getElementById('chatHistory');
 const language=document.getElementById('language');
 const team=document.getElementById('team');
+const demandMode=document.getElementById('demandMode');
+const demandModeLabel=document.getElementById('demandModeLabel');
 
 const conversationKey='agent1_conversation_id';
 const languageKey='agent1_answer_language';
 const teamKey='agent1_team';
 const historyKey='agent1_chat_history';
+const demandModeKey='agent1_demand_mode';
+const latestAssessmentKey='agent1_latest_scenario_assessment';
+
+const demandI18n={
+  'zh-CN':{mode:'需求分析模式',working:'正在提取场景需求并匹配机器人能力…',ready:'已提取场景需求。是否查看可行性匹配？',open:'📊 打开可行性匹配工作台',failed:'场景需求分析失败。'},
+  'zh-TW':{mode:'需求分析模式',working:'正在提取場景需求並匹配機器人能力…',ready:'已提取場景需求。是否查看可行性匹配？',open:'📊 開啟可行性匹配工作台',failed:'場景需求分析失敗。'},
+  'ko':{mode:'요구 분석 모드',working:'시나리오 요구사항과 로봇 역량을 분석하는 중…',ready:'시나리오 요구사항을 추출했습니다. 타당성 매치를 확인할까요?',open:'📊 타당성 매치 워크벤치 열기',failed:'시나리오 요구 분석에 실패했습니다.'},
+  'ja':{mode:'需要分析モード',working:'シナリオ要件とロボット能力を分析中…',ready:'シナリオ要件を抽出しました。実現可能性を確認しますか？',open:'📊 実現可能性ワークベンチを開く',failed:'シナリオ需要分析に失敗しました。'},
+  'en':{mode:'Analyze Demand Mode',working:'Extracting scenario requirements and matching robot capabilities…',ready:'Scenario requirements extracted. Check feasibility match?',open:'📊 Open Feasibility Match Workbench',failed:'Scenario demand analysis failed.'},
+  'pt':{mode:'Modo de análise da demanda',working:'Extraindo requisitos e combinando capacidades do robô…',ready:'Requisitos do cenário extraídos. Verificar viabilidade?',open:'📊 Abrir bancada de viabilidade',failed:'Falha na análise da demanda.'},
+  'ru':{mode:'Режим анализа требований',working:'Извлечение требований и сопоставление возможностей робота…',ready:'Требования сценария извлечены. Проверить реализуемость?',open:'📊 Открыть рабочую область',failed:'Не удалось проанализировать требования.'},
+  'es':{mode:'Modo de análisis de demanda',working:'Extrayendo requisitos y comparando capacidades del robot…',ready:'Requisitos del escenario extraídos. ¿Comprobar viabilidad?',open:'📊 Abrir banco de viabilidad',failed:'Falló el análisis de demanda.'}
+};
 
 let currentLang = 'zh-CN';
 
@@ -224,6 +244,46 @@ function scrollToBottom() {
   chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
+function renderAnalysisCta(state, assessmentId='') {
+  chatHistory.querySelectorAll('.analysis-cta').forEach(node=>node.remove());
+  const text=demandI18n[currentLang]||demandI18n.en;
+  const card=document.createElement('div');
+  card.className='analysis-cta'+(state==='error'?' error':'');
+  card.dataset.state=state;
+  card.dataset.assessmentId=assessmentId;
+  const title=document.createElement('strong');
+  title.textContent=state==='working'?text.working:(state==='ready'?text.ready:text.failed);
+  card.appendChild(title);
+  if(state==='ready'&&assessmentId){
+    const link=document.createElement('a');
+    link.href=`/capability-match?assessment_id=${encodeURIComponent(assessmentId)}`;
+    link.textContent=text.open;
+    card.appendChild(link);
+  }
+  chatHistory.appendChild(card);
+  scrollToBottom();
+}
+
+async function analyzeDemand(scenarioText) {
+  const selectedModel=team.value==='all'?'':team.value;
+  if(!selectedModel){renderAnalysisCta('error');return}
+  renderAnalysisCta('working');
+  try{
+    const response=await fetch('/api/capability-match/analyze',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scenario_text:scenarioText,model_id:selectedModel,conversation_id:getConversationId(),language:language.value})
+    });
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Scenario analysis failed');
+    localStorage.setItem(latestAssessmentKey,JSON.stringify({assessment_id:data.assessment_id,conversation_id:getConversationId()}));
+    renderAnalysisCta('ready',data.assessment_id);
+  }catch(error){
+    console.error('Scenario demand analysis failed',error);
+    renderAnalysisCta('error');
+  }
+}
+
 function translateUI() {
   const t = i18n[currentLang] || i18n['en'];
   document.title = t.title;
@@ -241,6 +301,9 @@ function translateUI() {
     }
   });
   question.placeholder = t.placeholder;
+  demandModeLabel.textContent=(demandI18n[currentLang]||demandI18n.en).mode;
+  const existingCta=chatHistory.querySelector('.analysis-cta');
+  if(existingCta)renderAnalysisCta(existingCta.dataset.state||'error',existingCta.dataset.assessmentId||'');
   updateHealthStatus();
 }
 
@@ -259,6 +322,14 @@ function getConversationId(){let id=localStorage.getItem(conversationKey);if(!id
 
 language.value=localStorage.getItem(languageKey)||'zh-CN';
 currentLang = language.value;
+demandMode.checked=localStorage.getItem(demandModeKey)==='true';
+demandMode.addEventListener('change',()=>{
+  localStorage.setItem(demandModeKey,String(demandMode.checked));
+  if(demandMode.checked&&team.value==='all'&&robots.length){
+    team.value=robots[0].name;
+    localStorage.setItem(teamKey,team.value);
+  }
+});
 renderRobotOptions();
 
 language.addEventListener('change',()=>{
@@ -273,6 +344,7 @@ if(localStorage.getItem(teamKey) && (allowedTeams.includes(localStorage.getItem(
 }else {
   team.value='all';
 }
+if(demandMode.checked&&team.value==='all'&&robots.length){team.value=robots[0].name;localStorage.setItem(teamKey,team.value)}
 team.addEventListener('change',()=>localStorage.setItem(teamKey,team.value));
 
 function updateHealthStatus() {
@@ -477,6 +549,10 @@ async function submitQuestion(){
       currentChat[currentChat.length - 1].content = accumulatedText || 'No response';
       saveHistory();
     }
+    if(demandMode.checked){
+      const scenarioText=currentChat.filter(message=>message.role==='user').slice(-6).map(message=>message.content).join('\n');
+      void analyzeDemand(scenarioText);
+    }
   }catch(e){
     if(loadingBubble && loadingBubble.parentNode) {
       loadingBubble.remove();
@@ -496,6 +572,7 @@ askButton.onclick=submitQuestion;
 question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter') {event.preventDefault();submitQuestion();}});
 newConversationButton.onclick=()=>{
   localStorage.setItem(conversationKey,newConversationId());
+  localStorage.removeItem(latestAssessmentKey);
   clearChat();
   const t = i18n[currentLang] || i18n['en'];
   addMessage('system', t.newConvStarted);
@@ -505,6 +582,10 @@ newConversationButton.onclick=()=>{
 // Init
 translateUI();
 loadHistory();
+try{
+  const latest=JSON.parse(localStorage.getItem(latestAssessmentKey)||'null');
+  if(latest&&latest.conversation_id===getConversationId()&&latest.assessment_id){renderAnalysisCta('ready',latest.assessment_id)}
+}catch(_){localStorage.removeItem(latestAssessmentKey)}
 
 </script>
 </body></html>

@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/feasibility-assessment.schema.json",
+  "title": "Robot Scenario Feasibility Assessment",
+  "type": "object",
+  "required": [
+    "assessment_id",
+    "scenario_id",
+    "scenario_version",
+    "capability_catalog_revision",
+    "matches",
+    "technical_conclusion",
+    "deployment_conclusion",
+    "deployment_gates",
+    "rd_effort",
+    "residual_risks",
+    "next_experiment"
+  ],
+  "properties": {
+    "assessment_id": {"type": "string", "pattern": "^ASM-[A-Z0-9-]+$"},
+    "scenario_id": {"type": "string", "pattern": "^SCN-[A-Z0-9-]+$"},
+    "scenario_version": {"type": "string"},
+    "capability_catalog_revision": {"type": "string"},
+    "matches": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["match_id", "requirement_id", "capability_ids", "composition_id", "gates", "match_state", "confidence", "evidence_level", "conditions", "gaps", "next_action"],
+        "properties": {
+          "match_id": {"type": "string", "pattern": "^MATCH-[A-Z0-9-]+$"},
+          "requirement_id": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
+          "capability_ids": {"type": "array", "items": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"}, "uniqueItems": true},
+          "composition_id": {"type": ["string", "null"], "pattern": "^COMP-[A-Z0-9-]+$"},
+          "gates": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["name", "category", "status", "hard", "requirement_value", "capability_value", "margin", "evidence_refs"],
+              "properties": {
+                "name": {"type": "string"},
+                "category": {"enum": ["effect", "object", "input_output", "precondition", "time", "space", "information", "energy", "safety", "regulatory", "scope", "evidence", "composition"]},
+                "status": {"enum": ["pass", "fail", "unknown", "not_applicable"]},
+                "hard": {"type": "boolean"},
+                "requirement_value": {},
+                "capability_value": {},
+                "margin": {"type": ["number", "null"]},
+                "evidence_refs": {"type": "array", "items": {"type": "string"}}
+              },
+              "additionalProperties": false
+            }
+          },
+          "match_state": {"enum": ["verified_satisfied", "conditional", "partial", "composite", "unproven", "not_satisfied", "requirement_incomplete"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "evidence_level": {"enum": ["E1", "E2", "E3", "E4", "E5"]},
+          "conditions": {"type": "array", "items": {"type": "string"}},
+          "gaps": {"type": "array", "items": {"type": "string"}},
+          "rd_gap": {
+            "type": ["object", "null"],
+            "required": ["classification", "domains", "person_weeks", "risk_factors"],
+            "properties": {
+              "classification": {"const": "R&D Gap (Composite Skill Missing)"},
+              "domains": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+              "person_weeks": {"type": "number", "minimum": 0},
+              "risk_factors": {"type": "array", "items": {"type": "string"}}
+            },
+            "additionalProperties": false
+          },
+          "next_action": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "technical_conclusion": {"enum": ["feasible", "feasible_with_conditions", "prototype_required", "currently_unproven", "infeasible"]},
+    "deployment_conclusion": {"enum": ["viable", "viable_with_conditions", "business_case_incomplete", "not_viable"]},
+    "deployment_gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "hard", "basis"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"enum": ["pass", "fail", "unknown", "not_applicable"]},
+          "hard": {"type": "boolean"},
+          "basis": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "rd_effort": {
+      "type": "object",
+      "required": ["total_person_weeks", "domains", "risk_factors"],
+      "properties": {
+        "total_person_weeks": {"type": "number", "minimum": 0},
+        "domains": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "risk_factors": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "residual_risks": {"type": "array", "items": {"type": "string"}},
+    "next_experiment": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}
