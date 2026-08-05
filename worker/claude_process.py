@@ -4,7 +4,9 @@ import asyncio
 import json
 import secrets
 import shlex
-from collections.abc import Sequence
+import time
+from collections.abc import Awaitable, Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 from worker.config import (
@@ -79,7 +81,40 @@ async def stop_process(process: asyncio.subprocess.Process) -> None:
         await asyncio.wait_for(process.wait(), timeout=5)
     except asyncio.TimeoutError:
         process.kill()
-        await process.wait()
+def _is_process_stopped(pid: int) -> bool:
+    try:
+        status_file = Path(f"/proc/{pid}/status")
+        if status_file.is_file():
+            for line in status_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("State:"):
+                    state = line.split()[1]
+                    if state in ("T", "t"):
+                        return True
+    except OSError:
+        pass
+    return False
+
+
+async def _watchdog_loop(
+    process: asyncio.subprocess.Process,
+    last_activity: list[float],
+    inactivity_timeout: float = 180.0,
+) -> None:
+    while process.returncode is None:
+        await asyncio.sleep(0.5)
+        if process.returncode is not None:
+            break
+        if _is_process_stopped(process.pid):
+            await stop_process(process)
+            raise ClaudeProcessError(
+                f"Claude 进程被挂起/暂停 (SIGSTOP/State T, PID {process.pid})"
+            )
+        idle_time = time.monotonic() - last_activity[0]
+        if idle_time > inactivity_timeout:
+            await stop_process(process)
+            raise ClaudeProcessError(
+                f"Claude 进程无数据输出超时 ({int(inactivity_timeout)}s)，已被终止"
+            )
 
 
 def build_command(
@@ -140,6 +175,34 @@ def build_command(
     return command, canary
 
 
+def safe_model_args(value: str) -> list[str]:
+    """Accept model selection only; reject permission or tool-changing flags."""
+    try:
+        args = shlex.split(value) if value else []
+    except ValueError as exc:
+        raise ClaudeProcessError("Invalid Claude model argument") from exc
+    safe: list[str] = []
+    index = 0
+    while index < len(args):
+        argument = args[index]
+        if (
+            argument == "--model"
+            and index + 1 < len(args)
+            and not args[index + 1].startswith("-")
+        ):
+            safe.extend([argument, args[index + 1]])
+            index += 2
+            continue
+        if argument.startswith("--model=") and argument != "--model=":
+            safe.append(argument)
+            index += 1
+            continue
+        raise ClaudeProcessError(f"Unsupported Claude service argument: {argument}")
+    if len(safe) > 2 or (len(safe) == 2 and safe[0] != "--model"):
+        raise ClaudeProcessError("Configure at most one Claude model argument")
+    return safe
+
+
 async def run_claude_process(
     user_prompt: str,
     *,
@@ -169,9 +232,19 @@ async def run_claude_process(
     except OSError as exc:
         raise ClaudeProcessError(f"Unable to start Claude: {exc}") from exc
 
+    last_activity = [time.monotonic()]
+    watchdog = asyncio.create_task(
+        _watchdog_loop(process, last_activity, inactivity_timeout=180.0)
+    )
+
     try:
+        async def communicate_with_activity():
+            out, err = await process.communicate(input=user_prompt.encode("utf-8"))
+            last_activity[0] = time.monotonic()
+            return out, err
+
         stdout, stderr = await asyncio.wait_for(
-            process.communicate(input=user_prompt.encode("utf-8")),
+            communicate_with_activity(),
             timeout=timeout or CLAUDE_TIMEOUT,
         )
     except asyncio.TimeoutError as exc:
@@ -182,6 +255,9 @@ async def run_claude_process(
     except asyncio.CancelledError:
         await stop_process(process)
         raise
+    finally:
+        watchdog.cancel()
+        await stop_process(process)
 
     if process.returncode != 0:
         detail = stderr.decode("utf-8", errors="replace").strip()[:800]
@@ -231,6 +307,10 @@ async def run_claude_process_stream(
 
     last_text = ""
     last_thinking = ""
+    last_activity = [time.monotonic()]
+    watchdog = asyncio.create_task(
+        _watchdog_loop(process, last_activity, inactivity_timeout=180.0)
+    )
 
     async def read_stdout():
         nonlocal last_text, last_thinking
@@ -238,6 +318,7 @@ async def run_claude_process_stream(
             line_bytes = await process.stdout.readline()
             if not line_bytes:
                 break
+            last_activity[0] = time.monotonic()
             line = line_bytes.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
@@ -293,6 +374,7 @@ async def run_claude_process_stream(
             chunk = await process.stderr.read(512)
             if not chunk:
                 break
+            last_activity[0] = time.monotonic()
             stderr_output.append(chunk.decode("utf-8", errors="replace"))
 
     try:
@@ -323,6 +405,9 @@ async def run_claude_process_stream(
     except asyncio.CancelledError:
         await stop_process(process)
         raise
+    finally:
+        watchdog.cancel()
+        await stop_process(process)
 
     if process.returncode != 0:
         detail = "".join(stderr_output).strip()[:800]
