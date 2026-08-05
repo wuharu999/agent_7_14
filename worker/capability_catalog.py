@@ -653,7 +653,10 @@ def _existing_catalog_payload(target: Path) -> list[dict[str, Any]]:
     return entries
 
 
-async def _reduce_candidates(
+REDUCE_CHUNK_SIZE = 40
+
+
+async def _reduce_candidate_chunk(
     *,
     model: str,
     reducer_id: str,
@@ -708,6 +711,44 @@ async def _reduce_candidates(
             expected_reducer_id=reducer_id,
             candidate_ids=candidate_ids,
         )
+
+
+async def _reduce_candidates(
+    *,
+    model: str,
+    reducer_id: str,
+    candidates: list[dict[str, Any]],
+    existing_entries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not candidates:
+        return {"reducer_id": reducer_id, "decisions": []}
+    if len(candidates) <= REDUCE_CHUNK_SIZE:
+        return await _reduce_candidate_chunk(
+            model=model,
+            reducer_id=reducer_id,
+            candidates=candidates,
+            existing_entries=existing_entries,
+        )
+    chunks = [
+        candidates[i : i + REDUCE_CHUNK_SIZE]
+        for i in range(0, len(candidates), REDUCE_CHUNK_SIZE)
+    ]
+    all_decisions: list[dict[str, Any]] = []
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        sub_reducer_id = f"{reducer_id}-chunk{chunk_index}"
+        chunk_reduction = await _reduce_candidate_chunk(
+            model=model,
+            reducer_id=sub_reducer_id,
+            candidates=chunk,
+            existing_entries=existing_entries,
+        )
+        decisions = chunk_reduction.get("decisions", [])
+        if isinstance(decisions, list):
+            all_decisions.extend(decisions)
+    return {
+        "reducer_id": reducer_id,
+        "decisions": all_decisions,
+    }
 
 
 def _build_changeset_from_reduction(
