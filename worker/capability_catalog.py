@@ -719,10 +719,18 @@ async def _reduce_candidates(
     reducer_id: str,
     candidates: list[dict[str, Any]],
     existing_entries: list[dict[str, Any]],
+    on_progress: ProgressCallback | None = None,
+    progress_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not candidates:
         return {"reducer_id": reducer_id, "decisions": []}
     if len(candidates) <= REDUCE_CHUNK_SIZE:
+        if on_progress:
+            await on_progress(
+                "batch_reducing",
+                f"Merging and validating {len(candidates)} extracted candidates...",
+                progress_snapshot,
+            )
         return await _reduce_candidate_chunk(
             model=model,
             reducer_id=reducer_id,
@@ -735,6 +743,15 @@ async def _reduce_candidates(
     ]
     all_decisions: list[dict[str, Any]] = []
     for chunk_index, chunk in enumerate(chunks, start=1):
+        if on_progress:
+            await on_progress(
+                "batch_reducing",
+                (
+                    f"Merging candidate capabilities (chunk {chunk_index}/{len(chunks)}, "
+                    f"{len(all_decisions)}/{len(candidates)} complete)..."
+                ),
+                progress_snapshot,
+            )
         sub_reducer_id = f"{reducer_id}-chunk{chunk_index}"
         chunk_reduction = await _reduce_candidate_chunk(
             model=model,
@@ -1109,6 +1126,8 @@ async def organize_capability_catalog(
             reducer_id=f"CR-{reducer_digest}",
             candidates=candidates,
             existing_entries=await asyncio.to_thread(_existing_catalog_payload, target),
+            on_progress=on_progress,
+            progress_snapshot=final_progress,
         )
     changeset = _build_changeset_from_reduction(
         job_id=job_id,
