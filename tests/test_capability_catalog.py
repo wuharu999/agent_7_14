@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
 
 from ecs.app import database
+from worker import capability_batch
 from worker import capability_catalog
 from worker import config as worker_config
 
@@ -167,6 +170,435 @@ def test_worker_websocket_url_never_contains_shared_secret(
 
     assert url == "wss://example.test/ws/client?project=agent"
     assert "secret" not in url
+
+
+def test_evidence_units_and_batches_are_deterministic_and_byte_bounded(
+    tmp_path: Path,
+) -> None:
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    (wiki / "a.md").write_text("机器人向前移动。" * 20, encoding="utf-8")
+    (wiki / "b.md").write_text("walk() moves the base", encoding="utf-8")
+
+    units = capability_batch.load_evidence_units(
+        wiki,
+        ["b.md", "a.md"],
+        max_unit_bytes=48,
+    )
+    batches = capability_batch.partition_evidence_units(units, max_batch_bytes=700)
+
+    assert units[0].source_id == "wiki/a.md"
+    assert units[0].unit_id.startswith("wiki/a.md#part=1/")
+    assert all(unit.size_bytes <= 48 for unit in units)
+    assert [capability_batch.batch_id("fangan", batch) for batch in batches] == [
+        capability_batch.batch_id("fangan", batch) for batch in batches
+    ]
+
+
+def test_batch_parser_requires_every_unit_and_checkpoint_round_trip(
+    tmp_path: Path,
+) -> None:
+    unit = capability_batch.EvidenceUnit(
+        unit_id="wiki/manual.md",
+        source_id="wiki/manual.md",
+        part_index=1,
+        part_count=1,
+        content="walk() moves the robot base",
+        content_sha256="a" * 64,
+        size_bytes=27,
+    )
+    identifier = capability_batch.batch_id("walker_s2", [unit])
+    payload = {
+        "batch_id": identifier,
+        "sources": [
+            {
+                "unit_id": unit.unit_id,
+                "source_id": unit.source_id,
+                "status": "processed",
+                "reason": "Documented SDK trigger and observable effect",
+                "extracted_claims": 1,
+            }
+        ],
+        "candidates": [
+            {
+                "candidate_id": "temporary",
+                "name": "walk_forward",
+                "semantic_key": "walk_forward",
+                "effect": {
+                    "action": "move",
+                    "object": "robot base",
+                    "observable_result": "Robot base moves forward",
+                },
+                "trigger": "walk()",
+                "interface_reference": "walk()",
+                "body_parts": ["legs"],
+                "environment": "level ground",
+                "evidence": [
+                    {
+                        "unit_id": unit.unit_id,
+                        "source_id": unit.source_id,
+                        "locator": "manual.md#walk",
+                        "claim": "walk() moves the robot base",
+                        "excerpt": "walk() moves the robot base",
+                    }
+                ],
+                "unknowns": [],
+            }
+        ],
+        "non_capability_candidates": 0,
+    }
+    parsed = capability_batch.parse_batch_extraction(
+        json.dumps(payload),
+        expected_batch_id=identifier,
+        units=[unit],
+    )
+    capability_batch.normalize_candidate_ids(identifier, parsed)
+    capability_batch.save_checkpoint(
+        tmp_path,
+        "walker_s2",
+        identifier,
+        parsed,
+    )
+
+    restored = capability_batch.load_checkpoint(
+        tmp_path,
+        "walker_s2",
+        identifier,
+        [unit],
+    )
+
+    assert restored is not None
+    assert restored["candidates"][0]["candidate_id"] == f"{identifier}-C0001"
+    with pytest.raises(ValueError, match="every evidence unit"):
+        capability_batch.parse_batch_extraction(
+            json.dumps({**payload, "sources": []}),
+            expected_batch_id=identifier,
+            units=[unit],
+        )
+    invalid_count = json.loads(json.dumps(payload))
+    invalid_count["sources"][0]["extracted_claims"] = True
+    with pytest.raises(ValueError, match="claim count"):
+        capability_batch.parse_batch_extraction(
+            json.dumps(invalid_count),
+            expected_batch_id=identifier,
+            units=[unit],
+        )
+    incomplete_candidate = json.loads(json.dumps(payload))
+    del incomplete_candidate["candidates"][0]["effect"]
+    with pytest.raises(ValueError, match="candidate is incomplete"):
+        capability_batch.parse_batch_extraction(
+            json.dumps(incomplete_candidate),
+            expected_batch_id=identifier,
+            units=[unit],
+        )
+
+
+def test_aggregate_reports_accounts_for_every_file_and_split_unit() -> None:
+    units = [
+        capability_batch.EvidenceUnit(
+            unit_id=f"wiki/manual.md#part={index}/2",
+            source_id="wiki/manual.md",
+            part_index=index,
+            part_count=2,
+            content="content",
+            content_sha256=str(index) * 64,
+            size_bytes=7,
+        )
+        for index in (1, 2)
+    ]
+    result = {
+        "sources": [
+            {
+                "unit_id": units[0].unit_id,
+                "source_id": units[0].source_id,
+                "status": "processed",
+                "reason": "Capability evidence",
+                "extracted_claims": 2,
+            },
+            {
+                "unit_id": units[1].unit_id,
+                "source_id": units[1].source_id,
+                "status": "excluded",
+                "reason": "No additional claims",
+                "extracted_claims": 0,
+            },
+        ],
+        "candidates": [],
+        "non_capability_candidates": 1,
+    }
+
+    sources, totals = capability_batch.aggregate_source_reports(
+        ["manual.md"], units, [result]
+    )
+
+    assert sources[0]["status"] == "processed"
+    assert totals["processed"] == 1
+    assert totals["extracted_claims"] == 2
+    assert totals["non_capability_candidates"] == 1
+
+
+def test_batch_extractor_disables_tools_and_reducer_accounts_for_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unit = capability_batch.EvidenceUnit(
+        unit_id="wiki/manual.md",
+        source_id="wiki/manual.md",
+        part_index=1,
+        part_count=1,
+        content="walk() moves the robot base",
+        content_sha256="a" * 64,
+        size_bytes=27,
+    )
+    identifier = capability_batch.batch_id("walker_s2", [unit])
+    calls: list[dict] = []
+
+    async def fake_run(prompt: str, **kwargs):
+        calls.append(kwargs)
+        if kwargs["json_schema"] is capability_batch.BATCH_EXTRACTION_SCHEMA:
+            return json.dumps(
+                {
+                    "batch_id": identifier,
+                    "sources": [
+                        {
+                            "unit_id": unit.unit_id,
+                            "source_id": unit.source_id,
+                            "status": "processed",
+                            "reason": "Documented capability",
+                            "extracted_claims": 1,
+                        }
+                    ],
+                    "candidates": [
+                        {
+                            "candidate_id": "temporary",
+                            "name": "walk_forward",
+                            "semantic_key": "walk_forward",
+                            "effect": {
+                                "action": "move",
+                                "object": "robot base",
+                                "observable_result": "Robot base moves forward",
+                            },
+                            "trigger": "walk()",
+                            "interface_reference": "walk()",
+                            "body_parts": ["legs"],
+                            "environment": "level ground",
+                            "evidence": [
+                                {
+                                    "unit_id": unit.unit_id,
+                                    "source_id": unit.source_id,
+                                    "locator": "manual.md#walk",
+                                    "claim": "walk() moves the robot base",
+                                    "excerpt": "walk() moves the robot base",
+                                }
+                            ],
+                            "unknowns": [],
+                        }
+                    ],
+                    "non_capability_candidates": 0,
+                }
+            )
+        return json.dumps(
+            {
+                "reducer_id": "CR-TEST-REDUCER",
+                "decisions": [
+                    {
+                        "candidate_ids": [f"{identifier}-C0001"],
+                        "action": "create",
+                        "target_entry_id": "CAP-WALK-FORWARD",
+                        "reason": "Documented atomic capability",
+                        "after_entry": _draft_entry(),
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(capability_catalog, "run_claude_process", fake_run)
+    extraction = asyncio.run(
+        capability_catalog._extract_batch(
+            model="walker_s2",
+            identifier=identifier,
+            units=[unit],
+        )
+    )
+    reduction = asyncio.run(
+        capability_catalog._reduce_candidates(
+            model="walker_s2",
+            reducer_id="CR-TEST-REDUCER",
+            candidates=extraction["candidates"],
+            existing_entries=[],
+        )
+    )
+
+    assert reduction["decisions"][0]["action"] == "create"
+    assert all(call["tools"] == () for call in calls)
+    invalid_reduction = json.dumps(
+        {
+            "reducer_id": "CR-TEST-REDUCER",
+            "decisions": [
+                {
+                    "candidate_ids": [f"{identifier}-C0001"],
+                    "action": "delete",
+                    "target_entry_id": None,
+                    "reason": "Invalid destructive action",
+                    "after_entry": None,
+                }
+            ],
+        }
+    )
+    with pytest.raises(ValueError, match="action is invalid"):
+        capability_batch.parse_reduction(
+            invalid_reduction,
+            expected_reducer_id="CR-TEST-REDUCER",
+            candidate_ids={f"{identifier}-C0001"},
+        )
+
+
+def test_python_builds_final_coverage_and_valid_changeset(tmp_path: Path) -> None:
+    reduction = {
+        "decisions": [
+            {
+                "candidate_ids": ["CB-ONE-C0001"],
+                "action": "create",
+                "target_entry_id": "CAP-WALK-FORWARD",
+                "reason": "Documented atomic capability",
+                "after_entry": _draft_entry(),
+            }
+        ]
+    }
+    changeset = capability_catalog._build_changeset_from_reduction(
+        job_id="CAT-ABC123",
+        model="walker_s2",
+        snapshot_id="SRC-BATCH",
+        base_revision="empty",
+        source_snapshot=[
+            {
+                "source_id": "wiki/manual.md",
+                "version": None,
+                "hash_or_revision": "a" * 64,
+                "status": "processed",
+            }
+        ],
+        source_totals={"extracted_claims": 1, "non_capability_candidates": 0},
+        reduction=reduction,
+    )
+    path = tmp_path / "changeset.json"
+    path.write_text(json.dumps(changeset), encoding="utf-8")
+
+    asyncio.run(capability_catalog._validate_changeset(path))
+    assert changeset["coverage_report"]["processed_sources"] == 1
+    assert changeset["coverage_report"]["atomic_entries"] == 1
+
+
+def test_python_orders_reduction_decisions_by_candidate_id() -> None:
+    reduction = {
+        "decisions": [
+            {
+                "candidate_ids": ["CB-Z-C0001"],
+                "action": "skip",
+                "target_entry_id": None,
+                "reason": "Z candidate is not independently triggerable",
+                "after_entry": None,
+            },
+            {
+                "candidate_ids": ["CB-A-C0001"],
+                "action": "skip",
+                "target_entry_id": None,
+                "reason": "A candidate is not independently triggerable",
+                "after_entry": None,
+            },
+        ]
+    }
+
+    changeset = capability_catalog._build_changeset_from_reduction(
+        job_id="CAT-ORDERED",
+        model="fangan",
+        snapshot_id="SRC-ORDERED",
+        base_revision="empty",
+        source_snapshot=[
+            {
+                "source_id": "wiki/manual.md",
+                "version": None,
+                "hash_or_revision": "a" * 64,
+                "status": "processed",
+            }
+        ],
+        source_totals={"extracted_claims": 2, "non_capability_candidates": 0},
+        reduction=reduction,
+    )
+
+    assert [operation["reason"][0] for operation in changeset["operations"]] == [
+        "A",
+        "Z",
+    ]
+
+
+def test_full_organization_batches_every_file_without_agent_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_sources = tmp_path / "raw" / "sources" / "fangan"
+    wiki = tmp_path / "wiki"
+    raw_sources.mkdir(parents=True)
+    wiki.mkdir()
+    (raw_sources / "source.txt").write_text("source", encoding="utf-8")
+    (wiki / "a.md").write_text("A" * 180, encoding="utf-8")
+    (wiki / "b.md").write_text("B" * 180, encoding="utf-8")
+    config = SimpleNamespace(
+        base_dir=tmp_path,
+        raw_sources_dir=raw_sources,
+        wiki_dir=wiki,
+    )
+    calls: list[dict] = []
+    progress: list[tuple[str, str]] = []
+
+    async def fake_run(prompt: str, **kwargs):
+        calls.append(kwargs)
+        identifier = re.search(r"Batch ID: (CB-[A-Z0-9]+)", prompt).group(1)
+        encoded = prompt.split("<untrusted_wiki_evidence>", 1)[1].split(
+            "</untrusted_wiki_evidence>", 1
+        )[0]
+        units = json.loads(encoded)
+        return json.dumps(
+            {
+                "batch_id": identifier,
+                "sources": [
+                    {
+                        "unit_id": unit["unit_id"],
+                        "source_id": unit["source_id"],
+                        "status": "processed",
+                        "reason": "Content was examined and has no atomic capability",
+                        "extracted_claims": 0,
+                    }
+                    for unit in units
+                ],
+                "candidates": [],
+                "non_capability_candidates": 0,
+            }
+        )
+
+    async def capture_progress(stage: str, message: str) -> None:
+        progress.append((stage, message))
+
+    monkeypatch.setattr(capability_catalog, "get_team_config", lambda _model: config)
+    monkeypatch.setattr(capability_catalog, "run_claude_process", fake_run)
+    monkeypatch.setattr(capability_catalog, "CAPABILITY_CATALOG_BATCH_BYTES", 500)
+    monkeypatch.setattr(capability_catalog, "CAPABILITY_CATALOG_UNIT_BYTES", 400)
+
+    result = asyncio.run(
+        capability_catalog.organize_capability_catalog(
+            job_id="CAT-BATCHED",
+            model_id="fangan",
+            snapshot_id="SRC-BATCHED",
+            scan_mode="full",
+            on_progress=capture_progress,
+        )
+    )
+
+    assert result["coverage_report"]["total_sources"] == 2
+    assert result["coverage_report"]["processed_sources"] == 2
+    assert result["batch_metrics"]["batch_count"] == 2
+    assert len(calls) == 2
+    assert all(call["tools"] == () for call in calls)
+    assert sum(stage == "batch_extracting" for stage, _message in progress) == 2
 
 
 def test_generated_changeset_passes_the_bundled_hard_gate(tmp_path: Path) -> None:

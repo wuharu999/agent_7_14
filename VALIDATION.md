@@ -36,6 +36,10 @@ On the deployed pair, verify in this order:
 8. Add or modify a generated Wiki page and confirm **Organize changes** uses an
    incremental scan. Then use **Full Wiki rescan** and confirm all generated Wiki
    evidence is inventoried while `wiki/capabilities/` and raw images are excluded.
+   Confirm the progress advances through deterministic extraction batches and
+   reduction, every eligible evidence file has a final status, and Claude is
+   invoked with no tools. Interrupt a test run after one batch, rerun it, and
+   confirm completed batches are restored from content-hashed checkpoints.
 9. Confirm validated drafts appear in both the UI and
    `wiki/capabilities/<model>/`, the source change list resets only after complete
    coverage, and a backup is retained for an existing catalog. A partial run must

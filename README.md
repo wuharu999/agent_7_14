@@ -138,6 +138,16 @@ The persistent Worker WebSocket sends its shared secret in the
 the credential. ECS temporarily accepts the older query parameter to support a
 rolling Worker upgrade.
 
+Capability organization is a deterministic batched map/reduce pipeline. Python
+enumerates and reads every eligible generated Wiki text file, splits oversized
+files into UTF-8-safe evidence units, and creates stable content-hashed batches.
+Claude runs without tools for each batch, so it cannot choose or silently skip
+files. Successful batch results are checkpointed under
+`.agent1-worker/capability-batch-cache/`; interrupted reruns reuse checkpoints.
+A final no-tools reduction merges and deduplicates candidates, after which Python
+constructs the coverage report and runs the existing hard-gate validator before
+atomic publication.
+
 ## Included
 
 - Public question page and WeCom callback.
@@ -251,6 +261,21 @@ one bounded analysis worker and eight queued analyses:
 ```env
 CAPABILITY_MATCH_WORKERS=1
 CAPABILITY_MATCH_QUEUE_MAX=8
+```
+
+Deterministic capability extraction uses these bounded defaults. The ECS command
+timeout is the end-to-end guardrail; the Worker uses separate per-batch and
+reduction limits:
+
+```env
+# ECS
+CAPABILITY_CATALOG_TIMEOUT=7260
+
+# Worker
+CAPABILITY_CATALOG_BATCH_BYTES=98304
+CAPABILITY_CATALOG_UNIT_BYTES=65536
+CAPABILITY_CATALOG_BATCH_TIMEOUT=300
+CAPABILITY_CATALOG_REDUCE_TIMEOUT=1200
 ```
 
 After both restarts, confirm `worker_online: true`, run one small demand-mode
