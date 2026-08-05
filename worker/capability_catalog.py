@@ -301,13 +301,23 @@ def _effective_scan_mode(requested: str, organization_manifest: dict[str, Any]) 
     return "incremental"
 
 
+def _resolve_raw_sources_dir(team_config: TeamConfig) -> Path:
+    if team_config.raw_sources_dir.is_dir():
+        return team_config.raw_sources_dir
+    parent = team_config.raw_sources_dir.parent
+    if parent.is_dir():
+        return parent
+    return team_config.raw_sources_dir
+
+
 def inspect_capability_source_changes(model_id: str) -> dict[str, Any]:
     model = normalize_team_name(model_id, allow_reserved=False)
     team_config = get_team_config(model)
+    raw_sources_dir = _resolve_raw_sources_dir(team_config)
     target = team_config.wiki_dir / "capabilities" / model
     organization_manifest = _load_organization_manifest(target)
     previous = organization_manifest.get("raw_files", {})
-    current = _collect_source_manifest(team_config.raw_sources_dir)
+    current = _collect_source_manifest(raw_sources_dir)
     changes = _source_changes(previous, current)
     previous_wiki = organization_manifest.get("wiki_files", {})
     current_wiki = _collect_wiki_manifest(team_config.wiki_dir)
@@ -859,13 +869,14 @@ async def organize_capability_catalog(
 ) -> dict[str, Any]:
     model = normalize_team_name(model_id, allow_reserved=False)
     team_config = get_team_config(model)
-    if not team_config.raw_sources_dir.is_dir():
-        raise ValueError(f"No source directory exists for robot model {model}")
+    raw_sources_dir = _resolve_raw_sources_dir(team_config)
+    if not raw_sources_dir.is_dir():
+        raise ValueError(f"No source directory exists for {model}")
     source_manifest = await asyncio.to_thread(
-        _collect_source_manifest, team_config.raw_sources_dir
+        _collect_source_manifest, raw_sources_dir
     )
     if not source_manifest:
-        raise ValueError(f"No source files exist for robot model {model}")
+        raise ValueError(f"No source files exist for {model}")
 
     target = team_config.wiki_dir / "capabilities" / model
     wiki_manifest = await asyncio.to_thread(_collect_wiki_manifest, team_config.wiki_dir)
