@@ -12,6 +12,7 @@ import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +44,7 @@ from worker.config import (
 
 log = logging.getLogger("worker.capability_catalog")
 
-ProgressCallback = Callable[[str, str], Awaitable[None]]
+ProgressCallback = Callable[[str, str, dict[str, Any] | None], Awaitable[None]]
 _CAPABILITY_ID = re.compile(r"^CAP-[A-Z0-9-]+$")
 _WRITE_ACTIONS = {"create", "update", "implementation-instance"}
 _FORBIDDEN_ACTIONS = {"deprecate", "delete-proposal"}
@@ -51,6 +52,7 @@ _SKILL_ROOT = PROJECT_ROOT / "maintain-model-atomic-capability-wiki"
 _WIKI_EVIDENCE_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml", ".csv"}
 
 
+@lru_cache(maxsize=1)
 def _read_skill_bundle() -> str:
     paths = (
         _SKILL_ROOT / "SKILL.md",
@@ -578,10 +580,17 @@ async def _extract_batch(
         "Python will replace them deterministically.\n\n"
         f"<untrusted_wiki_evidence>{batch_prompt_payload(units)}</untrusted_wiki_evidence>"
     )
+    extraction_system_prompt = (
+        _BATCH_SYSTEM_PROMPT
+        + "\n\nApply the complete bundled atomic-capability skill contract below to this "
+        "batch. The deterministic Python wrapper, not the skill text, controls file access, "
+        "batching, checkpointing, and publication.\n"
+        + _read_skill_bundle()
+    )
     raw = await run_claude_process(
         prompt,
         team=model,
-        system_prompt=_BATCH_SYSTEM_PROMPT,
+        system_prompt=extraction_system_prompt,
         tools=(),
         timeout=CAPABILITY_CATALOG_BATCH_TIMEOUT,
         json_schema=BATCH_EXTRACTION_SCHEMA,
@@ -598,7 +607,7 @@ async def _extract_batch(
             prompt
             + "\n\nReturn only the complete JSON object with no Markdown fence or explanation.",
             team=model,
-            system_prompt=_BATCH_SYSTEM_PROMPT,
+            system_prompt=extraction_system_prompt,
             tools=(),
             timeout=CAPABILITY_CATALOG_BATCH_TIMEOUT,
             json_schema=None,
@@ -769,12 +778,76 @@ def _build_changeset_from_reduction(
     }
 
 
+def _evidence_diagnostics(reports: list[dict[str, Any]]) -> dict[str, Any]:
+    blocked_by_source: dict[str, set[str]] = {}
+    excluded_reasons: Counter[str] = Counter()
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+        status = str(report.get("status") or "")
+        source_id = str(report.get("source_id") or "unknown")
+        reason = str(report.get("reason") or "No reason supplied").strip()[:500]
+        if status == "blocked":
+            blocked_by_source.setdefault(source_id, set()).add(reason)
+        elif status == "excluded":
+            excluded_reasons[reason] += 1
+    return {
+        "blocked_sources": [
+            {
+                "source_id": source_id,
+                "reason": "; ".join(sorted(reasons)),
+            }
+            for source_id, reasons in sorted(blocked_by_source.items())
+        ],
+        "excluded_reasons": [
+            {"reason": reason, "count": count}
+            for reason, count in sorted(
+                excluded_reasons.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ],
+    }
+
+
+def _batch_progress_snapshot(
+    *,
+    results: list[dict[str, Any]],
+    batch_count: int,
+    cached_batches: int,
+    completed_units: int,
+    total_units: int,
+    checkpoint_mode: str,
+) -> dict[str, Any]:
+    reports = [
+        report
+        for result in results
+        for report in result.get("sources", [])
+        if isinstance(report, dict)
+    ]
+    status_counts = Counter(str(report.get("status") or "unknown") for report in reports)
+    diagnostics = _evidence_diagnostics(reports)
+    return {
+        "completed_batches": len(results),
+        "batch_count": batch_count,
+        "cached_batches": cached_batches,
+        "candidate_count": sum(
+            len(result.get("candidates") or []) for result in results
+        ),
+        "completed_units": completed_units,
+        "total_units": total_units,
+        "status_counts": dict(sorted(status_counts.items())),
+        "checkpoint_mode": checkpoint_mode,
+        **diagnostics,
+    }
+
+
 async def organize_capability_catalog(
     *,
     job_id: str,
     model_id: str,
     snapshot_id: str,
     scan_mode: str = "incremental",
+    reuse_checkpoints: bool = True,
     on_progress: ProgressCallback,
 ) -> dict[str, Any]:
     model = normalize_team_name(model_id, allow_reserved=False)
@@ -848,6 +921,7 @@ async def organize_capability_catalog(
             if effective_scan_mode == "full"
             else f"Python is reading {len(evidence_paths)} changed Wiki files ({wiki_change_count} total Wiki changes)."
         ),
+        None,
     )
     units = await asyncio.to_thread(
         load_evidence_units,
@@ -863,22 +937,34 @@ async def organize_capability_catalog(
     cached_batches = 0
     completed_units = 0
     total_units = len(units)
+    checkpoint_mode = "resume" if reuse_checkpoints else "fresh"
     for batch_index, batch in enumerate(batches, start=1):
         identifier = batch_id(model, batch)
+        progress_details = _batch_progress_snapshot(
+            results=results,
+            batch_count=len(batches),
+            cached_batches=cached_batches,
+            completed_units=completed_units,
+            total_units=total_units,
+            checkpoint_mode=checkpoint_mode,
+        )
         await on_progress(
             "batch_extracting",
             (
                 f"Analyzing deterministic batch {batch_index}/{len(batches)} "
                 f"({completed_units}/{total_units} evidence units complete)."
             ),
+            progress_details,
         )
-        result = await asyncio.to_thread(
-            load_checkpoint,
-            team_config.base_dir,
-            model,
-            identifier,
-            batch,
-        )
+        result = None
+        if reuse_checkpoints:
+            result = await asyncio.to_thread(
+                load_checkpoint,
+                team_config.base_dir,
+                model,
+                identifier,
+                batch,
+            )
         if result is None:
             result = await _extract_batch(
                 model=model,
@@ -896,6 +982,25 @@ async def organize_capability_catalog(
             cached_batches += 1
         results.append(result)
         completed_units += len(batch)
+        progress_details = _batch_progress_snapshot(
+            results=results,
+            batch_count=len(batches),
+            cached_batches=cached_batches,
+            completed_units=completed_units,
+            total_units=total_units,
+            checkpoint_mode=checkpoint_mode,
+        )
+        status_counts = progress_details["status_counts"]
+        await on_progress(
+            "batch_extracting",
+            (
+                f"Completed deterministic batch {batch_index}/{len(batches)}: "
+                f"{progress_details['candidate_count']} candidates, "
+                f"{status_counts.get('blocked', 0)} blocked and "
+                f"{status_counts.get('excluded', 0)} excluded evidence units."
+            ),
+            progress_details,
+        )
 
     source_snapshot, source_totals = aggregate_source_reports(
         evidence_paths,
@@ -918,6 +1023,15 @@ async def organize_capability_catalog(
         for candidate in result.get("candidates", [])
         if isinstance(candidate, dict)
     ]
+    evidence_diagnostics = _evidence_diagnostics(source_snapshot)
+    final_progress = _batch_progress_snapshot(
+        results=results,
+        batch_count=len(batches),
+        cached_batches=cached_batches,
+        completed_units=completed_units,
+        total_units=total_units,
+        checkpoint_mode=checkpoint_mode,
+    )
     reduction: dict[str, Any] | None = None
     if candidates:
         reducer_digest = hashlib.sha256(
@@ -929,6 +1043,7 @@ async def organize_capability_catalog(
                 f"Merging and deduplicating {len(candidates)} extracted candidates "
                 f"from {len(batches)} batches."
             ),
+            final_progress,
         )
         reduction = await _reduce_candidates(
             model=model,
@@ -953,8 +1068,13 @@ async def organize_capability_catalog(
         "candidate_count": len(candidates),
         "batch_bytes": CAPABILITY_CATALOG_BATCH_BYTES,
         "unit_bytes": CAPABILITY_CATALOG_UNIT_BYTES,
+        "checkpoint_mode": checkpoint_mode,
     }
-    await on_progress("validating", "Validating the capability changeset and every draft entry.")
+    await on_progress(
+        "validating",
+        "Validating the capability changeset and every draft entry.",
+        final_progress,
+    )
     validation_dir = team_config.base_dir / ".agent1-worker" / "capability-catalog-validation"
     await asyncio.to_thread(validation_dir.mkdir, parents=True, exist_ok=True)
     validation_path = validation_dir / f"{job_id}-{uuid.uuid4().hex[:8]}.json"
@@ -967,7 +1087,11 @@ async def organize_capability_catalog(
         await _validate_changeset(validation_path)
     finally:
         validation_path.unlink(missing_ok=True)
-    await on_progress("publishing_drafts", "Publishing validated draft entries atomically with a backup.")
+    await on_progress(
+        "publishing_drafts",
+        "Publishing validated draft entries atomically with a backup.",
+        final_progress,
+    )
     published = await asyncio.to_thread(
         _publish_drafts,
         changeset,
@@ -996,4 +1120,5 @@ async def organize_capability_catalog(
     ]
     published["catalog_entries"] = post_publish["catalog_entries"]
     published["batch_metrics"] = batch_metrics
+    published["evidence_diagnostics"] = evidence_diagnostics
     return published

@@ -113,7 +113,7 @@ async def test_claude_runner_hides_internal_chunking_errors(monkeypatch):
 
     assert answer == (
         "[错误] 助手暂时无法响应，请稍后再试。\n\n"
-        "提示：本回复由 AI 生成，可能存在错误，请以实际资料为准。"
+        + claude_runner.AI_NOTICE_RESPONSES["zh-CN"]
     )
 
 
@@ -135,7 +135,7 @@ async def test_nonstream_answer_corrects_known_product_translation(monkeypatch):
 
     assert answer == (
         "平台名称是Thinkerstudio遥操数采平台。\n\n"
-        "提示：本回复由 AI 生成，可能存在错误，请以实际资料为准。"
+        + claude_runner.AI_NOTICE_RESPONSES["zh-CN"]
     )
 
 
@@ -171,7 +171,7 @@ async def test_streaming_hides_internal_chunking_errors(monkeypatch):
 
     assert answer == (
         "[错误] 助手暂时无法响应，请稍后再试。\n\n"
-        "提示：本回复由 AI 生成，可能存在错误，请以实际资料为准。"
+        + claude_runner.AI_NOTICE_RESPONSES["zh-CN"]
     )
     assert received == [(answer, "", 0)]
 

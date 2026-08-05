@@ -126,8 +126,9 @@ gaps, create idempotent evidence-acquisition stubs, inspect added/modified/delet
 source paths since the last successful organization, and start the atomic
 capability organizer. Organization runs are persisted in SQLite so every admin
 sees the same progress after a refresh. The first run automatically scans all
-generated Wiki evidence; later runs are incremental, with an explicit full-Wiki
-rescan button for periodic review. The organizer excludes its own generated
+generated Wiki evidence; later runs are incremental. **Resume full scan** reuses
+matching content checkpoints, while **Force full re-extraction** ignores them and
+calls the LLM for every batch. The organizer excludes its own generated
 `wiki/capabilities/` tree and does not send raw images directly through the
 text-only Claude evidence pass. Incomplete coverage is reported as partial and
 does not advance the successful baseline. Claude has read-only source access; only
@@ -141,12 +142,16 @@ rolling Worker upgrade.
 Capability organization is a deterministic batched map/reduce pipeline. Python
 enumerates and reads every eligible generated Wiki text file, splits oversized
 files into UTF-8-safe evidence units, and creates stable content-hashed batches.
-Claude runs without tools for each batch, so it cannot choose or silently skip
-files. Successful batch results are checkpointed under
+Claude runs without tools for each batch and receives the complete bundled
+`maintain-model-atomic-capability-wiki` skill contract, so it cannot choose or
+silently skip files and applies the same atomicity/evidence rules during extraction
+and reduction. Successful batch results are checkpointed under
 `.agent1-worker/capability-batch-cache/`; interrupted reruns reuse checkpoints.
 A final no-tools reduction merges and deduplicates candidates, after which Python
 constructs the coverage report and runs the existing hard-gate validator before
-atomic publication.
+atomic publication. Shared progress includes cumulative candidate, blocked, and
+excluded counts; completed results include blocked filenames and grouped exclusion
+reasons.
 
 ## Included
 

@@ -605,7 +605,11 @@ class WorkerManager:
             job_id = str(data.get("job_id") or "")
             model_id = str(data.get("model_id") or "")
 
-            async def progress(stage: str, message: str) -> None:
+            async def progress(
+                stage: str,
+                message: str,
+                details: dict[str, Any] | None = None,
+            ) -> None:
                 await self.emit(
                     {
                         "type": "capability_catalog_progress",
@@ -615,6 +619,7 @@ class WorkerManager:
                         "status": "processing",
                         "stage": stage,
                         "message": message,
+                        "details": details or {},
                     }
                 )
 
@@ -644,6 +649,7 @@ class WorkerManager:
                     model_id=model_id,
                     snapshot_id=str(data.get("snapshot_id") or ""),
                     scan_mode=str(data.get("scan_mode") or "incremental"),
+                    reuse_checkpoints=data.get("reuse_checkpoints") is not False,
                     on_progress=progress,
                 )
                 await self.emit(

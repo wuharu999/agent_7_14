@@ -10,7 +10,7 @@ from typing import Any
 
 log = logging.getLogger("worker.capability_batch")
 
-PIPELINE_VERSION = "capability-batch-v1"
+PIPELINE_VERSION = "capability-batch-v2-full-skill"
 
 
 @dataclass(frozen=True)

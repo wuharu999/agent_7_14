@@ -34,12 +34,17 @@ On the deployed pair, verify in this order:
 7. Start organization with no prior organization manifest. Confirm it reports a
    full Wiki scan, and a second admin session plus a refreshed page see the same state.
 8. Add or modify a generated Wiki page and confirm **Organize changes** uses an
-   incremental scan. Then use **Full Wiki rescan** and confirm all generated Wiki
-   evidence is inventoried while `wiki/capabilities/` and raw images are excluded.
+   incremental scan. Then use **Resume full scan** and confirm matching checkpoints
+   are restored. Use **Force full re-extraction** and confirm all generated Wiki
+   evidence is inventoried without checkpoint reads while `wiki/capabilities/` and
+   raw images are excluded.
    Confirm the progress advances through deterministic extraction batches and
    reduction, every eligible evidence file has a final status, and Claude is
    invoked with no tools. Interrupt a test run after one batch, rerun it, and
    confirm completed batches are restored from content-hashed checkpoints.
+   Confirm every extraction call contains the complete atomic-capability skill
+   contract, and the shared UI displays cumulative candidates, blocked files, and
+   grouped exclusion reasons.
    Confirm deployed timeout floors are 1800 seconds per extraction batch, 3600
    seconds for reduction, and 86400 seconds for the complete ECS command.
 9. Confirm validated drafts appear in both the UI and

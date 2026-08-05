@@ -61,7 +61,7 @@ class CreateDraftStubRequest(BaseModel):
 
 class OrganizeCapabilitiesRequest(BaseModel):
     model_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
-    scan_mode: Literal["incremental", "full"] = "incremental"
+    scan_mode: Literal["incremental", "full", "full_fresh"] = "incremental"
 
 
 class _AnalysisRateLimiter:
@@ -246,13 +246,19 @@ async def _run_capability_catalog_job(
     snapshot_id: str,
     scan_mode: str,
 ) -> None:
+    force_reextract = scan_mode == "full_fresh"
+    worker_scan_mode = "full" if force_reextract else scan_mode
     try:
         await asyncio.to_thread(
             update_capability_catalog_job,
             job_id,
             status="processing",
             stage="dispatching",
-            message="Sending the source snapshot to the Worker.",
+            message=(
+                "Sending a forced full re-extraction to the Worker without checkpoints."
+                if force_reextract
+                else "Sending the source snapshot to the Worker with checkpoint resume enabled."
+            ),
         )
         worker_result = await gateway.command(
             "organize_capability_catalog",
@@ -260,7 +266,8 @@ async def _run_capability_catalog_job(
             job_id=job_id,
             model_id=model_id,
             snapshot_id=snapshot_id,
-            scan_mode=scan_mode,
+            scan_mode=worker_scan_mode,
+            reuse_checkpoints=not force_reextract,
         )
         result = worker_result.get("result")
         if worker_result.get("status") != "ok" or not isinstance(result, dict):

@@ -12,6 +12,11 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.cache/
+.ipynb_checkpoints/
 .coverage
 .coverage.*
 htmlcov/
@@ -19,6 +24,8 @@ build/
 dist/
 *.egg-info/
 .DS_Store
+._*
+Thumbs.db
 
 # Local configuration and credentials
 .env
@@ -30,13 +37,28 @@ ecs-data/
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+*~
 
 # Editor and IDE runtime state
 .vscode/
 .idea/
+*.code-workspace
 .agents/
 .codex/
 .agent1-deploy-backups/
+.agent1-release.*/
 
 # Live knowledge-base and Worker runtime data
 agent1/agent/.llm-wiki/

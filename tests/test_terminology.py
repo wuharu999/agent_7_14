@@ -27,6 +27,12 @@ def test_system_prompt_rejects_political_and_unrelated_questions() -> None:
     assert "AI notice at the end" not in claude_runner.SYSTEM_PROMPT
 
 
+def test_simplified_chinese_ai_notice_uses_required_product_wording() -> None:
+    assert claude_runner.AI_NOTICE_RESPONSES["zh-CN"] == (
+        "本应用为AI答疑, 请自行辨别内容准确性后参考使用"
+    )
+
+
 @pytest.mark.anyio
 async def test_streaming_corrects_translated_name_across_chunks(monkeypatch) -> None:
     async def mock_guard(question: str) -> GuardDecision:

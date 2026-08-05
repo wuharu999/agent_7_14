@@ -566,3 +566,92 @@ def test_admin_catalog_start_and_source_change_snapshot_are_shared(
     job_response = asyncio.run(capability_catalog_job(body["job"]["job_id"], request))
     assert json.loads(job_response.body)["job"]["model_id"] == model_id
     assert database.list_audit_log(limit=1)[0]["action"] == "organize_atomic_capabilities"
+
+
+def test_admin_can_force_full_reextraction_without_checkpoint_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_id = database.get_robot_options()[0]["name"]
+    request, csrf = _admin_request()
+    gateway.websocket = object()
+    started: list[tuple[str, str, str, str]] = []
+    monkeypatch.setattr(
+        capability_match_routes,
+        "_start_capability_catalog_job",
+        lambda job_id, selected_model, snapshot_id, scan_mode: started.append(
+            (job_id, selected_model, snapshot_id, scan_mode)
+        ),
+    )
+
+    response = asyncio.run(
+        start_capability_catalog_organization(
+            OrganizeCapabilitiesRequest(
+                model_id=model_id,
+                scan_mode="full_fresh",
+            ),
+            request,
+            x_csrf_token=csrf,
+        )
+    )
+    body = json.loads(response.body)
+
+    assert response.status_code == 202
+    assert body["job"]["scan_mode"] == "full_fresh"
+    assert started == [
+        (
+            body["job"]["job_id"],
+            model_id,
+            body["job"]["snapshot_id"],
+            "full_fresh",
+        )
+    ]
+
+
+def test_forced_catalog_job_sends_full_scope_and_disables_checkpoints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_id = database.get_robot_options()[0]["name"]
+    user_id = database.create_user_record(
+        username="force_catalog_admin",
+        email="force_catalog_admin@example.com",
+        password_hash="hash",
+        password_salt="salt",
+        role="admin",
+        teams="",
+    )
+    database.create_capability_catalog_job(
+        job_id="CAT-FORCE-FRESH",
+        created_by=user_id,
+        model_id=model_id,
+        snapshot_id="SRC-FORCE-FRESH",
+        scan_mode="full_fresh",
+    )
+    sent: list[tuple[str, dict]] = []
+
+    async def fake_command(message_type: str, **payload):
+        sent.append((message_type, payload))
+        return {
+            "status": "ok",
+            "result": {
+                "completion_status": "completed",
+                "changes": {},
+                "current_source_files": 0,
+                "last_organized_manifest_files": 0,
+            },
+        }
+
+    monkeypatch.setattr(gateway, "command", fake_command)
+
+    asyncio.run(
+        capability_match_routes._run_capability_catalog_job(
+            "CAT-FORCE-FRESH",
+            model_id,
+            "SRC-FORCE-FRESH",
+            "full_fresh",
+        )
+    )
+
+    assert sent[0][0] == "organize_capability_catalog"
+    assert sent[0][1]["scan_mode"] == "full"
+    assert sent[0][1]["reuse_checkpoints"] is False
+    assert database.get_capability_catalog_job("CAT-FORCE-FRESH")["status"] == "completed"

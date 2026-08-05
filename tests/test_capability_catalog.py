@@ -182,6 +182,7 @@ def test_worker_websocket_url_never_contains_shared_secret(
 def test_evidence_units_and_batches_are_deterministic_and_byte_bounded(
     tmp_path: Path,
 ) -> None:
+    assert capability_batch.PIPELINE_VERSION == "capability-batch-v2-full-skill"
     wiki = tmp_path / "wiki"
     wiki.mkdir()
     (wiki / "a.md").write_text("机器人向前移动。" * 20, encoding="utf-8")
@@ -276,6 +277,23 @@ def test_batch_parser_requires_every_unit_and_checkpoint_round_trip(
 
     assert restored is not None
     assert restored["candidates"][0]["candidate_id"] == f"{identifier}-C0001"
+    checkpoint = capability_batch.checkpoint_path(
+        tmp_path,
+        "walker_s2",
+        identifier,
+    )
+    stale = json.loads(checkpoint.read_text(encoding="utf-8"))
+    stale["pipeline_version"] = "capability-batch-v1"
+    checkpoint.write_text(json.dumps(stale), encoding="utf-8")
+    assert (
+        capability_batch.load_checkpoint(
+            tmp_path,
+            "walker_s2",
+            identifier,
+            [unit],
+        )
+        is None
+    )
     with pytest.raises(ValueError, match="every evidence unit"):
         capability_batch.parse_batch_extraction(
             json.dumps({**payload, "sources": []}),
@@ -342,6 +360,35 @@ def test_aggregate_reports_accounts_for_every_file_and_split_unit() -> None:
     assert totals["processed"] == 1
     assert totals["extracted_claims"] == 2
     assert totals["non_capability_candidates"] == 1
+
+
+def test_evidence_diagnostics_groups_reasons_and_keeps_blocked_files() -> None:
+    diagnostics = capability_catalog._evidence_diagnostics(
+        [
+            {
+                "source_id": "wiki/a.md",
+                "status": "blocked",
+                "reason": "Unreadable section",
+            },
+            {
+                "source_id": "wiki/b.md",
+                "status": "excluded",
+                "reason": "No target-model relationship",
+            },
+            {
+                "source_id": "wiki/c.md",
+                "status": "excluded",
+                "reason": "No target-model relationship",
+            },
+        ]
+    )
+
+    assert diagnostics["blocked_sources"] == [
+        {"source_id": "wiki/a.md", "reason": "Unreadable section"}
+    ]
+    assert diagnostics["excluded_reasons"] == [
+        {"reason": "No target-model relationship", "count": 2}
+    ]
 
 
 def test_batch_extractor_disables_tools_and_reducer_accounts_for_candidates(
@@ -582,13 +629,24 @@ def test_full_organization_batches_every_file_without_agent_tools(
             }
         )
 
-    async def capture_progress(stage: str, message: str) -> None:
+    async def capture_progress(
+        stage: str,
+        message: str,
+        details: dict | None,
+    ) -> None:
         progress.append((stage, message))
 
     monkeypatch.setattr(capability_catalog, "get_team_config", lambda _model: config)
     monkeypatch.setattr(capability_catalog, "run_claude_process", fake_run)
     monkeypatch.setattr(capability_catalog, "CAPABILITY_CATALOG_BATCH_BYTES", 500)
     monkeypatch.setattr(capability_catalog, "CAPABILITY_CATALOG_UNIT_BYTES", 400)
+    monkeypatch.setattr(
+        capability_catalog,
+        "load_checkpoint",
+        lambda *_args, **_kwargs: pytest.fail(
+            "Forced re-extraction must not read checkpoints"
+        ),
+    )
 
     result = asyncio.run(
         capability_catalog.organize_capability_catalog(
@@ -596,6 +654,7 @@ def test_full_organization_batches_every_file_without_agent_tools(
             model_id="fangan",
             snapshot_id="SRC-BATCHED",
             scan_mode="full",
+            reuse_checkpoints=False,
             on_progress=capture_progress,
         )
     )
@@ -603,9 +662,17 @@ def test_full_organization_batches_every_file_without_agent_tools(
     assert result["coverage_report"]["total_sources"] == 2
     assert result["coverage_report"]["processed_sources"] == 2
     assert result["batch_metrics"]["batch_count"] == 2
+    assert result["batch_metrics"]["checkpoint_mode"] == "fresh"
+    assert result["evidence_diagnostics"] == {
+        "blocked_sources": [],
+        "excluded_reasons": [],
+    }
     assert len(calls) == 2
     assert all(call["tools"] == () for call in calls)
-    assert sum(stage == "batch_extracting" for stage, _message in progress) == 2
+    assert all(
+        "Atomic capability contract" in call["system_prompt"] for call in calls
+    )
+    assert sum(stage == "batch_extracting" for stage, _message in progress) == 4
 
 
 def test_generated_changeset_passes_the_bundled_hard_gate(tmp_path: Path) -> None:
@@ -751,6 +818,13 @@ def test_catalog_jobs_and_source_changes_are_persisted_globally(
         status="processing",
         stage="inventorying",
         message="Reading files",
+        result={
+            "progress_snapshot": {
+                "completed_batches": 3,
+                "batch_count": 10,
+                "candidate_count": 7,
+            }
+        },
     )
     database.upsert_capability_catalog_source_state(
         model_id="walker_s2",
@@ -766,6 +840,11 @@ def test_catalog_jobs_and_source_changes_are_persisted_globally(
     assert restarted["status"] == "failed"
     assert restarted["stage"] == "interrupted"
     assert restarted["scan_mode"] == "full"
+    assert restarted["result"]["progress_snapshot"] == {
+        "completed_batches": 3,
+        "batch_count": 10,
+        "candidate_count": 7,
+    }
     state = database.get_capability_catalog_source_state("walker_s2")
     assert state is not None
     assert state["changes"]["added"] == ["upload/manual.md"]
@@ -783,8 +862,13 @@ def test_admin_page_has_shared_progress_change_window_and_chinese_translation() 
     assert "Raw file changes since the last successful organization" in page
     assert "自上次成功整理以来的原始文件变更" in page
     assert "整理新增变更" in page
-    assert "Full Wiki rescan" in page
-    assert "全量重新扫描 Wiki" in page
+    assert "Resume full scan" in page
+    assert "恢复全量扫描" in page
+    assert "Force full re-extraction" in page
+    assert "强制全量重新提取" in page
+    assert "progress_snapshot" in page
+    assert "Blocked evidence files" in page
+    assert "被阻塞的证据文件" in page
     assert "Organized atomic capabilities" in page
     assert "已整理的原子能力" in page
     assert "localStorage.getItem('catalog" not in page

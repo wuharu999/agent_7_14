@@ -1840,7 +1840,7 @@ def create_capability_catalog_job(
     snapshot_id: str,
     scan_mode: str = "incremental",
 ) -> dict[str, Any]:
-    if scan_mode not in {"incremental", "full"}:
+    if scan_mode not in {"incremental", "full", "full_fresh"}:
         raise ValueError("Invalid capability catalog scan mode")
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
