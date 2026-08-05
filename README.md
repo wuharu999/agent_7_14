@@ -269,14 +269,19 @@ reduction limits:
 
 ```env
 # ECS
-CAPABILITY_CATALOG_TIMEOUT=7260
+CAPABILITY_CATALOG_TIMEOUT=86400
 
 # Worker
 CAPABILITY_CATALOG_BATCH_BYTES=98304
 CAPABILITY_CATALOG_UNIT_BYTES=65536
-CAPABILITY_CATALOG_BATCH_TIMEOUT=300
-CAPABILITY_CATALOG_REDUCE_TIMEOUT=1200
+CAPABILITY_CATALOG_BATCH_TIMEOUT=1800
+CAPABILITY_CATALOG_REDUCE_TIMEOUT=3600
 ```
+
+These are enforced minimums during rolling upgrades: 30 minutes for each
+extraction batch, 60 minutes for the final reduction, and 24 hours for the
+complete ECS-to-Worker job. A retry restores completed content-hashed batches,
+so only the unfinished batch must run again after a Claude timeout.
 
 After both restarts, confirm `worker_online: true`, run one small demand-mode
 scenario for a specific model, verify Markdown and PDF exports, and create one

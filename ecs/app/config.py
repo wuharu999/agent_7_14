@@ -23,8 +23,8 @@ AUTHORING_COMMAND_TIMEOUT = int(
 )
 CAPABILITY_CATALOG_TIMEOUT = max(
     WORKER_TIMEOUT + 30,
-    7260,
-    int(os.environ.get("CAPABILITY_CATALOG_TIMEOUT", "7260")),
+    86400,
+    int(os.environ.get("CAPABILITY_CATALOG_TIMEOUT", "86400")),
 )
 TEAM_MAX_UPLOAD_BYTES = int(os.environ.get("TEAM_MAX_UPLOAD_BYTES", str(20 * 1024**3)))
 

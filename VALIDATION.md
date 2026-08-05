@@ -40,6 +40,8 @@ On the deployed pair, verify in this order:
    reduction, every eligible evidence file has a final status, and Claude is
    invoked with no tools. Interrupt a test run after one batch, rerun it, and
    confirm completed batches are restored from content-hashed checkpoints.
+   Confirm deployed timeout floors are 1800 seconds per extraction batch, 3600
+   seconds for reduction, and 86400 seconds for the complete ECS command.
 9. Confirm validated drafts appear in both the UI and
    `wiki/capabilities/<model>/`, the source change list resets only after complete
    coverage, and a backup is retained for an existing catalog. A partial run must

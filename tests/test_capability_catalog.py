@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from ecs.app import config as ecs_config
 from ecs.app import database
 from worker import capability_batch
 from worker import capability_catalog
@@ -155,6 +156,12 @@ def test_first_run_is_full_then_normal_runs_are_incremental() -> None:
     baseline = {"wiki_files": {"sources/manual.md": {}}}
     assert capability_catalog._effective_scan_mode("incremental", baseline) == "incremental"
     assert capability_catalog._effective_scan_mode("full", baseline) == "full"
+
+
+def test_capability_organization_enforces_long_running_timeout_floors() -> None:
+    assert worker_config.CAPABILITY_CATALOG_BATCH_TIMEOUT >= 1800
+    assert worker_config.CAPABILITY_CATALOG_REDUCE_TIMEOUT >= 3600
+    assert ecs_config.CAPABILITY_CATALOG_TIMEOUT >= 86400
 
 
 def test_worker_websocket_url_never_contains_shared_secret(
