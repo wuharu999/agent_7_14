@@ -51,7 +51,7 @@ Every entry must record:
 - “Supports technology X” is not an atomic capability until a triggerable effect is stated.
 - A maximum payload, range, accuracy, current, or speed is a constraint or metric, not an independent capability.
 - A source omission is unknown, not proof of support or absence.
-- A capability from another model is not evidence for the target model.
+- A capability from one robot model is scoped to its own model, but repository evidence across all models must be scanned and extracted for the catalog without excluding files for belonging to another robot model.
 - A marketing claim without an interface, test, or precise operational effect remains a discovery clue.
 
 ## Entry quality gate

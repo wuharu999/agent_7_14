@@ -36,10 +36,7 @@
 
   <section class="composer" aria-label="Scenario analyzer">
     <div class="composer-grid">
-      <div class="field">
-        <label for="model" data-i18n="robotModel">Robot model</label>
-        <select id="model"></select>
-      </div>
+
       <div class="field">
         <label for="ui-language" data-i18n="language">Language</label>
         <select id="ui-language" aria-label="Interface and report language">
@@ -87,7 +84,7 @@
 const robots=__ROBOTS__;
 let assessmentId=__ASSESSMENT_ID__;
 let currentAssessment=null;
-const model=document.getElementById('model');
+const model=document.getElementById('model')||{value:'fangan'};
 const uiLanguage=document.getElementById('ui-language');
 const scenarioInput=document.getElementById('scenario');
 const analyzeButton=document.getElementById('analyze');
@@ -111,7 +108,7 @@ function el(tag,className,text){const node=document.createElement(tag);if(classN
 function displayValue(value){if(value===null||value===undefined||value==='')return tr('unknown');if(typeof value==='string')return value;try{return JSON.stringify(value)}catch(_){return String(value)}}
 function appendMeta(host,label,value){const wrap=el('div');wrap.append(el('dt','',label),el('dd','',value||tr('unknown')));host.append(wrap)}
 function labelForRobot(robot){return uiLanguage.value==='zh-CN'?(robot.chinese_name||robot.english_name||robot.name):(robot.english_name||robot.name)}
-function renderRobotOptions(){const selected=model.value;model.replaceChildren();robots.forEach(robot=>{const option=el('option','',labelForRobot(robot));option.value=robot.name;model.append(option)});model.value=selected||robots[0]?.name||''}
+function renderRobotOptions(){if(model&&model.replaceChildren)model.replaceChildren()}
 
 function stateClass(state){if(['verified_satisfied','feasible','viable','pass'].includes(state))return'good';if(['not_satisfied','infeasible','not_viable','fail'].includes(state))return'bad';return'warn'}
 function renderAssessment(assessment){

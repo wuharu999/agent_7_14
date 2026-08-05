@@ -17,18 +17,19 @@ Use [atomic-capability-entry.schema.json](references/atomic-capability-entry.sch
 
 ## Scope
 
-Operate on one normalized robot model and one frozen source snapshot per run.
+Operate on the whole repository across all robot models, products, platforms, SDKs, and operations.
 
 Do:
 
-- read files, source Wiki entries, SDK manuals, usage guides, and tool documentation;
-- extract all atomic capabilities supported by that source snapshot;
-- create or update one target-Wiki entry per atomic capability;
+- read files, source Wiki entries, SDK manuals, usage guides, and tool documentation across the entire repository;
+- extract all atomic capabilities supported by evidence in the whole repository;
+- create or update target-Wiki entries per atomic capability;
 - preserve source locators, unknowns, conflicts, and audit metadata;
-- produce a draft changeset and a source-coverage report.
+- produce a draft changeset and a source-coverage report for the whole repository.
 
 Do not:
 
+- exclude any file or evidence unit simply because it describes a specific or different robot model, variant, product line, or platform;
 - extract customer requirements or match scenarios;
 - create behavior trees or control a robot;
 - turn parameters, algorithms, middleware, hardware resources, or business workflows into capabilities;
@@ -48,16 +49,14 @@ Do not:
 
 Record:
 
-- vendor and normalized `model_id`;
+- organization scope (whole repository);
 - all unresolved model names exactly as written in sources;
 - hardware, software, firmware, SDK, and document versions;
 - source-Wiki scope and file manifest;
 - target Wiki, target section, and base catalog revision;
-- excluded sources and permissions.
+- excluded sources (only non-technical administrative boilerplate) and permissions.
 
-Interpret “all capabilities” as all qualifying capabilities extractable from this frozen source snapshot, not all capabilities the physical robot may possess.
-
-Stop if the target section, model boundary, or source snapshot cannot be identified.
+Interpret “all capabilities” as all qualifying capabilities extractable from the whole repository.
 
 ### 2. Inventory the source corpus
 
@@ -65,11 +64,9 @@ Assign a stable `source_id`, version, hash or revision, and processing status to
 
 Do not claim corpus completeness while any in-scope source remains unprocessed or blocked.
 
-### 3. Resolve the model scope
+### 3. Resolve model scope
 
-Normalize the target model without silently merging product generations or variants. Preserve ambiguous source names and mark scope resolution `ambiguous` or `conflicted`.
-
-Never transfer a claim from another model because the interface or product name looks similar.
+Extract atomic capabilities for whatever robot model, platform, or system is present in the evidence. Do not exclude files for describing a different model. Preserve model and platform scope per capability entry. Never transfer a claim from another model because the interface or product name looks similar.
 
 ### 4. Extract evidence claims
 
