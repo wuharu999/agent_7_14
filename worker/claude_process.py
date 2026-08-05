@@ -261,6 +261,11 @@ async def run_claude_process(
 
     if process.returncode != 0:
         detail = stderr.decode("utf-8", errors="replace").strip()[:800]
+        if process.returncode in (143, -15, -9):
+            raise ClaudeProcessError(
+                f"Claude 进程接收到终止信号 SIGTERM/SIGKILL (code={process.returncode})。"
+                " 可能是由于 Worker 进程被重启、手动停止或 Watchdog 强制终止。"
+            )
         raise ClaudeProcessError(
             f"Claude 执行失败 (code={process.returncode}): {detail}"
         )
@@ -411,6 +416,11 @@ async def run_claude_process_stream(
 
     if process.returncode != 0:
         detail = "".join(stderr_output).strip()[:800]
+        if process.returncode in (143, -15, -9):
+            raise ClaudeProcessError(
+                f"Claude 进程接收到终止信号 SIGTERM/SIGKILL (code={process.returncode})。"
+                " 可能是由于 Worker 进程被重启、手动停止或 Watchdog 强制终止。"
+            )
         raise ClaudeProcessError(
             f"Claude 执行失败 (code={process.returncode}): {detail}"
         )
