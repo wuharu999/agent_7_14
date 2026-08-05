@@ -653,7 +653,28 @@ def _existing_catalog_payload(target: Path) -> list[dict[str, Any]]:
     return entries
 
 
-REDUCE_CHUNK_SIZE = 40
+REDUCE_CHUNK_SIZE = 15
+
+
+def _compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    evidence = candidate.get("evidence") if isinstance(candidate.get("evidence"), list) else []
+    return {
+        "candidate_id": str(candidate.get("candidate_id") or ""),
+        "name": str(candidate.get("name") or ""),
+        "semantic_key": str(candidate.get("semantic_key") or ""),
+        "effect": candidate.get("effect"),
+        "trigger": candidate.get("trigger"),
+        "scope": candidate.get("scope"),
+        "evidence": [
+            {
+                "source_id": str(ev.get("source_id") or ""),
+                "locator": str(ev.get("locator") or ""),
+                "quote": str(ev.get("quote") or "")[:200],
+            }
+            for ev in evidence
+            if isinstance(ev, dict)
+        ][:2],
+    }
 
 
 async def _reduce_candidate_chunk(
@@ -664,6 +685,7 @@ async def _reduce_candidate_chunk(
     existing_entries: list[dict[str, Any]],
 ) -> dict[str, Any]:
     candidate_ids = {str(candidate["candidate_id"]) for candidate in candidates}
+    compact_candidates = [_compact_candidate(c) for c in candidates]
     system_prompt = (
         "You are a stateless atomic-capability reducer. You have no tools. Deduplicate and merge "
         "the attached extracted candidates, decide every candidate exactly once, and produce complete "
@@ -679,7 +701,7 @@ async def _reduce_candidate_chunk(
         "platforms, and SDKs in the repository by listing all of their IDs in one decision. Every writable after_entry must have "
         "lifecycle.status='draft' and evidence derived only from candidate evidence.\n\n"
         f"Existing catalog entries:\n{json.dumps(existing_entries, ensure_ascii=False)}\n\n"
-        f"Extracted candidates:\n{json.dumps(candidates, ensure_ascii=False)}"
+        f"Extracted candidates:\n{json.dumps(compact_candidates, ensure_ascii=False)}"
     )
     raw = await run_claude_process(
         prompt,
