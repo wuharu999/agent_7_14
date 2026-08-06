@@ -25,6 +25,7 @@ from worker.capability_batch import (
     batch_id,
     batch_prompt_payload,
     load_checkpoint,
+    load_reduction_checkpoint,
     load_evidence_units,
     normalize_candidate_ids,
     parse_batch_extraction,
