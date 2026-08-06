@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -530,9 +531,39 @@ def _sanitize_after_entry(entry: dict[str, Any], target_model_id: str | None = N
             }
         ]
 
-    # 4. Sanitize dependencies and string array fields
+    # 4. Sanitize dependencies: must be valid CAP-[A-Z0-9-]+ IDs
+    cap_id_regex = re.compile(r"^CAP-[A-Z0-9-]+$")
+    current_cap_id = str(entry.get("capability_id") or "").strip()
+
+    if not isinstance(entry.get("dependencies"), list):
+        entry["dependencies"] = []
+    else:
+        clean_deps: list[str] = []
+        for item in entry["dependencies"]:
+            raw_val = ""
+            if isinstance(item, str):
+                raw_val = item.strip()
+            elif isinstance(item, dict):
+                raw_val = str(item.get("capability_id") or item.get("id") or item.get("name") or "").strip()
+
+            if not raw_val:
+                continue
+
+            cap_match = re.search(r"CAP-[A-Z0-9-]+", raw_val.upper())
+            if cap_match:
+                clean_cap = cap_match.group(0)
+            else:
+                slug = re.sub(r"[^A-Z0-9]+", "-", raw_val.upper()).strip("-")
+                if not slug:
+                    continue
+                clean_cap = slug if slug.startswith("CAP-") else f"CAP-{slug}"
+
+            if cap_id_regex.fullmatch(clean_cap) and clean_cap != current_cap_id and clean_cap not in clean_deps:
+                clean_deps.append(clean_cap)
+        entry["dependencies"] = clean_deps
+
+    # 5. Sanitize other string array fields
     for field in (
-        "dependencies",
         "inputs",
         "outputs",
         "preconditions",
