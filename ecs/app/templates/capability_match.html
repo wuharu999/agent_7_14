@@ -368,6 +368,25 @@ function appendAssistantBubble(htmlContent) {
   chatThread.scrollTop = chatThread.scrollHeight;
 }
 
+function appendThinkingBubble(text) {
+  removeThinkingBubble();
+  const div = document.createElement('div');
+  div.className = 'chat-bubble assistant';
+  div.id = 'active-thinking';
+  div.style.background = '#f1f5f9';
+  div.style.color = '#475569';
+  div.style.fontStyle = 'italic';
+  div.innerHTML = `<span class="spinner" style="width:14px; height:14px; display:inline-block; margin-right:8px; vertical-align:middle;"></span> ${text}`;
+  chatThread.appendChild(div);
+  chatThread.scrollTop = chatThread.scrollHeight;
+  return div;
+}
+
+function removeThinkingBubble() {
+  const el = document.getElementById('active-thinking');
+  if (el) el.remove();
+}
+
 function renderGrillQuestionsInChat(questions) {
   let html = `<div class="chat-bubble-title">🔥 Grill-Me Clarification Questions</div>`;
   html += `To sharpen requirements and evaluate feasibility, please specify key parameters or select options below:`;
@@ -415,24 +434,34 @@ async function handleUserSend() {
   scenarioInput.value = '';
   clearClarifiedOptions();
 
+  // Handle simple conversational continuations (e.g. "continue", "thanks", "ok")
+  const lowerText = rawText.toLowerCase().trim();
+  if (["continue", "ok", "thanks", "next", "go ahead"].includes(lowerText) && hasAnsweredQuestions) {
+    appendAssistantBubble(`🤖 Of course! What specific parameters or boundary conditions would you like to explore next? (e.g., maximum battery endurance, outdoor terrain navigation, or ROS2 interface latency)`);
+    return;
+  }
+
   // Step 1: If user hasn't received clarification questions yet, trigger Grill-Me questions first
   if (!hasAnsweredQuestions && rawText) {
     hasAnsweredQuestions = true;
-    appendAssistantBubble(`🤖 Scenario received! Analyzing requirement parameters...`);
-    await triggerGrillMeQuestions(rawText);
+    appendThinkingBubble("Analyzing scenario & generating clarification questions...");
+    try {
+      await triggerGrillMeQuestions(rawText);
+    } finally {
+      removeThinkingBubble();
+    }
     return;
   }
 
   // Step 2: Once scenario & parameters are submitted, run full capability match & platform recommendation
   isAnalyzing = true;
   const modelId = targetRobotModel || 'tian_gong';
-  const modelLabel = targetRobotModel ? (targetRobotModel === 'walker_s2' ? 'Walker S2' : targetRobotModel === 'walker_c1' ? 'Walker C1' : 'Tian Gong') : 'Optimal Robot Platform';
-
-  appendAssistantBubble(`🤖 Parameters received! Autonomous Compiler is matching capabilities and evaluating <strong>${modelLabel}</strong> against repository evidence...`);
+  appendThinkingBubble("Evaluating requirements & compiling repository capability evidence...");
 
   try {
     await runCapabilityMatch(fullScenario, modelId);
   } finally {
+    removeThinkingBubble();
     isAnalyzing = false;
   }
 }
@@ -449,14 +478,34 @@ async function runCapabilityMatch(fullScenario, modelId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Matching analysis failed');
 
-    const recommendedName = modelId === 'walker_s2' ? 'Walker S2 (Industrial Humanoid)' : modelId === 'walker_c1' ? 'Walker C1 (Commercial Biped)' : 'Tian Gong (Humanoid)';
-    renderDashboard(data.result || data);
-    appendAssistantBubble(`✅ Feasibility Analysis complete! Recommended Platform: <strong>${recommendedName}</strong>. View the visual dashboard on the right ➔`);
+    const resultData = data.result || data;
+    renderDashboard(resultData);
+    renderConversationalAnalysisResult(resultData, modelId);
   } catch (err) {
     appendAssistantBubble(`⚠️ Analysis failed: ${err.message || 'Capability match analysis failed.'}`);
   } finally {
     aiThinkingStream.classList.add('hidden');
   }
+}
+
+function renderConversationalAnalysisResult(assessment, modelId) {
+  const feasibility = assessment.feasibility_assessment || {};
+  const score = Math.round(Number(feasibility.feasibility_score || 0) * 100);
+  const status = (feasibility.overall_status || 'feasible').toUpperCase();
+  const recommendedName = modelId === 'walker_s2' ? 'Walker S2 (Industrial Humanoid)' : modelId === 'walker_c1' ? 'Walker C1 (Commercial Biped)' : 'Tian Gong (Humanoid)';
+  const techConclusion = assessment.technical_conclusion || 'Requirements matched against verified capability evidence.';
+  const deployConclusion = feasibility.deployment_conclusion || 'Repository evidence supports this deployment specification.';
+
+  let html = `<div class="chat-bubble-title">🤖 AI Scenario Compiler</div>`;
+  html += `<p>I have compiled your scenario requirements and evaluated feasibility against our repository evidence base:</p>`;
+  html += `<div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:12px; margin:10px 0;">`;
+  html += `<div style="font-weight:800; color:#0f172a; font-size:13.5px; margin-bottom:4px;">🌟 Recommended Platform: <strong>${recommendedName}</strong></div>`;
+  html += `<div style="font-size:12.5px; color:#475569; line-height:1.5;"><strong>Feasibility Score:</strong> ${score}% (${status})<br><strong>Technical Verdict:</strong> ${techConclusion}</div>`;
+  html += `</div>`;
+  html += `<p>${deployConclusion}</p>`;
+  html += `<p style="font-size:12px; color:#64748b; margin-top:8px;">👉 <em>Visual Abstraction Tree (L0➔L3), Gauge Score, and R&D Gap Breakdown have emerged on the right dashboard. Feel free to ask follow-up questions or adjust specifications!</em></p>`;
+
+  appendAssistantBubble(html);
 }
 
 function renderDashboard(assessment) {
