@@ -653,7 +653,7 @@ def _existing_catalog_payload(target: Path) -> list[dict[str, Any]]:
     return entries
 
 
-REDUCE_CHUNK_SIZE = 15
+REDUCE_CHUNK_SIZE = 5
 
 
 def _compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
