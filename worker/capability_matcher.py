@@ -465,18 +465,25 @@ def enforce_abstraction_hard_gate(payload: dict[str, Any]) -> dict[str, Any]:
 
 def load_model_capability_catalog(model_id: str) -> list[dict[str, Any]]:
     tc = get_team_config(model_id)
-    target_dir = tc.base_dir / "wiki" / "capabilities"
+    base_target = tc.base_dir / "wiki" / "capabilities"
+    model_dir = base_target / model_id
+    search_dirs = [model_dir, base_target]
     entries: list[dict[str, Any]] = []
-    if target_dir.is_dir() and not target_dir.is_symlink():
-        for path in sorted(target_dir.glob("CAP-*.json")):
-            if not path.is_file() or path.is_symlink():
-                continue
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    entries.append(data)
-            except Exception:
-                continue
+    seen_ids: set[str] = set()
+    for d in search_dirs:
+        if d.is_dir() and not d.is_symlink():
+            for path in sorted(d.glob("CAP-*.json")):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        cap_id = str(data.get("capability_id") or path.stem)
+                        if cap_id not in seen_ids:
+                            seen_ids.add(cap_id)
+                            entries.append(data)
+                except Exception:
+                    continue
     return entries
 
 
