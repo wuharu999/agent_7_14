@@ -258,9 +258,10 @@ async def run_claude_process(
             await process.stdin.drain()
             process.stdin.close()
 
+        effective_timeout = float(timeout or CLAUDE_TIMEOUT)
         last_activity = [time.monotonic()]
         watchdog = asyncio.create_task(
-            _watchdog_loop(process, last_activity, inactivity_timeout=180.0)
+            _watchdog_loop(process, last_activity, inactivity_timeout=effective_timeout)
         )
 
         stdout_chunks: list[str] = []
