@@ -41,6 +41,7 @@ from worker.config import (
     CAPABILITY_CATALOG_REDUCE_TIMEOUT,
     CAPABILITY_CATALOG_UNIT_BYTES,
     PROJECT_ROOT,
+    TRASH_DIR,
     get_team_config,
 )
 
@@ -1332,4 +1333,78 @@ def update_capability_status(
         "model_id": model_id,
         "capability_id": capability_id,
         "new_status": new_status,
+    }
+
+
+def save_capability_entry(
+    *,
+    model_id: str,
+    entry: dict[str, Any],
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        raise ValueError("Capability entry must be a dictionary")
+    capability_id = str(entry.get("capability_id") or "").strip().upper()
+    if not _CAPABILITY_ID.fullmatch(capability_id):
+        raise ValueError("Invalid capability ID (must match CAP-[A-Z0-9-]+)")
+
+    entry["capability_id"] = capability_id
+    _sanitize_after_entry(entry, model_id)
+
+    target_root = base_dir or BASE_DIR
+    target_dir = Path(target_root) / "wiki" / "capabilities" / model_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = target_dir / f"{capability_id}.json"
+    json_path.write_text(
+        json.dumps(entry, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    md_path = target_dir / f"{capability_id}.md"
+    md_path.write_text(_entry_markdown(entry), encoding="utf-8")
+
+    return {
+        "status": "ok",
+        "model_id": model_id,
+        "capability_id": capability_id,
+        "entry": entry,
+    }
+
+
+def delete_capability_entry(
+    *,
+    model_id: str,
+    capability_id: str,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    if not _CAPABILITY_ID.fullmatch(capability_id):
+        raise ValueError("Invalid capability ID")
+
+    target_root = base_dir or BASE_DIR
+    target_dir = Path(target_root) / "wiki" / "capabilities" / model_id
+    json_path = target_dir / f"{capability_id}.json"
+    md_path = target_dir / f"{capability_id}.md"
+
+    if not json_path.exists() and not md_path.exists():
+        raise ValueError(f"Capability entry {capability_id} not found under model {model_id}")
+
+    trash_root = Path(base_dir) / ".agent1-trash" if base_dir else TRASH_DIR
+    trash_dir = trash_root / "capabilities" / model_id
+    trash_dir.mkdir(parents=True, exist_ok=True)
+
+    moved: list[str] = []
+    for src in (json_path, md_path):
+        if src.exists():
+            dst = trash_dir / src.name
+            if dst.exists():
+                timestamp = int(time.time())
+                dst = trash_dir / f"{src.stem}_{timestamp}{src.suffix}"
+            shutil.move(str(src), str(dst))
+            moved.append(src.name)
+
+    return {
+        "status": "ok",
+        "model_id": model_id,
+        "capability_id": capability_id,
+        "moved": moved,
     }

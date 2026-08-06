@@ -872,3 +872,26 @@ def test_admin_page_has_shared_progress_change_window_and_chinese_translation() 
     assert "Organized atomic capabilities" in page
     assert "已整理的原子能力" in page
     assert "localStorage.getItem('catalog" not in page
+
+
+def test_save_and_delete_capability_entry(tmp_path: Path) -> None:
+    from worker.capability_catalog import save_capability_entry, delete_capability_entry
+    entry = {
+        "capability_id": "CAP-TG-UNITTEST-001",
+        "name": "Test Capability",
+        "abstraction_level": "L1_atomic_skill",
+        "effect": {"action": "Test action", "object": "Arm", "observable_result": "Done"},
+    }
+    saved = save_capability_entry(model_id="tian_gong", entry=entry, base_dir=tmp_path)
+    assert saved["status"] == "ok"
+    assert saved["capability_id"] == "CAP-TG-UNITTEST-001"
+
+    json_file = tmp_path / "wiki" / "capabilities" / "tian_gong" / "CAP-TG-UNITTEST-001.json"
+    md_file = tmp_path / "wiki" / "capabilities" / "tian_gong" / "CAP-TG-UNITTEST-001.md"
+    assert json_file.exists()
+    assert md_file.exists()
+
+    deleted = delete_capability_entry(model_id="tian_gong", capability_id="CAP-TG-UNITTEST-001", base_dir=tmp_path)
+    assert deleted["status"] == "ok"
+    assert not json_file.exists()
+    assert not md_file.exists()

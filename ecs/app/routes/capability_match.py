@@ -1017,3 +1017,95 @@ async def update_capability_lifecycle_status(
         return JSONResponse({"status": "ok", **worker_result})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+class SaveCapabilityRequest(BaseModel):
+    model_id: str = "tian_gong"
+    entry: dict[str, Any]
+
+
+class DeleteCapabilityRequest(BaseModel):
+    model_id: str = "tian_gong"
+    capability_id: str
+
+
+@router.post("/api/admin/capabilities/save")
+async def save_capability(
+    payload: SaveCapabilityRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+) -> JSONResponse:
+    session = require_roles(request, {"admin", "editor"})
+    verify_csrf(session, x_csrf_token)
+    if not gateway.online:
+        return JSONResponse({"error": "Worker is offline"}, status_code=503)
+
+    capability_id = str(payload.entry.get("capability_id") or "").strip().upper()
+    if not capability_id.startswith("CAP-"):
+        return JSONResponse({"error": "Capability ID must start with CAP-"}, status_code=400)
+
+    command_id = f"CAPSAVE-{uuid.uuid4().hex[:12].upper()}"
+    try:
+        worker_result = await gateway.send_command(
+            "save_capability",
+            command_id,
+            model_id=payload.model_id,
+            entry=payload.entry,
+            timeout=30,
+        )
+        if worker_result.get("status") != "ok":
+            return JSONResponse(
+                {"error": str(worker_result.get("error") or "Failed to save capability entry")},
+                status_code=500,
+            )
+        await asyncio.to_thread(
+            write_audit,
+            user_id=int(session["user_id"]),
+            username=str(session.get("username") or ""),
+            action="save_capability",
+            source_path=f"{payload.model_id}/{capability_id}",
+            result="ok",
+            details=json.dumps({"capability_id": capability_id, "model_id": payload.model_id}),
+        )
+        return JSONResponse({"status": "ok", **worker_result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@router.post("/api/admin/capabilities/delete")
+async def delete_capability(
+    payload: DeleteCapabilityRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+) -> JSONResponse:
+    session = require_roles(request, {"admin", "editor"})
+    verify_csrf(session, x_csrf_token)
+    if not gateway.online:
+        return JSONResponse({"error": "Worker is offline"}, status_code=503)
+
+    command_id = f"CAPDEL-{uuid.uuid4().hex[:12].upper()}"
+    try:
+        worker_result = await gateway.send_command(
+            "delete_capability",
+            command_id,
+            model_id=payload.model_id,
+            capability_id=payload.capability_id,
+            timeout=30,
+        )
+        if worker_result.get("status") != "ok":
+            return JSONResponse(
+                {"error": str(worker_result.get("error") or "Failed to delete capability entry")},
+                status_code=500,
+            )
+        await asyncio.to_thread(
+            write_audit,
+            user_id=int(session["user_id"]),
+            username=str(session.get("username") or ""),
+            action="delete_capability",
+            source_path=f"{payload.model_id}/{payload.capability_id}",
+            result="ok",
+            details=json.dumps({"capability_id": payload.capability_id, "model_id": payload.model_id}),
+        )
+        return JSONResponse({"status": "ok", **worker_result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)

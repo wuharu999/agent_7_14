@@ -22,6 +22,8 @@ from worker.capability_catalog import (
     inspect_capability_source_changes,
     organize_capability_catalog,
     update_capability_status,
+    save_capability_entry,
+    delete_capability_entry,
 )
 from worker.authoring import AuthoringError, chat as authoring_chat, create_session as create_authoring_session
 from worker.authoring import generate_article as generate_authoring_article, get_session as get_authoring_session
@@ -317,7 +319,7 @@ class WorkerManager:
             )
             return
 
-        if message_type in {"list_sources", "delete_source", "delete_robot_folder", "update_capability_status"}:
+        if message_type in {"list_sources", "delete_source", "delete_robot_folder", "update_capability_status", "save_capability", "delete_capability"}:
             command_id = str(data.get("id") or "")
             if not command_id or command_id in self.active_command_ids:
                 return
@@ -845,6 +847,38 @@ class WorkerManager:
                     await self.emit(
                         {
                             "type": "update_capability_status_result",
+                            "id": job.command_id,
+                            "status": "ok",
+                            **result,
+                        }
+                    )
+                elif job.operation == "save_capability":
+                    model_id = str(job.payload.get("model_id") or "")
+                    entry = job.payload.get("entry") if isinstance(job.payload.get("entry"), dict) else {}
+                    result = await asyncio.to_thread(
+                        save_capability_entry,
+                        model_id=model_id,
+                        entry=entry,
+                    )
+                    await self.emit(
+                        {
+                            "type": "save_capability_result",
+                            "id": job.command_id,
+                            "status": "ok",
+                            **result,
+                        }
+                    )
+                elif job.operation == "delete_capability":
+                    model_id = str(job.payload.get("model_id") or "")
+                    capability_id = str(job.payload.get("capability_id") or "")
+                    result = await asyncio.to_thread(
+                        delete_capability_entry,
+                        model_id=model_id,
+                        capability_id=capability_id,
+                    )
+                    await self.emit(
+                        {
+                            "type": "delete_capability_result",
                             "id": job.command_id,
                             "status": "ok",
                             **result,

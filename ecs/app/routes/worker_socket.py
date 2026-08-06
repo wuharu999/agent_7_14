@@ -38,6 +38,11 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
         await ws.close(code=1008)
         return
 
+    if gateway.online and gateway.websocket is not None and gateway.websocket is not ws:
+        log.warning("Rejecting duplicate worker connection attempt while active worker is connected")
+        await ws.close(code=1008)
+        return
+
     await ws.accept()
     await gateway.attach(ws)
     await _dispatch_waiting_uploads()
@@ -66,7 +71,7 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
             elif message_type == "capability_match_result":
                 gateway.resolve_command(str(data.get("id") or ""), data)
 
-            elif message_type in {"capability_catalog_result", "capability_source_changes_result"}:
+            elif message_type in {"capability_catalog_result", "capability_source_changes_result", "update_capability_status_result", "save_capability_result", "delete_capability_result"}:
                 gateway.resolve_command(str(data.get("id") or ""), data)
 
             elif message_type == "capability_catalog_progress":

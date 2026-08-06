@@ -29,7 +29,7 @@
       <div class="history"><h3 data-i18n="recentRuns">Recent runs</h3><div id="job-history"></div></div>
     </div>
     <div class="panel">
-      <h3 data-i18n="changesTitle">File changes since the last successful organization</h3>
+      <h3 data-i18n="changesTitle">Raw file changes since the last successful organization</h3>
       <p class="muted" id="changes-meta"></p><div id="baseline" class="baseline" hidden data-i18n="noBaseline">No previous source manifest exists. All current files are treated as added.</div>
       <div class="change-summary"><div class="change-count added"><span id="added-count">0</span><br><small data-i18n="added">Added</small></div><div class="change-count modified"><span id="modified-count">0</span><br><small data-i18n="modified">Modified</small></div><div class="change-count deleted"><span id="deleted-count">0</span><br><small data-i18n="deleted">Deleted</small></div></div>
       <div class="change-lists"><div class="change-list"><h4 data-i18n="addedFiles">Added files</h4><ul id="added-list"></ul></div><div class="change-list"><h4 data-i18n="modifiedFiles">Modified files</h4><ul id="modified-list"></ul></div><div class="change-list"><h4 data-i18n="deletedFiles">Deleted files</h4><ul id="deleted-list"></ul></div></div>
@@ -44,7 +44,7 @@
   <div id="coverage" class="baseline" data-i18n="noCoverage">No scan coverage has been recorded.</div>
   <div id="coverage-details" class="diagnostics"></div>
   <div class="controls" style="margin: 12px 0; display:flex; gap:10px; align-items:center;">
-    <input type="text" id="capability-search" data-i18n-placeholder="searchPlaceholder" placeholder="🔍 Search capabilities by ID, name, or effect..." style="flex:1; max-width:420px; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;" />
+    <input type="text" id="capability-search" data-i18n-placeholder="searchPlaceholder" placeholder="🔍 Search capabilities by ID, name, effect, or abstraction..." style="flex:1; max-width:420px; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;" />
     <select id="status-filter" style="height:38px; padding:0 30px 0 10px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;">
       <option value="" data-i18n="allStatuses">All Statuses</option>
       <option value="draft">draft</option>
@@ -52,10 +52,128 @@
       <option value="verified">verified</option>
       <option value="deprecated">deprecated</option>
     </select>
+    <button type="button" class="btn secondary" id="btn-add-capability" onclick="openCapabilityModal()" style="height:38px; display:inline-flex; align-items:center; gap:6px; font-weight:700; background:#3b82f6; color:#ffffff; border:none; border-radius:8px; padding:0 16px; cursor:pointer;">
+      ➕ Add Capability
+    </button>
     <span id="search-count" class="muted" style="font-weight: 600; font-size: 13px;"></span>
   </div>
-  <div class="table-wrap"><table><thead><tr><th data-i18n="capabilityId">Capability ID</th><th data-i18n="capabilityName">Name</th><th data-i18n="abstractionLevel">Abstraction Level</th><th data-i18n="effect">Observable effect</th><th data-i18n="evidence">Evidence</th><th data-i18n="status">Status</th></tr></thead><tbody id="catalog-entries"></tbody></table></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px; text-align:center;"></th>
+          <th data-i18n="capabilityId">Capability ID</th>
+          <th data-i18n="capabilityName">Name</th>
+          <th data-i18n="abstractionLevel">Abstraction Level</th>
+          <th data-i18n="effect">Observable effect</th>
+          <th data-i18n="evidence">Evidence</th>
+          <th data-i18n="status">Status</th>
+          <th style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="catalog-entries"></tbody>
+    </table>
+  </div>
 </section>
+
+<!-- Capability Studio Modal -->
+<div id="capability-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); z-index:9999; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:#ffffff; border-radius:16px; width:100%; max-width:680px; max-height:90vh; overflow-y:auto; box-shadow:0 20px 25px -5px rgba(0,0,0,0.2); padding:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:12px;">
+      <h3 id="cap-modal-title" style="margin:0; font-size:18px; color:#0f172a;">➕ Add New Atomic Capability</h3>
+      <button type="button" onclick="closeCapabilityModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:#64748b;">✕</button>
+    </div>
+    <form id="cap-form" onsubmit="handleSaveCapability(event)">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Robot Model</label>
+          <select id="form-model-id" style="width:100%; height:38px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;" onchange="autoSuggestCapId()">
+            <option value="tian_gong">Tian Gong (tian_gong)</option>
+            <option value="walker_s2">Walker S2 (walker_s2)</option>
+            <option value="walker_c1">Walker C1 (walker_c1)</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Capability ID</label>
+          <input type="text" id="form-cap-id" placeholder="e.g. CAP-TG-CUSTOM-001" required style="width:100%; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;" />
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Capability Name</label>
+          <input type="text" id="form-cap-name" placeholder="e.g. Arm Joint Position Control" required style="width:100%; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;" />
+        </div>
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Abstraction Level (L0-L3)</label>
+          <select id="form-abstraction" style="width:100%; height:38px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;">
+            <option value="L0_primitive_driver">L0 Driver (Primitive Driver)</option>
+            <option value="L1_atomic_skill">L1 Skill (Atomic Skill)</option>
+            <option value="L2_composite_skill">L2 Composite (Composite Skill)</option>
+            <option value="L3_scenario_module">L3 Scenario (Scenario Module)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Lifecycle Status</label>
+          <select id="form-status" style="width:100%; height:38px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;">
+            <option value="draft">draft</option>
+            <option value="reviewed">reviewed</option>
+            <option value="verified">verified</option>
+            <option value="deprecated">deprecated</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Vendor</label>
+          <input type="text" id="form-vendor" value="UBTECH" style="width:100%; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;" />
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Observable Effect</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+          <input type="text" id="form-effect-action" placeholder="Action (e.g. Executes position cmd)" style="height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;" />
+          <input type="text" id="form-effect-object" placeholder="Object (e.g. Arm actuators)" style="height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;" />
+          <input type="text" id="form-effect-result" placeholder="Observable result (e.g. Error < 0.1 deg)" style="height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;" />
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Interface Type</label>
+          <select id="form-interface-type" style="width:100%; height:38px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;">
+            <option value="ros2_topic">ros2_topic</option>
+            <option value="can_bus">can_bus</option>
+            <option value="api">api</option>
+            <option value="service">service</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Interface Reference</label>
+          <input type="text" id="form-interface-ref" placeholder="e.g. /cmd_vel or joint_position_api" style="width:100%; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;" />
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Trigger Mechanism</label>
+        <input type="text" id="form-trigger" placeholder="e.g. ROS2 topic message receipt" style="width:100%; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;" />
+      </div>
+
+      <div style="margin-bottom:20px;">
+        <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Evidence Citation Claim & Excerpt</label>
+        <input type="text" id="form-evidence-claim" placeholder="Claim (e.g. Verified joint positioning at 100Hz)" style="width:100%; height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:8px;" />
+        <textarea id="form-evidence-excerpt" placeholder="Excerpt quote from documentation..." rows="2" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;"></textarea>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px; border-top:1px solid #e2e8f0; padding-top:16px;">
+        <button type="button" onclick="closeCapabilityModal()" class="btn" style="background:#f1f5f9; color:#475569; border:none; border-radius:8px; padding:8px 16px; font-weight:600; cursor:pointer;">Cancel</button>
+        <button type="submit" id="btn-save-cap" class="btn primary" style="background:#2563eb; color:#ffffff; border:none; border-radius:8px; padding:8px 20px; font-weight:700; cursor:pointer;">🚀 Save Capability</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <section class="card"><h2 data-i18n="gapsTitle">Aggregated R&amp;D gaps</h2><div class="table-wrap"><table><thead><tr><th data-i18n="gapName">Model / requested capability</th><th data-i18n="occurrences">Occurrences</th><th data-i18n="domains">Domains</th><th data-i18n="effort">Average effort</th><th data-i18n="action">Action</th></tr></thead><tbody id="gaps"></tbody></table></div></section>
 <section class="card"><h2 data-i18n="stubsTitle">Capability draft stubs</h2><div class="table-wrap"><table><thead><tr><th data-i18n="draftId">Draft ID</th><th data-i18n="model">Model</th><th data-i18n="requirement">Requirement</th><th data-i18n="status">Status</th><th data-i18n="created">Created</th></tr></thead><tbody id="stubs"></tbody></table></div></section>
@@ -69,10 +187,12 @@ const organizerStatus=document.getElementById('organizer-status');
 let latestData={catalog_jobs:[],gaps:[],draft_stubs:[]};
 let latestCatalog={};
 let allCatalogEntries=[];
+let expandedCapIds=new Set();
+let editingCapId=null;
 let pollTimer=null;
 const translations={
   en:{title:'Atomic Capability Administration',subtitle:'Organize repository Wiki evidence into a validated draft capability catalog across all robot models.',admin:'Admin',language:'Language',workbench:'Workbench',organizerTitle:'Atomic capability organizer',organizerHelp:"Every extraction batch receives the complete atomic-capability skill contract for the whole repository. Resume reuses matching checkpoints; Force full re-extraction ignores checkpoints and analyzes every eligible Wiki text file again.",start:'Organize changes',resumeFull:'Resume full scan',forceFull:'Force full re-extraction',refreshChanges:'Refresh file changes',sharedProgress:'Shared organization progress',noRun:'No organization run has been recorded.',recentRuns:'Recent runs',changesTitle:'Raw file changes since the last successful organization',noBaseline:'No successful full-scan baseline exists. The next normal run will automatically scan the whole Wiki.',added:'Added',modified:'Modified',deleted:'Deleted',addedFiles:'Added files',modifiedFiles:'Modified files',deletedFiles:'Deleted files',catalogTitle:'Organized atomic capabilities',catalogHelp:'Draft entries published from generated Wiki evidence across all robot models.',capabilityId:'Capability ID',capabilityName:'Name',abstractionLevel:'Abstraction Level',effect:'Observable effect',evidence:'Evidence',noCapabilities:'No organized capability entries yet.',noCoverage:'No scan coverage has been recorded.',coverageSummary:'{mode}: all {total} Wiki files accounted for — {processed} processed, {excluded} excluded, {blocked} blocked; {entries} atomic entries.',batchSummary:' Deterministic extraction used {batches} batches ({cached} restored from checkpoints) and produced {candidates} candidates.',modeFull:'Full scan (resume)',modeFresh:'Forced full re-extraction',modeIncremental:'Incremental scan',progressSummary:'{done}/{total} batches complete; {cached} restored, {candidates} candidates, {blocked} blocked evidence units, {excluded} excluded evidence units.',blockedFiles:'Blocked evidence files',excludedReasons:'Exclusion reasons',reasonCount:'{count} files — {reason}',gapsTitle:'Aggregated R&D gaps',gapName:'Model / requested capability',occurrences:'Occurrences',domains:'Domains',effort:'Average effort',action:'Action',stubsTitle:'Capability draft stubs',draftId:'Draft ID',model:'Model',requirement:'Requirement',status:'Status',created:'Created',createStub:'Create Capability Draft Stub',noGaps:'No capability gaps have been recorded.',noStubs:'No draft stubs yet.',none:'None',loading:'Loading…',loadingChanges:'Checking Worker source and Wiki state…',changesMeta:'{current} raw files ({baseline} at baseline); {wikiCurrent} Wiki evidence files ({wikiBaseline} at baseline).',stale:'Showing the last saved snapshot because the Worker could not be reached.',confirm:'Organize new Wiki changes for the whole repository? The first run automatically becomes a full scan. All admins will see the same progress.',confirmFull:'Resume a full Wiki scan for the whole repository? Matching checkpoints will be reused.',confirmFresh:'Force a complete re-extraction for the whole repository? Every batch will call the LLM and existing checkpoints will be ignored.',queued:'Organization queued.',failedStart:'Unable to start organization',loaded:'Loaded {count} aggregated gaps.',personWeeks:'person-weeks',jobQueued:'Queued',jobProcessing:'In progress',jobCompleted:'Completed',jobPartial:'Completed with warnings',jobFailed:'Failed',stageQueued:'Waiting for the Worker',stageDispatching:'Sending scan request to Worker',stageBatchPreparing:'Python is reading every selected Wiki evidence file',stageBatchExtracting:'Running deterministic LLM extraction batches',stageBatchReducing:'Merging and deduplicating extracted candidates',stageInventorying:'Reading and classifying generated Wiki evidence',stageRetrying:'Retrying a simpler JSON response',stageValidating:'Validating capability entries',stagePublishing:'Publishing validated drafts',stageCompleted:'Organization completed',stagePartial:'Completed with blocked or unprocessed evidence; baseline not advanced',stageFailed:'Organization failed',jobMeta:'{mode} · {job} · updated {time}',noRecent:'No recent runs recorded.',draftCreating:'Creating an evidence-acquisition draft…',draftReady:'Draft {id} is ready for evidence acquisition.',searchPlaceholder:'🔍 Search capabilities by ID, name, effect, or abstraction...',allStatuses:'All Statuses',noMatchingCapabilities:'No capabilities match your search query.',countSummary:'Showing {shown} of {total} capabilities'},
-  'zh-CN':{title:'原子能力管理',subtitle:'将全量仓库 Wiki 证据整理为经过验证的原子能力草稿目录。',admin:'管理员',language:'界面语言',workbench:'场景可行性工作台',organizerTitle:'原子能力整理器',organizerHelp:'每个提取批次都会针对整个仓库使用完整的原子能力技能契约。“恢复全量扫描”会复用匹配的检查点；“强制全量重新提取”会忽略检查点，重新分析每个符合条件的 Wiki 文本文件。',start:'整理新增变更',resumeFull:'恢复全量扫描',forceFull:'强制全量重新提取',refreshChanges:'刷新文件变更',sharedProgress:'共享整理进度',noRun:'尚无整理记录。',recentRuns:'最近的整理任务',changesTitle:'自上次成功整理以来的原始文件变更',noBaseline:'尚无成功的全量扫描基线；下次普通整理会自动扫描整个 Wiki。',added:'新增',modified:'修改',deleted:'删除',addedFiles:'新增文件',modifiedFiles:'修改文件',deletedFiles:'删除文件',catalogTitle:'已整理的原子能力',catalogHelp:'从整个仓库所有机器人模型的 Wiki 证据中发布的原子能力草稿。',capabilityId:'能力编号',capabilityName:'名称',abstractionLevel:'抽象层级 (L0-L3)',effect:'可观察效果',evidence:'证据数量',noCapabilities:'尚无已整理的原子能力条目。',noCoverage:'尚无扫描覆盖记录。',coverageSummary:'{mode}：共核对 {total} 个 Wiki 文件，其中处理 {processed} 个、排除 {excluded} 个、阻塞 {blocked} 个；原子能力条目 {entries} 个。',batchSummary:' 确定性提取共使用 {batches} 个批次（{cached} 个从检查点恢复），生成 {candidates} 个候选。',modeFull:'全量扫描（恢复）',modeFresh:'强制全量重新提取',modeIncremental:'增量扫描',progressSummary:'已完成 {done}/{total} 个批次；恢复 {cached} 个，候选 {candidates} 个，阻塞证据单元 {blocked} 个，排除证据单元 {excluded} 个。',blockedFiles:'被阻塞的证据文件',excludedReasons:'排除原因',reasonCount:'{count} 个文件 — {reason}',gapsTitle:'汇总的研发能力缺口',gapName:'机器人型号 / 所需能力',occurrences:'出现次数',domains:'领域',effort:'平均投入',action:'操作',stubsTitle:'能力草稿存根',draftId:'草稿编号',model:'型号',requirement:'需求',status:'状态',created:'创建时间',createStub:'创建能力草稿存根',noGaps:'尚未记录能力缺口。',noStubs:'尚无草稿存根。',none:'无',loading:'正在加载…',loadingChanges:'正在 Worker 上检查源文件和 Wiki 状态…',changesMeta:'当前有 {current} 个原始文件（基线 {baseline} 个）；有 {wikiCurrent} 个 Wiki 证据文件（基线 {wikiBaseline} 个）。',stale:'Worker 暂时无法连接，当前显示上次保存的快照。',confirm:'确定整理整个仓库的新增 Wiki 变更吗？首次运行会自动执行全量扫描，所有管理员都会看到同一进度。',confirmFull:'确定恢复整个仓库的全量 Wiki 扫描吗？系统会复用匹配的检查点。',confirmFresh:'确定强制重新提取整个仓库的 Wiki 吗？每个批次都会调用 LLM，并忽略现有检查点。',queued:'整理任务已进入队列。',failedStart:'无法开始整理',loaded:'已加载 {count} 个汇总能力缺口。',personWeeks:'人周',jobQueued:'排队中',jobProcessing:'整理中',jobCompleted:'已完成',jobPartial:'完成但有警告',jobFailed:'失败',stageQueued:'正在等待 Worker',stageDispatching:'正在向 Worker 发送扫描请求',stageBatchPreparing:'Python 正在读取全部选定的 Wiki 证据文件',stageBatchExtracting:'正在运行确定性 LLM 提取批次',stageBatchReducing:'正在合并并去重提取的候选能力',stageInventorying:'正在读取并分类生成的 Wiki 证据',stageRetrying:'正在用简化的 JSON 响应重试',stageValidating:'正在验证原子能力条目',stagePublishing:'正在发布已验证的草稿',stageCompleted:'原子能力整理完成',stagePartial:'部分证据被阻塞或未处理，成功基线未更新',stageFailed:'原子能力整理失败',jobMeta:'{mode} · {job} · 更新于 {time}',noRecent:'尚无最近任务。',draftCreating:'正在创建证据采集草稿…',draftReady:'草稿 {id} 已可用于证据采集。',searchPlaceholder:'🔍 按编号、名称、效果或抽象层级搜索...',allStatuses:'所有状态',noMatchingCapabilities:'未找到匹配搜索条件的原子能力。',countSummary:'显示 {shown} / 共 {total} 项'}
+  'zh-CN':{title:'原子能力管理',subtitle:'将全量仓库 Wiki 证据整理为经过验证的原子能力草稿目录。',admin:'管理员',language:'界面语言',workbench:'场景可行性工作台',organizerTitle:'原子能力整理器',organizerHelp:'每个提取批次都会针对整个仓库使用完整的原子能力技能契约。“恢复全量扫描”会复用匹配的检查点；“强制全量重新提取”会忽略检查点，重新分析每个符合条件的 Wiki 文本文件。',start:'整理新增变更',resumeFull:'恢复全量扫描',forceFull:'强制全量重新提取',refreshChanges:'刷新文件变更',sharedProgress:'共享整理进度',noRun:'尚无整理记录。',recentRuns:'最近的整理任务',changesTitle:'自上次成功整理以来的原始文件变更',noBaseline:'尚无成功的全量扫描基线；下次普通整理会自动扫描整个 Wiki。',added:'新增',modified:'修改',deleted:'删除',addedFiles:'新增文件',modifiedFiles:'修改文件',deletedFiles:'删除文件',catalogTitle:'已整理的原子能力',catalogHelp:'从整个仓库所有机器人模型的 Wiki 证据中发布的原子能力草稿。',capabilityId:'能力编号',capabilityName:'名称',abstractionLevel:'抽象层级 (L0-L3)',effect:'可观察效果',evidence:'证据数量',noCapabilities:'尚无已整理的原子能力条目。',noCoverage:'尚无扫描覆盖记录。',coverageSummary:'{mode}：共核对 {total} 个 Wiki 文件，其中处理 {processed} 个、排除 {excluded} 个、阻塞 {blocked} 个；原子能力条目 {entries} 个。',batchSummary:' 确定性提取共使用 {batches} 个批次（{cached} 个从检查点恢复），生成 {candidates} 个候选。',modeFull:'全量扫描（恢复）',modeFresh:'强制全量重新提取',modeIncremental:'增量扫描',progressSummary:'已完成 {done}/{total} 个批次；恢复 {cached} 个，候选 {candidates} 个，阻塞证据单元 {blocked} 个，排除证据单元 {excluded} 个。',blockedFiles:'被阻塞的证据文件',excludedReasons:'排除原因',reasonCount:'{count} 个文件 — {reason}',gapsTitle:'汇总的研发能力缺口',gapName:'机器人型号 / 所需能力',occurrences:'出现次数',domains:'领域',effort:'平均投入',action:'操作',stubsTitle:'能力草稿存根',draftId:'草稿编号',model:'型号',requirement:'需求',status:'状态',created:'创建时间',createStub:'创建能力草稿存根',noGaps:'尚未记录能力缺口。',noStubs:'尚无草稿存根。',none:'无',loading:'正在加载…',loadingChanges:'正在 Worker 上检查源文件和 Wiki 状态…',changesMeta:'当前有 {current} 个原始文件（基线 {baseline} 个）；有 {wikiCurrent} 个 Wiki 证据文件（基线 {wikiBaseline} 个）。',stale:'Worker 暂时无法连接，当前显示上次保存的快照。',confirm:'确定整理整个仓库的新增 Wiki 变更吗？首次运行会自动执行全量扫描，所有管理员都会看到同一进度。',confirmFull:'确定恢复整个仓库的全量 Wiki 扫描吗？系统会复用匹配的检查点。',confirmFresh:'确定强制重新提取整个仓库的 Wiki 吗？每个批次都会调用 LLM，并忽略现有检查点。',queued:'整理任务已进入队列。',failedStart:'无法开始整理',loaded:'已加载 {count} 个汇总能力缺口。',personWeeks:'人周',jobQueued:'排队中',jobProcessing:'整理中',jobCompleted:'已完成',jobPartial:'完成但有警告',jobFailed:'失败',stageQueued:'正在等待 Worker',stageDispatching:'发送扫描请求至 Worker',stageBatchPreparing:'Python 正在读取选定的 Wiki 文件',stageBatchExtracting:'运行 LLM 提取批次',stageBatchReducing:'合并提取的候选能力',stageInventorying:'分类生成的 Wiki 证据',stageRetrying:'重试 JSON 响应',stageValidating:'验证能力条目',stagePublishing:'发布已验证的草稿',stageCompleted:'原子能力整理完成',stagePartial:'部分证据未处理',stageFailed:'整理失败',jobMeta:'{mode} · {job} · 更新于 {time}',noRecent:'尚无最近任务。',draftCreating:'创建证据采集草稿…',draftReady:'草稿 {id} 已准备就绪。',searchPlaceholder:'🔍 按编号、名称、效果或抽象层级搜索...',allStatuses:'所有状态',noMatchingCapabilities:'未找到匹配搜索条件的原子能力。',countSummary:'显示 {shown} / 共 {total} 项'}
 };
 function tr(key,vars={}){let value=(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key;Object.entries(vars).forEach(([name,replacement])=>{value=value.replace(`{${name}}`,String(replacement))});return value}
 function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node}
@@ -98,6 +218,147 @@ function renderJobs(jobs){const all=jobs||[];const active=all.find(job=>['queued
 function renderPathList(id,paths){const host=document.getElementById(id);host.replaceChildren();(paths||[]).forEach(path=>host.append(el('li','',path)));if(!(paths||[]).length)host.append(el('li','empty',tr('none')))}
 function renderChanges(data){const changes=data.changes||data.source_changes||{};const counts=changes.counts||{};document.getElementById('added-count').textContent=counts.added||0;document.getElementById('modified-count').textContent=counts.modified||0;document.getElementById('deleted-count').textContent=counts.deleted||0;renderPathList('added-list',changes.added);renderPathList('modified-list',changes.modified);renderPathList('deleted-list',changes.deleted);document.getElementById('baseline').hidden=data.baseline_exists!==false&&changes.baseline_exists!==false;let meta=tr('changesMeta',{current:data.current_source_files||0,baseline:data.last_organized_manifest_files||0,wikiCurrent:data.current_wiki_files||0,wikiBaseline:data.last_organized_wiki_files||0});if(data.stale)meta+=` ${tr('stale')}`;document.getElementById('changes-meta').textContent=meta}
 
+function autoSuggestCapId(){
+  if(editingCapId) return;
+  const model=document.getElementById('form-model-id').value;
+  const prefix=model==='tian_gong'?'CAP-TG-':model==='walker_s2'?'CAP-WS2-':'CAP-WC1-';
+  const num=Math.floor(100 + Math.random() * 900);
+  document.getElementById('form-cap-id').value=prefix+'CUSTOM-'+num;
+}
+
+function openCapabilityModal(entry=null){
+  editingCapId=entry?entry.capability_id:null;
+  const modal=document.getElementById('capability-modal');
+  const title=document.getElementById('cap-modal-title');
+  title.textContent=entry?`✏️ Edit Capability — ${entry.capability_id}`:'➕ Add New Atomic Capability';
+  
+  if(entry){
+    document.getElementById('form-model-id').value=entry.model_id||entry.scope?.model_id||'tian_gong';
+    document.getElementById('form-cap-id').value=entry.capability_id||'';
+    document.getElementById('form-cap-id').readOnly=true;
+    document.getElementById('form-cap-name').value=entry.name||'';
+    document.getElementById('form-abstraction').value=entry.abstraction_level||'L0_primitive_driver';
+    document.getElementById('form-status').value=entry.lifecycle_status||entry.lifecycle?.status||'draft';
+    document.getElementById('form-vendor').value=entry.scope?.vendor||'UBTECH';
+    
+    const eff=entry.effect||{};
+    if(typeof eff==='object'){
+      document.getElementById('form-effect-action').value=eff.action||'';
+      document.getElementById('form-effect-object').value=eff.object||'';
+      document.getElementById('form-effect-result').value=eff.observable_result||'';
+    }else{
+      document.getElementById('form-effect-action').value=String(eff);
+    }
+    
+    const iface=(entry.interfaces||[])[0]||{};
+    document.getElementById('form-interface-type').value=iface.type||'ros2_topic';
+    document.getElementById('form-interface-ref').value=iface.reference||'';
+    document.getElementById('form-trigger').value=entry.trigger||'';
+    
+    const ev=(entry.evidence||[])[0]||{};
+    document.getElementById('form-evidence-claim').value=ev.claim||'';
+    document.getElementById('form-evidence-excerpt').value=ev.excerpt||'';
+  }else{
+    document.getElementById('form-cap-id').readOnly=false;
+    document.getElementById('form-cap-name').value='';
+    document.getElementById('form-effect-action').value='';
+    document.getElementById('form-effect-object').value='';
+    document.getElementById('form-effect-result').value='';
+    document.getElementById('form-interface-ref').value='';
+    document.getElementById('form-trigger').value='';
+    document.getElementById('form-evidence-claim').value='';
+    document.getElementById('form-evidence-excerpt').value='';
+    autoSuggestCapId();
+  }
+  modal.style.display='flex';
+}
+
+function closeCapabilityModal(){
+  document.getElementById('capability-modal').style.display='none';
+  editingCapId=null;
+}
+
+async function handleSaveCapability(event){
+  event.preventDefault();
+  const btn=document.getElementById('btn-save-cap');
+  btn.disabled=true;
+  btn.textContent='Saving…';
+  
+  const modelId=document.getElementById('form-model-id').value;
+  const capId=document.getElementById('form-cap-id').value.trim().toUpperCase();
+  const name=document.getElementById('form-cap-name').value.trim();
+  const abstraction=document.getElementById('form-abstraction').value;
+  const status=document.getElementById('form-status').value;
+  const vendor=document.getElementById('form-vendor').value.trim()||'UBTECH';
+  
+  const action=document.getElementById('form-effect-action').value.trim();
+  const object=document.getElementById('form-effect-object').value.trim();
+  const result=document.getElementById('form-effect-result').value.trim();
+  
+  const ifaceType=document.getElementById('form-interface-type').value;
+  const ifaceRef=document.getElementById('form-interface-ref').value.trim();
+  const trigger=document.getElementById('form-trigger').value.trim();
+  
+  const claim=document.getElementById('form-evidence-claim').value.trim();
+  const excerpt=document.getElementById('form-evidence-excerpt').value.trim();
+  
+  const entry={
+    capability_id: capId,
+    name: name,
+    semantic_key: name.toLowerCase().replace(/[^a-z0-9]+/g,'_'),
+    abstraction_level: abstraction,
+    lifecycle: { status: status, updated_at: new Date().toISOString() },
+    scope: { model_id: modelId, vendor: vendor, environment: 'all', resolution_status: 'resolved' },
+    effect: { action: action, object: object, observable_result: result },
+    trigger: trigger,
+    interfaces: ifaceRef ? [{ type: ifaceType, reference: ifaceRef, version: '1.0' }] : [],
+    evidence: claim || excerpt ? [{ evidence_id: 'EVID-0001', evidence_level: 'E2', source_type: 'manual_admin', source_id: 'admin/manual', locator: 'L1', claim: claim || name, excerpt: excerpt || claim }] : []
+  };
+
+  try{
+    const res=await fetch('/api/admin/capabilities/save',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+      body:JSON.stringify({model_id:modelId, entry:entry})
+    });
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||'Failed to save capability');
+    
+    closeCapabilityModal();
+    alert('Capability saved successfully!');
+    location.reload();
+  }catch(err){
+    alert(err.message||'Save failed');
+  }finally{
+    btn.disabled=false;
+    btn.textContent='🚀 Save Capability';
+  }
+}
+
+async function handleDeleteCapability(modelId, capId){
+  if(!confirm(`Are you sure you want to soft-delete capability ${capId}? It will be moved to .agent1-trash.`)) return;
+  try{
+    const res=await fetch('/api/admin/capabilities/delete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+      body:JSON.stringify({model_id:modelId||defaultModel, capability_id:capId})
+    });
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||'Failed to delete capability');
+    
+    alert(`Capability ${capId} deleted successfully.`);
+    location.reload();
+  }catch(err){
+    alert(err.message||'Delete failed');
+  }
+}
+
+function toggleExpandRow(capId){
+  if(expandedCapIds.has(capId)) expandedCapIds.delete(capId);
+  else expandedCapIds.add(capId);
+  filterAndRenderCatalog();
+}
+
 function filterAndRenderCatalog(){
   const searchInput=document.getElementById('capability-search');
   const statusFilter=document.getElementById('status-filter');
@@ -110,7 +371,7 @@ function filterAndRenderCatalog(){
     if(!query)return true;
     const id=(entry.capability_id||'').toLowerCase();
     const name=(entry.name||entry.semantic_key||'').toLowerCase();
-    const effect=(entry.effect||'').toLowerCase();
+    const effect=(typeof entry.effect==='object'?((entry.effect.action||'')+' '+(entry.effect.object||'')+' '+(entry.effect.observable_result||'')):String(entry.effect||'')).toLowerCase();
     const abs=(entry.abstraction_level||'').toLowerCase();
     return id.includes(query)||name.includes(query)||effect.includes(query)||abs.includes(query);
   });
@@ -118,8 +379,18 @@ function filterAndRenderCatalog(){
   const host=document.getElementById('catalog-entries');
   host.replaceChildren();
   filtered.forEach(entry=>{
+    const isExpanded=expandedCapIds.has(entry.capability_id);
     const row=el('tr');
+    row.style.cursor='pointer';
+    
+    const toggleTd=el('td');
+    toggleTd.style.textAlign='center';
+    toggleTd.style.color='#64748b';
+    toggleTd.textContent=isExpanded?'▼':'▶';
+    toggleTd.onclick=(e)=>{e.stopPropagation(); toggleExpandRow(entry.capability_id);};
+    
     const statusTd=el('td');
+    statusTd.onclick=(e)=>e.stopPropagation();
     const select=el('select');
     select.style.height='32px';
     select.style.padding='0 24px 0 8px';
@@ -130,7 +401,8 @@ function filterAndRenderCatalog(){
       if(opt===(entry.lifecycle_status||'draft'))option.selected=true;
       select.append(option);
     });
-    select.addEventListener('change',async()=>{
+    select.addEventListener('change',async(e)=>{
+      e.stopPropagation();
       const newStatus=select.value;
       select.disabled=true;
       try{
@@ -150,16 +422,85 @@ function filterAndRenderCatalog(){
       }
     });
     statusTd.append(select);
+    
     const absTd=el('td');
     absTd.append(renderAbstractionBadge(entry.abstraction_level));
-    row.append(cell(entry.capability_id),cell(entry.name||entry.semantic_key),absTd,cell(entry.effect||''),cell(entry.evidence_count||0),statusTd);
+    
+    const actionsTd=el('td');
+    actionsTd.style.textAlign='right';
+    actionsTd.onclick=(e)=>e.stopPropagation();
+    
+    const editBtn=el('button','btn', '✏️');
+    editBtn.title='Edit capability';
+    editBtn.style.padding='4px 8px';
+    editBtn.style.marginRight='6px';
+    editBtn.style.border='1px solid #cbd5e1';
+    editBtn.style.borderRadius='6px';
+    editBtn.style.background='#f8fafc';
+    editBtn.style.cursor='pointer';
+    editBtn.onclick=()=>openCapabilityModal(entry);
+    
+    const delBtn=el('button','btn', '🗑️');
+    delBtn.title='Soft-delete capability';
+    delBtn.style.padding='4px 8px';
+    delBtn.style.border='1px solid #fca5a5';
+    delBtn.style.borderRadius='6px';
+    delBtn.style.background='#fef2f2';
+    delBtn.style.color='#dc2626';
+    delBtn.style.cursor='pointer';
+    delBtn.onclick=()=>handleDeleteCapability(entry.model_id||defaultModel, entry.capability_id);
+    
+    actionsTd.append(editBtn, delBtn);
+
+    const effectTxt=typeof entry.effect==='object'?((entry.effect.action||'')+' '+(entry.effect.object||'')+': '+(entry.effect.observable_result||'')):String(entry.effect||'');
+
+    row.onclick=()=>toggleExpandRow(entry.capability_id);
+    row.append(toggleTd, cell(entry.capability_id), cell(entry.name||entry.semantic_key), absTd, cell(effectTxt), cell(entry.evidence_count||0), statusTd, actionsTd);
     host.append(row);
+
+    if(isExpanded){
+      const drawerRow=el('tr');
+      const drawerTd=el('td');
+      drawerTd.colSpan=8;
+      drawerTd.style.background='#f8fafc';
+      drawerTd.style.padding='16px 24px';
+      drawerTd.style.borderBottom='2px solid #e2e8f0';
+      
+      const drawerContent=el('div');
+      drawerContent.innerHTML=`
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+          <div>
+            <h4 style="margin:0 0 8px 0; font-size:14px; color:#1e293b;">📌 Scope & Hardware Context</h4>
+            <ul style="margin:0; padding-left:18px; font-size:13px; color:#475569; line-height:1.6;">
+              <li><strong>Model ID:</strong> ${entry.scope?.model_id || entry.model_id || 'tian_gong'}</li>
+              <li><strong>Vendor:</strong> ${entry.scope?.vendor || 'UBTECH'}</li>
+              <li><strong>Environment:</strong> ${entry.scope?.environment || 'all'}</li>
+              <li><strong>Resolution:</strong> ${entry.scope?.resolution_status || 'resolved'}</li>
+            </ul>
+            <h4 style="margin:12px 0 8px 0; font-size:14px; color:#1e293b;">⚡ Trigger & Control Interfaces</h4>
+            <ul style="margin:0; padding-left:18px; font-size:13px; color:#475569; line-height:1.6;">
+              <li><strong>Trigger:</strong> ${entry.trigger || 'ROS2 message receipt'}</li>
+              <li><strong>Interfaces:</strong> ${JSON.stringify(entry.interfaces || [{type:'ros2_topic', reference:'/cmd_vel'}])}</li>
+            </ul>
+          </div>
+          <div>
+            <h4 style="margin:0 0 8px 0; font-size:14px; color:#1e293b;">📚 Evidence Ledger Citations</h4>
+            <div style="font-size:12px; color:#475569;">
+              ${(entry.evidence || []).map(ev=>`<div style="background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:8px; margin-bottom:6px;"><strong>[${ev.evidence_level||'E2'}] ${ev.source_id||'wiki'} (${ev.locator||'L1'}):</strong> ${ev.claim||ev.excerpt||'Cited evidence'}</div>`).join('') || '<div class="muted">No explicit evidence citations recorded.</div>'}
+            </div>
+          </div>
+        </div>
+      `;
+      drawerTd.append(drawerContent);
+      drawerRow.append(drawerTd);
+      host.append(drawerRow);
+    }
   });
 
   if(!filtered.length){
     const row=el('tr');
     const empty=el('td','empty',(query||filterStatus)?tr('noMatchingCapabilities'):tr('noCapabilities'));
-    empty.colSpan=6;
+    empty.colSpan=8;
     row.append(empty);
     host.append(row);
   }
