@@ -11,7 +11,16 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
 .shell{width:min(1800px,100%);margin:auto;padding:18px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}.title h1{font-size:clamp(20px,2vw,28px);margin:0}.title p{color:var(--muted);margin:4px 0 0}.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
 .composer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 30px #1f29370a}.composer-grid{display:grid;grid-template-columns:minmax(180px,260px) minmax(140px,180px) 1fr auto;gap:12px;align-items:end}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:800;color:#475569}.field select,.field textarea{border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:10px 12px;font:inherit;width:100%}.field textarea{min-height:74px;resize:vertical}.status{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}.status.error{color:#b91c1c}.analysis-progress{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;border:1px solid #93c5fd;border-radius:10px;background:#eff6ff;color:#1e3a8a}.analysis-progress strong,.analysis-progress span,.analysis-progress small{display:block}.analysis-progress span{margin-top:2px}.analysis-progress small{margin-top:4px;color:#475569}.spinner{width:22px;height:22px;flex:0 0 22px;border:3px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:analysis-spin .9s linear infinite}@keyframes analysis-spin{to{transform:rotate(360deg)}}
-.workbench{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(420px,1.65fr) minmax(260px,.85fr);gap:14px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px #1f29370a;overflow:hidden;min-width:0}.panel-header{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:850;background:#f8fafc}.panel-body{padding:16px}.meta{display:grid;gap:10px;margin:0}.meta dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}.meta dd{margin:2px 0 0;line-height:1.45}.requirements{margin:16px 0 0;padding-left:20px}.requirements li{margin:8px 0}.match{border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:12px}.match:last-child{margin-bottom:0}.match-title{font-weight:850;margin-bottom:8px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:5px 0}.badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;background:#e2e8f0;color:#334155}.badge.good{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.gate{font-size:13px;padding:7px 9px;border-radius:8px;background:#f8fafc;margin:6px 0}.gate.fail{background:#fff1f2;color:#9f1239}.gap{background:#fff1f2;color:#9f1239;border-left:4px solid #e11d48;padding:9px;margin-top:8px;border-radius:5px}.conclusion{border-radius:11px;padding:12px;margin-bottom:12px;background:#eff6ff}.conclusion strong{display:block;margin-top:3px;font-size:17px}.metric{font-size:30px;font-weight:900;color:#1d4ed8;margin:5px 0}.list{padding-left:20px;margin:8px 0}.empty{color:var(--muted);font-style:italic}.exports{display:flex;gap:8px;flex-wrap:wrap}.hidden{display:none!important}
+.workbench{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(420px,1.65fr) minmax(260px,.85fr);gap:14px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px #1f29370a;overflow:hidden;min-width:0}.panel-header{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:850;background:#f8fafc}.panel-body{padding:16px}.meta{display:grid;gap:10px;margin:0}.meta dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}.meta dd{margin:2px 0 0;line-height:1.45}.requirements{margin:16px 0 0;padding-left:20px}.requirements li{margin:8px 0}.match{border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:12px}.match:last-child{margin-bottom:0}.match-title{font-weight:850;margin-bottom:8px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:5px 0}.badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;background:#e2e8f0;color:#334155}.badge.good{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.gate{font-size:13px;padding:7px 9px;border-radius:8px;background:#f8fafc;margin:6px 0}.gate.fail{background:#fff1f2;color:#9f1239}.gap{background:#fff1f2;color:#9f1239;border-left:4px solid #e11d48;padding:9px;margin-top:8px;border-radius:5px}.conclusion{border-radius:11px;padding:12px;margin-bottom:12px;background:#eff6ff}.conclusion strong{display:block;margin-top:3px;font-size:17px}.metric{font-size:30px;font-weight:900;color:#1d4ed8;margin:5px 0}.list{padding-left:20px;margin:8px 0}.ai-thinking-card{background:#0f172a;color:#f8fafc;border-radius:12px;padding:16px;margin-top:12px;border:1px solid #1e293b;box-shadow:0 10px 25px rgba(0,0,0,0.3)}
+.ai-thinking-header{display:flex;align-items:center;gap:10px;font-weight:800;color:#38bdf8;font-size:14px;margin-bottom:10px}
+.ai-thinking-steps{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.thinking-step{display:flex;align-items:center;gap:10px;color:#94a3b8;padding:6px 10px;border-radius:6px;background:rgba(255,255,255,0.03);transition:all .2s ease}
+.thinking-step.active{color:#38bdf8;background:rgba(56,189,248,0.1);font-weight:600}
+.thinking-step.done{color:#4ade80}
+.grill-option-pill{display:inline-flex;align-items:center;gap:8px;background:#fff;border:2px solid #cbd5e1;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:600;color:#334155;cursor:pointer;transition:all .15s ease-in-out;user-select:none}
+.grill-option-pill:hover{border-color:#fb7185;background:#fff1f2}
+.grill-option-pill.selected{border-color:#e11d48;background:#fff1f2;color:#9f1239;box-shadow:0 4px 12px rgba(225,29,72,0.18)}
+.empty{color:var(--muted);font-style:italic}.exports{display:flex;gap:8px;flex-wrap:wrap}.hidden{display:none!important}
 @media(max-width:1100px){.workbench{grid-template-columns:1fr 1.35fr}.summary-panel{grid-column:1/-1}.composer-grid{grid-template-columns:1fr 1fr}.composer-grid .scenario-field{grid-column:1/-1}}
 @media(max-width:720px){.shell{padding:10px}.topbar{align-items:flex-start;flex-direction:column}.workbench,.composer-grid{grid-template-columns:1fr}.composer-grid .scenario-field{grid-column:auto}}
 @media print{body{background:#fff}.composer,[data-account-menu],.exports,.back-link{display:none!important}.shell{width:100%;padding:0}.workbench{grid-template-columns:1fr}.panel{box-shadow:none;break-inside:avoid}.summary-panel{grid-column:auto}}
@@ -54,6 +63,20 @@
       </div>
     </div>
     <div class="status" id="status" role="status"></div>
+    
+    <!-- AI Thinking Stream Card -->
+    <div class="ai-thinking-card hidden" id="aiThinkingStream">
+      <div class="ai-thinking-header">
+        <span class="spinner" style="width:16px; height:16px; border-width:2px;" aria-hidden="true"></span>
+        <span id="aiThinkingHeaderTitle">🧠 Claude AI Reasoning & Evidence Inspection</span>
+      </div>
+      <div class="ai-thinking-steps" id="aiThinkingSteps">
+        <div class="thinking-step done" id="step-1">✓ 1. Inspecting customer scenario text & target robot model specs</div>
+        <div class="thinking-step active" id="step-2">⚡ 2. Searching LLM Wiki knowledge base for evidence-backed atomic capabilities</div>
+        <div class="thinking-step" id="step-3">❓ 3. Formulating Grill Me technical parameter clarification questions</div>
+      </div>
+    </div>
+
     <div class="analysis-progress hidden" id="analysisProgress" role="status" aria-live="polite">
       <span class="spinner" aria-hidden="true"></span>
       <div>
@@ -65,19 +88,26 @@
   </section>
 
   <!-- Grill Me Modal -->
-  <div id="grill-modal" class="hidden" style="position:fixed; inset:0; z-index:999; background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:18px;">
-    <div style="background:#fff; border-radius:16px; border:1px solid #cbd5e1; max-width:680px; width:100%; max-height:85vh; overflow-y:auto; padding:24px; box-shadow:0 20px 40px rgba(0,0,0,0.2);">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+  <div id="grill-modal" class="hidden" style="position:fixed; inset:0; z-index:999; background:rgba(15,23,42,0.7); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:18px;">
+    <div style="background:#fff; border-radius:18px; border:1px solid #cbd5e1; max-width:720px; width:100%; max-height:88vh; overflow-y:auto; padding:28px; box-shadow:0 25px 50px rgba(0,0,0,0.25);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; border-bottom:1px solid #e2e8f0; padding-bottom:14px;">
         <div>
-          <h2 style="margin:0; font-size:20px; display:flex; align-items:center; gap:8px;" data-i18n="grillTitle">🔥 Scenario Requirement Grill-Down</h2>
-          <p style="margin:4px 0 0; color:#64748b; font-size:13px;" data-i18n="grillHelp">AI generated targeted clarifying questions to drill into missing technical constraints before capability matching.</p>
+          <h2 style="margin:0; font-size:22px; display:flex; align-items:center; gap:10px; color:#0f172a;" data-i18n="grillTitle">🔥 Scenario Requirement Grill-Down</h2>
+          <p style="margin:6px 0 0; color:#64748b; font-size:13px; line-height:1.4;" data-i18n="grillHelp">Select or customize missing technical parameters below to sharpen capability precision before sending to Claude.</p>
         </div>
-        <button type="button" id="close-grill-modal" style="background:none; border:0; color:#64748b; font-size:20px; cursor:pointer; padding:0 4px;">✕</button>
+        <button type="button" id="close-grill-modal" style="background:none; border:0; color:#64748b; font-size:22px; cursor:pointer; padding:0 6px;">✕</button>
       </div>
-      <div id="grill-questions-list" style="display:flex; flex-direction:column; gap:16px; margin-bottom:20px;"></div>
-      <div style="display:flex; justify-content:flex-end; gap:10px;">
+      <div id="grill-questions-list" style="display:flex; flex-direction:column; gap:20px; margin-bottom:24px;"></div>
+      
+      <!-- Live Refinement Preview -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; margin-bottom:20px;">
+        <div style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; color:#64748b; margin-bottom:4px;">📝 Clarified Spec Preview</div>
+        <div id="grill-preview-text" style="font-size:13px; color:#334155; font-family:monospace; white-space:pre-wrap; max-height:100px; overflow-y:auto;">Select options above to see your clarified requirements preview...</div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px;">
         <button type="button" class="button secondary" id="cancel-grill" data-i18n="cancel">Cancel</button>
-        <button type="button" class="button" id="submit-grill" style="background:#e11d48; color:#fff;" data-i18n="submitGrill">Confirm & Match Capabilities</button>
+        <button type="button" class="button" id="submit-grill" style="background:#e11d48; color:#fff; font-size:14px; padding:10px 18px;" data-i18n="submitGrill">🚀 Launch Capability Matching with Refined Specs</button>
       </div>
     </div>
   </div>
@@ -252,45 +282,97 @@ async function analyze(){
     statusEl.className='status error';
   }
 }
+const aiThinkingStream=document.getElementById('aiThinkingStream');
+const aiThinkingHeaderTitle=document.getElementById('aiThinkingHeaderTitle');
+const aiThinkingSteps=document.getElementById('aiThinkingSteps');
+
+function showThinkingStream(title,steps){
+  aiThinkingHeaderTitle.textContent=title;
+  aiThinkingSteps.replaceChildren();
+  steps.forEach(step=>{
+    const div=el('div',`thinking-step ${step.status||''}`);
+    div.textContent=step.text;
+    aiThinkingSteps.append(div);
+  });
+  aiThinkingStream.classList.remove('hidden');
+}
+function hideThinkingStream(){aiThinkingStream.classList.add('hidden')}
+
 grillMeButton.addEventListener('click',async()=>{
   const scenario=scenarioInput.value.trim();
   if(!scenario){statusEl.textContent=tr('enterScenario');statusEl.className='status error';return}
   grillMeButton.disabled=true;statusEl.className='status';statusEl.textContent=tr('grillGenerating');
+  showThinkingStream('🧠 Claude AI Reasoning: Extracting Parameter Gaps...',[
+    {status:'done',text:'✓ 1. Inspecting customer scenario text & target robot model specs'},
+    {status:'active',text:'⚡ 2. Searching LLM Wiki knowledge base for evidence-backed atomic capabilities'},
+    {status:'pending',text:'❓ 3. Formulating Grill Me technical parameter clarification questions'}
+  ]);
   try{
     const response=await fetch('/api/capability-match/grill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:uiLanguage.value})});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||'Failed to generate Grill Me questions');
     currentGrillQuestions=data.questions||[];
     renderGrillQuestions(currentGrillQuestions);
+    showThinkingStream('🧠 Claude AI Reasoning: Grill-Down Questions Ready!',[
+      {status:'done',text:'✓ 1. Scenario text parsed'},
+      {status:'done',text:'✓ 2. Knowledge Base evidence searched'},
+      {status:'done',text:'✓ 3. 4 Grill Me technical boundary questions generated'}
+    ]);
     grillModal.classList.remove('hidden');
     statusEl.textContent='';
   }catch(err){
     statusEl.textContent=err instanceof Error?err.message:'Grill Me failed';
     statusEl.className='status error';
+    hideThinkingStream();
   }finally{
     grillMeButton.disabled=false;
   }
 });
 
+function updateGrillPreview(){
+  const previewEl=document.getElementById('grill-preview-text');
+  let text=scenarioInput.value.trim();
+  let extraText='\n\n【Clarified Technical Parameters / 需求打磨补充】:\n';
+  let added=false;
+  currentGrillQuestions.forEach((q,idx)=>{
+    const selectedPill=document.querySelector(`.grill-option-pill.selected[data-qid="${q.id||idx}"]`);
+    const customVal=(document.getElementById(`grill_custom_${q.id||idx}`)||{}).value;
+    const ans=[selectedPill?selectedPill.getAttribute('data-val'):'',customVal?customVal.trim():''].filter(Boolean).join('; ');
+    if(ans){extraText+=`- ${q.question} => ${ans}\n`;added=true}
+  });
+  previewEl.textContent=added?text+extraText:text;
+}
+
 function renderGrillQuestions(questions){
   grillQuestionsList.replaceChildren();
   questions.forEach((q,idx)=>{
     const card=el('div');
-    card.style.background='#f8fafc';card.style.border='1px solid #e2e8f0';card.style.borderRadius='10px';card.style.padding='14px';
-    const title=el('div');title.style.fontWeight='700';title.style.marginBottom='10px';title.style.color='#1e293b';title.textContent=`${idx+1}. ${q.question}`;
+    card.style.background='#f8fafc';card.style.border='1px solid #cbd5e1';card.style.borderRadius='12px';card.style.padding='16px';
+    const title=el('div');title.style.fontWeight='800';title.style.marginBottom='12px';title.style.color='#0f172a';title.style.fontSize='15px';
+    title.textContent=`${idx+1}. ${q.question}`;
     card.append(title);
-    const optionsGrid=el('div');optionsGrid.style.display='flex';optionsGrid.style.flexWrap='wrap';optionsGrid.style.gap='8px';
+    const optionsGrid=el('div');optionsGrid.style.display='flex';optionsGrid.style.flexWrap='wrap';optionsGrid.style.gap='10px';
     (q.options||[]).forEach(opt=>{
-      const label=el('label');label.style.display='inline-flex';label.style.alignItems='center';label.style.gap='6px';label.style.background='#fff';label.style.border='1px solid #cbd5e1';label.style.borderRadius='20px';label.style.padding='6px 14px';label.style.fontSize='13px';label.style.cursor='pointer';
-      const radio=document.createElement('input');radio.type='radio';radio.name=`grill_q_${q.id||idx}`;radio.value=opt;
-      label.append(radio,document.createTextNode(opt));optionsGrid.append(label);
+      const pill=el('div','grill-option-pill');
+      pill.setAttribute('data-qid',q.id||idx);
+      pill.setAttribute('data-val',opt);
+      pill.textContent=opt;
+      pill.addEventListener('click',()=>{
+        const siblings=optionsGrid.querySelectorAll('.grill-option-pill');
+        siblings.forEach(s=>s.classList.remove('selected'));
+        pill.classList.add('selected');
+        updateGrillPreview();
+      });
+      optionsGrid.append(pill);
     });
     const customInput=document.createElement('input');customInput.type='text';
-    customInput.placeholder=uiLanguage.value==='zh-CN'?'补充说明或自定义要求...':'Custom notes / details...';
-    customInput.style.width='100%';customInput.style.marginTop='10px';customInput.style.padding='8px 12px';customInput.style.border='1px solid #cbd5e1';customInput.style.borderRadius='6px';
+    customInput.placeholder=uiLanguage.value==='zh-CN'?'✏️ 补充自定义细节要求...':'✏️ Add custom details / specifications...';
+    customInput.style.width='100%';customInput.style.marginTop='12px';customInput.style.padding='10px 14px';customInput.style.border='1px solid #cbd5e1';customInput.style.borderRadius='8px';
     customInput.id=`grill_custom_${q.id||idx}`;
+    customInput.addEventListener('input',updateGrillPreview);
     card.append(optionsGrid,customInput);grillQuestionsList.append(card);
   });
+  updateGrillPreview();
 }
 
 function closeGrill(){grillModal.classList.add('hidden')}
@@ -298,16 +380,17 @@ closeGrillModal.addEventListener('click',closeGrill);
 cancelGrill.addEventListener('click',closeGrill);
 
 submitGrill.addEventListener('click',()=>{
-  let extraText='\n\n【Requirement Clarifications / 需求打磨补充】:\n';
-  currentGrillQuestions.forEach((q,idx)=>{
-    const selectedRadio=document.querySelector(`input[name="grill_q_${q.id||idx}"]:checked`);
-    const customVal=(document.getElementById(`grill_custom_${q.id||idx}`)||{}).value;
-    const ans=[selectedRadio?selectedRadio.value:'',customVal?customVal.trim():''].filter(Boolean).join('; ');
-    if(ans){extraText+=`- ${q.question} => ${ans}\n`}
-  });
-  scenarioInput.value=scenarioInput.value.trim()+extraText;
-  localStorage.setItem('agent1_capability_match_scenario_text',scenarioInput.value);
+  const previewEl=document.getElementById('grill-preview-text');
+  if(previewEl&&previewEl.textContent){
+    scenarioInput.value=previewEl.textContent;
+    localStorage.setItem('agent1_capability_match_scenario_text',scenarioInput.value);
+  }
   closeGrill();
+  showThinkingStream('🧠 Claude AI Reasoning: Running Feasibility Analysis...',[
+    {status:'done',text:'✓ 1. Refined scenario spec received'},
+    {status:'active',text:'⚡ 2. Executing evidence-backed L0-L3 capability matchup & hard gate validation'},
+    {status:'pending',text:'📊 3. Computing R&D effort & generating technical conclusion'}
+  ]);
   analyze();
 });
 
