@@ -285,6 +285,7 @@ def _catalog_entries(target: Path) -> list[dict[str, Any]]:
                 "capability_id": str(entry.get("capability_id") or path.stem),
                 "name": str(entry.get("name") or ""),
                 "semantic_key": str(entry.get("semantic_key") or ""),
+                "abstraction_level": str(entry.get("abstraction_level") or entry.get("abstraction") or "L0_primitive_driver"),
                 "effect": " ".join(
                     str(effect.get(key) or "").strip()
                     for key in ("action", "object", "observable_result")
