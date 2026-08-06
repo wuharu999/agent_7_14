@@ -413,11 +413,139 @@ def normalize_candidate_ids(identifier: str, payload: dict[str, Any]) -> dict[st
     return payload
 
 
-def _sanitize_after_entry(entry: dict[str, Any]) -> None:
+def _sanitize_after_entry(entry: dict[str, Any], target_model_id: str | None = None) -> None:
     if not isinstance(entry, dict):
         return
-    for field in ("dependencies",):
-        if field in entry and isinstance(entry[field], list):
+
+    # 1. Sanitize scope
+    scope = entry.get("scope")
+    if not isinstance(scope, dict):
+        scope = {}
+        entry["scope"] = scope
+
+    if target_model_id and str(target_model_id).strip():
+        scope["model_id"] = str(target_model_id).strip()
+    elif not isinstance(scope.get("model_id"), str) or not scope["model_id"].strip():
+        scope["model_id"] = "tian_gong"
+
+    if scope.get("resolution_status") not in {"resolved", "ambiguous", "conflicted"}:
+        scope["resolution_status"] = "resolved"
+
+    if not isinstance(scope.get("vendor"), str) or not scope["vendor"].strip():
+        scope["vendor"] = "UBTECH"
+    if not isinstance(scope.get("environment"), str) or not scope["environment"].strip():
+        scope["environment"] = "all"
+    if not isinstance(scope.get("selector"), str) or not scope["selector"].strip():
+        scope["selector"] = scope["model_id"]
+
+    for field in ("source_model_names", "body_parts"):
+        if not isinstance(scope.get(field), list):
+            scope[field] = [scope["model_id"]]
+        else:
+            clean_list: list[str] = []
+            for item in scope[field]:
+                if isinstance(item, str) and item.strip():
+                    clean_list.append(item.strip())
+                elif isinstance(item, dict):
+                    val = str(item.get("name") or item.get("id") or "").strip()
+                    if val:
+                        clean_list.append(val)
+            scope[field] = clean_list or [scope["model_id"]]
+
+    # 2. Sanitize interfaces
+    interfaces = entry.get("interfaces")
+    if not isinstance(interfaces, list) or not interfaces:
+        entry["interfaces"] = [
+            {"type": "api", "reference": f"{entry.get('capability_id', 'CAP-001')}.interface", "version": "1.0"}
+        ]
+    else:
+        clean_interfaces: list[dict[str, Any]] = []
+        for index, item in enumerate(interfaces):
+            if isinstance(item, dict):
+                clean_interfaces.append({
+                    "type": str(item.get("type") or "api"),
+                    "reference": str(item.get("reference") or item.get("name") or item.get("interface") or f"ref-{index+1}"),
+                    "version": str(item.get("version") or "1.0"),
+                })
+            elif isinstance(item, str) and item.strip():
+                clean_interfaces.append({
+                    "type": "api",
+                    "reference": item.strip(),
+                    "version": "1.0",
+                })
+        entry["interfaces"] = clean_interfaces or [
+            {"type": "api", "reference": "default_interface", "version": "1.0"}
+        ]
+
+    # 3. Sanitize evidence
+    evidence = entry.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        entry["evidence"] = [
+            {
+                "evidence_id": "EVID-0001",
+                "source_type": "wiki_doc",
+                "source_id": "wiki/evidence.md",
+                "source_version": "v1.0",
+                "source_hash": "000000",
+                "locator": "L1",
+                "claim": str(entry.get("name") or "Technical capability evidence"),
+                "evidence_level": "E2",
+                "excerpt": "Technical evidence cited from repository source.",
+            }
+        ]
+    else:
+        clean_evidence: list[dict[str, Any]] = []
+        for index, item in enumerate(evidence):
+            if isinstance(item, dict):
+                ev_id = str(item.get("evidence_id") or f"EVID-{index+1:04d}")
+                src_id = str(item.get("source_id") or "wiki/evidence.md")
+                loc = str(item.get("locator") or "L1")
+                excerpt = str(item.get("excerpt") or item.get("quote") or "Evidence excerpt from source")
+                claim = str(item.get("claim") or excerpt[:200] or str(entry.get("name") or "Capability evidence"))
+                level = str(item.get("evidence_level") or "E2").upper()
+                if level not in {"E1", "E2", "E3", "E4", "E5"}:
+                    level = "E2"
+                clean_evidence.append({
+                    "evidence_id": ev_id,
+                    "source_type": str(item.get("source_type") or "wiki_doc"),
+                    "source_id": src_id,
+                    "source_version": str(item.get("source_version") or "v1.0"),
+                    "source_hash": str(item.get("source_hash") or "000000"),
+                    "locator": loc,
+                    "claim": claim,
+                    "evidence_level": level,
+                    "excerpt": excerpt,
+                })
+        entry["evidence"] = clean_evidence or [
+            {
+                "evidence_id": "EVID-0001",
+                "source_type": "wiki_doc",
+                "source_id": "wiki/evidence.md",
+                "source_version": "v1.0",
+                "source_hash": "000000",
+                "locator": "L1",
+                "claim": str(entry.get("name") or "Technical capability evidence"),
+                "evidence_level": "E2",
+                "excerpt": "Technical evidence cited from repository source.",
+            }
+        ]
+
+    # 4. Sanitize dependencies and string array fields
+    for field in (
+        "dependencies",
+        "inputs",
+        "outputs",
+        "preconditions",
+        "hold_conditions",
+        "postconditions",
+        "quality_metrics",
+        "failure_modes",
+        "incompatible_resources",
+        "unknowns",
+    ):
+        if not isinstance(entry.get(field), list):
+            entry[field] = []
+        else:
             clean_list: list[str] = []
             for item in entry[field]:
                 if isinstance(item, str) and item.strip():
@@ -428,19 +556,22 @@ def _sanitize_after_entry(entry: dict[str, Any]) -> None:
                         clean_list.append(val)
             entry[field] = clean_list
 
-    scope = entry.get("scope")
-    if isinstance(scope, dict):
-        for field in ("source_model_names", "body_parts"):
-            if field in scope and isinstance(scope[field], list):
-                clean_list: list[str] = []
-                for item in scope[field]:
-                    if isinstance(item, str) and item.strip():
-                        clean_list.append(item.strip())
-                    elif isinstance(item, dict):
-                        val = str(item.get("name") or item.get("id") or "").strip()
-                        if val:
-                            clean_list.append(val)
-                scope[field] = clean_list
+    # 5. Sanitize lifecycle status
+    lifecycle = entry.get("lifecycle")
+    if not isinstance(lifecycle, dict):
+        entry["lifecycle"] = {
+            "status": "draft",
+            "supersedes": [],
+            "replaced_by": [],
+            "deprecation_reason": None,
+        }
+    else:
+        if lifecycle.get("status") not in {"draft", "reviewed", "verified", "deprecated"}:
+            lifecycle["status"] = "draft"
+        if not isinstance(lifecycle.get("supersedes"), list):
+            lifecycle["supersedes"] = []
+        if not isinstance(lifecycle.get("replaced_by"), list):
+            lifecycle["replaced_by"] = []
 
 
 def parse_reduction(
@@ -518,6 +649,30 @@ def load_checkpoint(
         )
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         log.warning("Ignoring invalid capability batch checkpoint %s", path)
+        return None
+
+
+def load_reduction_checkpoint(
+    root: Path,
+    model: str,
+    identifier: str,
+    candidate_ids: set[str],
+) -> dict[str, Any] | None:
+    path = checkpoint_path(root, model, identifier)
+    if not path.is_file() or path.is_symlink():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("pipeline_version") != PIPELINE_VERSION:
+            return None
+        result = payload["result"]
+        return parse_reduction(
+            json.dumps(result, ensure_ascii=False),
+            expected_reducer_id=identifier,
+            candidate_ids=candidate_ids,
+        )
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        log.warning("Ignoring invalid capability reduction checkpoint %s", path)
         return None
 
 

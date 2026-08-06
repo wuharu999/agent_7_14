@@ -31,6 +31,7 @@ from worker.capability_batch import (
     parse_reduction,
     partition_evidence_units,
     save_checkpoint,
+    _sanitize_after_entry,
 )
 from worker.claude_process import run_claude_process
 from worker.config import (
@@ -741,6 +742,8 @@ async def _reduce_candidates(
     reducer_id: str,
     candidates: list[dict[str, Any]],
     existing_entries: list[dict[str, Any]],
+    base_dir: Path | None = None,
+    reuse_checkpoints: bool = True,
     on_progress: ProgressCallback | None = None,
     progress_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -753,12 +756,33 @@ async def _reduce_candidates(
                 f"Merging and validating {len(candidates)} extracted candidates...",
                 progress_snapshot,
             )
-        return await _reduce_candidate_chunk(
-            model=model,
-            reducer_id=reducer_id,
-            candidates=candidates,
-            existing_entries=existing_entries,
-        )
+        candidate_ids = {str(candidate["candidate_id"]) for candidate in candidates}
+        chunk_reduction = None
+        if reuse_checkpoints and base_dir is not None:
+            chunk_reduction = await asyncio.to_thread(
+                load_reduction_checkpoint,
+                base_dir,
+                model,
+                reducer_id,
+                candidate_ids,
+            )
+        if chunk_reduction is None:
+            chunk_reduction = await _reduce_candidate_chunk(
+                model=model,
+                reducer_id=reducer_id,
+                candidates=candidates,
+                existing_entries=existing_entries,
+            )
+            if base_dir is not None:
+                await asyncio.to_thread(
+                    save_checkpoint,
+                    base_dir,
+                    model,
+                    reducer_id,
+                    chunk_reduction,
+                )
+        return chunk_reduction
+
     chunks = [
         candidates[i : i + REDUCE_CHUNK_SIZE]
         for i in range(0, len(candidates), REDUCE_CHUNK_SIZE)
@@ -771,12 +795,31 @@ async def _reduce_candidates(
     async def process_chunk(chunk_index: int, chunk: list[dict[str, Any]]) -> None:
         async with sem:
             sub_reducer_id = f"{reducer_id}-chunk{chunk_index}"
-            chunk_reduction = await _reduce_candidate_chunk(
-                model=model,
-                reducer_id=sub_reducer_id,
-                candidates=chunk,
-                existing_entries=existing_entries,
-            )
+            candidate_ids = {str(candidate["candidate_id"]) for candidate in chunk}
+            chunk_reduction = None
+            if reuse_checkpoints and base_dir is not None:
+                chunk_reduction = await asyncio.to_thread(
+                    load_reduction_checkpoint,
+                    base_dir,
+                    model,
+                    sub_reducer_id,
+                    candidate_ids,
+                )
+            if chunk_reduction is None:
+                chunk_reduction = await _reduce_candidate_chunk(
+                    model=model,
+                    reducer_id=sub_reducer_id,
+                    candidates=chunk,
+                    existing_entries=existing_entries,
+                )
+                if base_dir is not None:
+                    await asyncio.to_thread(
+                        save_checkpoint,
+                        base_dir,
+                        model,
+                        sub_reducer_id,
+                        chunk_reduction,
+                    )
             decisions = chunk_reduction.get("decisions", [])
             if isinstance(decisions, list):
                 decisions_by_chunk[chunk_index - 1] = decisions
@@ -827,6 +870,8 @@ def _build_changeset_from_reduction(
     for index, decision in enumerate(decisions, start=1):
         action = str(decision["action"])
         entry = decision.get("after_entry")
+        if isinstance(entry, dict):
+            _sanitize_after_entry(entry, model)
         evidence_ids = []
         if isinstance(entry, dict) and isinstance(entry.get("evidence"), list):
             evidence_ids = sorted(
@@ -1164,6 +1209,8 @@ async def organize_capability_catalog(
             reducer_id=f"CR-{reducer_digest}",
             candidates=candidates,
             existing_entries=await asyncio.to_thread(_existing_catalog_payload, target),
+            base_dir=team_config.base_dir,
+            reuse_checkpoints=reuse_checkpoints,
             on_progress=on_progress,
             progress_snapshot=final_progress,
         )
