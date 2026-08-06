@@ -15,17 +15,43 @@
 .title h1{font-size:clamp(20px,2vw,26px);margin:0}.title p{color:var(--muted);margin:3px 0 0;font-size:13px}
 .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
 
-/* Workbench Grid Layout */
-.workbench-grid{display:grid;grid-template-columns:440px 1fr;gap:16px;align-items:start}
+/* Workbench Grid Layout: Starts as centered single-column chat view */
+.workbench-grid {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
+  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
 /* Left Pane: ChatGPT Style Grill-Me Panel */
-.chat-panel{background:#ffffff;border:1px solid #cbd5e1;border-radius:16px;display:flex;flex-direction:column;height:calc(100vh - 110px);box-shadow:0 10px 25px rgba(0,0,0,0.05);overflow:hidden}
+.chat-panel {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 110px);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+  overflow: hidden;
+  width: 100%;
+  max-width: 780px; /* Centered chat interface on load */
+  flex-shrink: 0;
+  transition: max-width 0.8s cubic-bezier(0.16, 1, 0.3, 1), flex 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.workbench-grid.has-dashboard .chat-panel {
+  max-width: 440px;
+}
+
 .chat-header{padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;justify-content:space-between}
 .chat-header-title{font-weight:800;font-size:15px;color:#0f172a;display:flex;align-items:center;gap:8px}
 .chat-thread{flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;background:#fafafa}
 .chat-bubble{max-width:92%;padding:12px 16px;border-radius:14px;font-size:13.5px;line-height:1.5;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
 .chat-bubble.assistant{background:#ffffff;border:1px solid #e2e8f0;color:#1e293b;align-self:flex-start;border-bottom-left-radius:3px}
-.chat-bubble.user{background:#2563eb;color:#ffffff;align-self:flex-end;border-bottom-right-radius:3px}
+.chat-bubble.user{background:#2563eb;color:#ffffff;align-self:flex-end;border-bottom-right-radius:3px;white-space:pre-wrap;}
 .chat-bubble-title{font-weight:800;margin-bottom:6px;color:#0f172a;font-size:13px}
 .chat-options-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .chat-pill{display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;color:#334155;cursor:pointer;transition:all .15s ease}
@@ -33,12 +59,32 @@
 .chat-pill.selected{border-color:#e11d48;background:#fff1f2;color:#9f1239;font-weight:700}
 
 .chat-input-wrap{padding:12px 14px;border-top:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;gap:8px}
-.chat-textarea{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;resize:none;height:68px;outline:none}
+.chat-textarea{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:10px 14px;font:inherit;font-size:13.5px;resize:none;height:68px;outline:none;}
 .chat-textarea:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
-.chat-actions-row{display:flex;justify-content:space-between;align-items:center}
 
-/* Right Pane: Visual Feasibility Dashboard */
-.dashboard-panel{display:flex;flex-direction:column;gap:16px;min-width:0}
+/* Right Pane: Visual Feasibility Dashboard (hidden initially, slowly emerges when analysis triggers) */
+.dashboard-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(40px);
+  max-width: 0;
+  pointer-events: none;
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.8s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.8s ease;
+}
+
+.workbench-grid.has-dashboard .dashboard-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  max-width: 1200px;
+  pointer-events: auto;
+}
+
 .dash-card{background:#ffffff;border:1px solid #cbd5e1;border-radius:16px;padding:20px;box-shadow:0 8px 24px rgba(0,0,0,0.04)}
 .dash-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid #f1f5f9;padding-bottom:10px}
 .dash-title{font-size:16px;font-weight:850;color:#0f172a;margin:0;display:flex;align-items:center;gap:8px}
@@ -70,7 +116,7 @@
 .thinking-step.done{color:#4ade80}
 .spinner{width:18px;height:18px;flex:0 0 18px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .hidden{display:none!important}
-@media(max-width:1100px){.workbench-grid{grid-template-columns:1fr}}
+@media(max-width:1100px){.workbench-grid{flex-direction:column;align-items:center;}.chat-panel{max-width:100%!important;}.dashboard-panel{max-width:100%!important;width:100%;}}
 </style>
 </head>
 <body>
@@ -80,7 +126,7 @@
       <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 1.8; flex-shrink:0;"></div>
       <div class="title">
         <h1 data-i18n="title">🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
-        <p data-i18n="subtitle">Two-Stage Evaluation Engine (Catalog ➔ Wiki Fallback), Interactive ChatGPT Grill-Me & Visual Dashboard</p>
+        <p data-i18n="subtitle">Interactive ChatGPT Grill-Me Studio & Autonomous Capability Feasibility Compiler</p>
       </div>
     </div>
     <div class="actions">
@@ -118,7 +164,7 @@
         <!-- Initial AI Welcome Bubble -->
         <div class="chat-bubble assistant">
           <div class="chat-bubble-title">🤖 AI Scenario Compiler</div>
-          Hello! I am your AI Scenario Feasibility Compiler. I have loaded the pre-classified atomic capability catalog. Describe your customer scenario below, or choose options from the clarifying questions to sharpen requirement matching.
+          Hello! I am your AI Scenario Feasibility Compiler. I have loaded the pre-classified atomic capability catalog. Describe your customer scenario below, or select parameters from the clarifying questions.
         </div>
       </div>
 
@@ -129,19 +175,16 @@
       </div>
 
       <div class="chat-input-wrap">
-        <textarea id="scenario" class="chat-textarea" placeholder="Describe task details, speed constraints, payload facts, environment, etc..."></textarea>
-        <div class="chat-actions-row">
-          <button id="grill-me" type="button" class="secondary" style="background:#e11d48; color:#fff; font-size:12px; padding:6px 12px;" onclick="triggerGrillMeQuestions()">
-            🔥 Generate Questions
-          </button>
-          <button id="analyze" type="button" style="background:#2563eb; color:#fff; font-size:12.5px; padding:7px 16px; font-weight:700;" onclick="runCapabilityMatch()">
-            🚀 Match Capabilities
+        <div style="position:relative; display:flex; align-items:center;">
+          <textarea id="scenario" class="chat-textarea" placeholder="Type your scenario description or details... (Press Enter to send, Shift+Enter for newline)" style="padding-right:90px;"></textarea>
+          <button id="send-btn" type="button" onclick="handleUserSend()" style="position:absolute; right:10px; bottom:10px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:6px;">
+            Send ➔
           </button>
         </div>
       </div>
     </section>
 
-    <!-- RIGHT PANE: Visual Feasibility Dashboard -->
+    <!-- RIGHT PANE: Visual Feasibility Dashboard (Slowly emerges when agent triggers analysis) -->
     <section class="dashboard-panel">
       <!-- AI Thinking Progress Card -->
       <div class="ai-thinking-card hidden" id="aiThinkingStream">
@@ -172,7 +215,7 @@
           </div>
           <div>
             <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;" id="conclusion-title">Feasibility Assessment</div>
-            <div style="font-size:13px; color:#475569; line-height:1.5;" id="conclusion-desc">Enter a scenario on the left pane and click "Match Capabilities" to compile evidence-backed requirements.</div>
+            <div style="font-size:13px; color:#475569; line-height:1.5;" id="conclusion-desc">Enter a scenario on the left pane to compile evidence-backed requirements.</div>
           </div>
         </div>
       </div>
@@ -205,7 +248,7 @@
       <!-- Atomic Skill Matchup Matrix & Hard Gates -->
       <div class="dash-card">
         <div class="dash-header">
-          <h3 class="dash-title">🧩 Atomic Requirements & Hard Gate Evaluation</h3>
+          <h3 class="dash-title">🧩 Atomic Skill Matchup Matrix & Hard Gate Evaluation</h3>
         </div>
         <div id="matches"><p class="empty">No match results yet.</p></div>
       </div>
@@ -232,8 +275,6 @@ const modelSelect=document.getElementById('model-select');
 const companion=document.getElementById('coding-companion');
 const chatThread=document.getElementById('chat-thread');
 const aiThinkingStream=document.getElementById('aiThinkingStream');
-let selectedClarifications={};
-
 const translations={
   en:{title:'🤖 Robot Scenario Feasibility & Capability Match Workbench'},
   'zh-CN':{title:'机器人场景可行性与能力匹配工作台'}
@@ -249,7 +290,17 @@ window.addEventListener('DOMContentLoaded', () => {
   setCompanionMode('thinking');
   setTimeout(() => {
     triggerGrillMeQuestions(true);
-  }, 600);
+  }, 400);
+
+  // Enter to send, Shift+Enter for newline
+  if (scenarioInput) {
+    scenarioInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleUserSend();
+      }
+    });
+  }
 });
 
 function setCompanionMode(mode) {
@@ -257,6 +308,14 @@ function setCompanionMode(mode) {
 }
 
 function handleModelChange() {
+  document.querySelector('.workbench-grid').classList.remove('has-dashboard');
+  clearClarifiedOptions();
+  chatThread.innerHTML = `
+    <div class="chat-bubble assistant">
+      <div class="chat-bubble-title">🤖 AI Scenario Compiler</div>
+      Switched to target model: <strong>${modelSelect.value}</strong>. Describe your scenario or select clarification parameters below.
+    </div>
+  `;
   triggerGrillMeQuestions(true);
 }
 
@@ -325,7 +384,7 @@ function appendAssistantBubble(htmlContent) {
 function renderGrillQuestionsInChat(questions) {
   if (!questions.length) return;
   let html = `<div class="chat-bubble-title">🔥 Grill-Me Clarification Questions</div>`;
-  html += `I need a few technical parameters to sharpen precision. Click options below:`;
+  html += `Select key parameters below or describe your task:`;
 
   questions.forEach((q, idx) => {
     html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">${idx + 1}. ${q.question}</div>`;
@@ -339,21 +398,41 @@ function renderGrillQuestionsInChat(questions) {
   appendAssistantBubble(html);
 }
 
-async function runCapabilityMatch() {
+async function handleUserSend() {
+  if (isAnalyzing) return;
   const rawText = scenarioInput.value.trim();
-  const modelId = modelSelect.value;
-  
-  let fullScenario = rawText;
   const choices = Object.values(selectedClarifications);
-  if (choices.length) {
-    fullScenario += `\nClarified Parameters:\n- ` + choices.join('\n- ');
+
+  if (!rawText && !choices.length) return;
+
+  let fullScenario = rawText;
+  let displayMsg = rawText;
+
+  if (choices.length && !rawText) {
+    displayMsg = "Selected Clarified Parameters:\n- " + choices.join('\n- ');
+    fullScenario = displayMsg;
+  } else if (choices.length) {
+    displayMsg += "\n\nSelected Clarified Parameters:\n- " + choices.join('\n- ');
+    fullScenario = displayMsg;
   }
 
-  if (!fullScenario.trim()) {
-    alert('Please describe your customer scenario or select clarification options.');
-    return;
-  }
+  appendUserBubble(displayMsg);
+  scenarioInput.value = '';
+  clearClarifiedOptions();
 
+  isAnalyzing = true;
+  const modelId = modelSelect.value;
+  setCompanionMode('thinking');
+  appendAssistantBubble(`🤖 Requirements received! Autonomous Compiler is matching capabilities against <strong>${modelId}</strong> evidence...`);
+
+  try {
+    await runCapabilityMatch(fullScenario, modelId);
+  } finally {
+    isAnalyzing = false;
+  }
+}
+
+async function runCapabilityMatch(fullScenario, modelId) {
   setCompanionMode('charging');
   aiThinkingStream.classList.remove('hidden');
 
@@ -367,9 +446,9 @@ async function runCapabilityMatch() {
     if (!res.ok) throw new Error(data.error || 'Matching analysis failed');
 
     renderDashboard(data.result || data);
-    appendAssistantBubble(`✅ Capability matching analysis complete for <strong>${modelId}</strong>! View the updated Visual Dashboard on the right.`);
+    appendAssistantBubble(`✅ Feasibility Analysis complete! View the visual dashboard on the right ➔`);
   } catch (err) {
-    alert(err.message || 'Capability match analysis failed.');
+    appendAssistantBubble(`⚠️ Analysis failed: ${err.message || 'Capability match analysis failed.'}`);
   } finally {
     aiThinkingStream.classList.add('hidden');
     setCompanionMode('sleeping');
@@ -377,6 +456,10 @@ async function runCapabilityMatch() {
 }
 
 function renderDashboard(assessment) {
+  // Reveal right-side visual dashboard with smooth transition
+  const grid = document.querySelector('.workbench-grid');
+  if (grid) grid.classList.add('has-dashboard');
+
   const feasibility = assessment.feasibility_assessment || {};
   const score = Math.round(Number(feasibility.feasibility_score || 0) * 100);
   
