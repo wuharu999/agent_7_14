@@ -321,6 +321,11 @@ function selectOptionPill(btn, questionId, optionText) {
   updateClarifiedBadge();
 }
 
+let currentGrillQuestions = [];
+let currentQuestionIndex = 0;
+let userScenarioIntent = "";
+let grillHistory = [];
+
 async function triggerGrillMeQuestions(scenarioText) {
   const modelId = targetRobotModel || 'tian_gong';
 
@@ -328,10 +333,23 @@ async function triggerGrillMeQuestions(scenarioText) {
     const res = await fetch('/api/capability-match/grill', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scenario_text: scenarioText, model_id: modelId })
+      body: JSON.stringify({
+        scenario_text: scenarioText,
+        model_id: modelId,
+        history: grillHistory,
+        accumulated_specs: selectedClarifications,
+        language: uiLanguage.value
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to generate questions');
+
+    if (data.is_complete) {
+      appendAssistantBubble(`🤖 <strong>Requirement Specification Complete!</strong><br>${data.summary_if_complete || 'All key technical parameters clarified.'}`);
+      appendThinkingBubble("Compiling capability matchup & evaluating repository evidence...");
+      await handleAutoAnalysisAfterGrill();
+      return;
+    }
 
     const questions = data.questions || [];
     renderGrillQuestionsInChat(questions);
@@ -339,12 +357,12 @@ async function triggerGrillMeQuestions(scenarioText) {
     // Graceful fallback clarification questions if Claude is offline/busy
     renderGrillQuestionsInChat([
       {
-        id: 'payload',
+        id: 'fallback_payload',
         question: 'What is your required payload capacity for this task?',
         options: ['Light (< 3 kg)', 'Medium (3 - 10 kg)', 'Heavy (> 10 kg)']
       },
       {
-        id: 'environment',
+        id: 'fallback_environment',
         question: 'What operational environment will the robot work in?',
         options: ['Indoor Factory Floor', 'Outdoor Rough Terrain', 'Cleanroom / Laboratory']
       }
@@ -352,59 +370,26 @@ async function triggerGrillMeQuestions(scenarioText) {
   }
 }
 
-function appendUserBubble(text) {
-  const div = document.createElement('div');
-  div.className = 'chat-bubble user';
-  div.textContent = text;
-  chatThread.appendChild(div);
-  chatThread.scrollTop = chatThread.scrollHeight;
-}
-
-function appendAssistantBubble(htmlContent) {
-  const div = document.createElement('div');
-  div.className = 'chat-bubble assistant';
-  div.innerHTML = htmlContent;
-  chatThread.appendChild(div);
-  chatThread.scrollTop = chatThread.scrollHeight;
-}
-
-function appendThinkingBubble(text) {
-  removeThinkingBubble();
-  const div = document.createElement('div');
-  div.className = 'chat-bubble assistant';
-  div.id = 'active-thinking';
-  div.style.background = '#f1f5f9';
-  div.style.color = '#475569';
-  div.style.fontStyle = 'italic';
-  div.innerHTML = `<span class="spinner" style="width:14px; height:14px; display:inline-block; margin-right:8px; vertical-align:middle;"></span> ${text}`;
-  chatThread.appendChild(div);
-  chatThread.scrollTop = chatThread.scrollHeight;
-  return div;
-}
-
-function removeThinkingBubble() {
-  const el = document.getElementById('active-thinking');
-  if (el) el.remove();
-}
-
-let currentGrillQuestions = [];
-let currentQuestionIndex = 0;
-let userScenarioIntent = "";
-
 function renderGrillQuestionsInChat(questions) {
-  // Use 100% dynamic Claude-generated questions
   currentGrillQuestions = questions || [];
   currentQuestionIndex = 0;
 
-  appendAssistantBubble(`🤖 Scenario received! Claude AI has analyzed your demand against repository capabilities. Answer these clarification questions one by one below:`);
+  if (!currentGrillQuestions.length) {
+    handleAutoAnalysisAfterGrill();
+    return;
+  }
+
+  appendAssistantBubble(`🤖 Claude AI is probing your technical requirements. Answer the question below or click <strong>Compile Analysis Now</strong> anytime:`);
   renderCurrentSingleQuestion();
 }
 
 function renderCurrentSingleQuestion() {
   if (currentQuestionIndex >= currentGrillQuestions.length) {
-    // All questions answered! Auto-trigger analysis
-    appendThinkingBubble("All parameters specified! Evaluating repository evidence & compiling feasibility report...");
-    handleAutoAnalysisAfterGrill();
+    // Current batch answered! Launch next Claude process to check if more grilling is needed
+    appendThinkingBubble("Claude is evaluating your responses & probing next technical parameters...");
+    setTimeout(() => {
+      triggerGrillMeQuestions(userScenarioIntent);
+    }, 400);
     return;
   }
 
@@ -420,11 +405,14 @@ function renderCurrentSingleQuestion() {
   });
 
   html += `</div>`;
+  html += `<div style="margin-top:12px; font-size:11.5px; text-align:right;">`;
+  html += `<button type="button" onclick="forceCompileAnalysisNow()" style="background:none; border:none; color:#2563eb; cursor:pointer; font-weight:700; text-decoration:underline;">✨ Skip & Compile Feasibility Analysis Now ➔</button>`;
+  html += `</div>`;
+
   appendAssistantBubble(html);
 }
 
-function answerSingleQuestion(btn, idOrModel, optionText) {
-  // Highlight selected button & disable siblings
+function answerSingleQuestion(btn, questionId, optionText) {
   const parent = btn.parentElement;
   parent.querySelectorAll('.chat-pill').forEach(p => {
     p.disabled = true;
@@ -433,7 +421,8 @@ function answerSingleQuestion(btn, idOrModel, optionText) {
   btn.classList.add('selected');
   btn.style.opacity = '1';
 
-  selectedClarifications[idOrModel] = optionText;
+  selectedClarifications[questionId] = optionText;
+  grillHistory.push({ question_id: questionId, answer: optionText });
   updateClarifiedBadge();
 
   // Advance to next question!
@@ -441,6 +430,12 @@ function answerSingleQuestion(btn, idOrModel, optionText) {
   setTimeout(() => {
     renderCurrentSingleQuestion();
   }, 300);
+}
+
+function forceCompileAnalysisNow() {
+  appendAssistantBubble(`⚡ Skipping further questions. Compiling capability matchup for specified parameters now...`);
+  appendThinkingBubble("Evaluating repository evidence & compiling feasibility report...");
+  handleAutoAnalysisAfterGrill();
 }
 
 async function handleAutoAnalysisAfterGrill() {

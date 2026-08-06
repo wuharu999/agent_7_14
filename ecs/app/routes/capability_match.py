@@ -709,6 +709,8 @@ class GrillScenarioRequest(BaseModel):
     scenario_text: str
     model_id: str = "tian_gong"
     language: str = "en"
+    history: list[dict[str, Any]] = []
+    accumulated_specs: dict[str, str] = {}
 
 
 @router.post("/api/capability-match/grill")
@@ -728,6 +730,8 @@ async def grill_scenario_route(
             scenario_text=payload.scenario_text,
             model_id=payload.model_id,
             language=payload.language,
+            history=payload.history,
+            accumulated_specs=payload.accumulated_specs,
             timeout=45,
         )
         if worker_result.get("status") != "ok":
@@ -735,7 +739,12 @@ async def grill_scenario_route(
                 {"error": str(worker_result.get("error") or "Failed to generate Grill Me questions")},
                 status_code=500,
             )
-        return JSONResponse({"status": "ok", "questions": worker_result.get("questions", [])})
+        return JSONResponse({
+            "status": "ok",
+            "questions": worker_result.get("questions", []),
+            "is_complete": bool(worker_result.get("is_complete", False)),
+            "summary_if_complete": str(worker_result.get("summary_if_complete") or ""),
+        })
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 

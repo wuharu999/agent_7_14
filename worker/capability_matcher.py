@@ -541,10 +541,11 @@ async def analyze_scenario(
     return enforce_abstraction_hard_gate(payload)
 
 
-_GRILL_SCENARIO_SCHEMA: dict[str, Any] = {
+_MULTI_TURN_GRILL_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["questions"],
+    "required": ["is_complete", "questions", "summary_if_complete"],
     "properties": {
+        "is_complete": {"type": "boolean"},
         "questions": {
             "type": "array",
             "items": {
@@ -557,7 +558,8 @@ _GRILL_SCENARIO_SCHEMA: dict[str, Any] = {
                 },
                 "additionalProperties": False,
             },
-        }
+        },
+        "summary_if_complete": {"type": "string"},
     },
     "additionalProperties": False,
 }
@@ -568,29 +570,98 @@ async def grill_scenario(
     *,
     model_id: str = "tian_gong",
     language: str = "en",
+    history: list[dict[str, Any]] | None = None,
+    accumulated_specs: dict[str, str] | None = None,
     base_dir: Path | str | None = None,
 ) -> dict[str, Any]:
     lang_instruction = (
-        "Output all questions and options in Simplified Chinese (zh-CN)."
+        "Output all questions, options, and summaries in Simplified Chinese (zh-CN)."
         if language in ("zh-CN", "zh", "cn")
-        else "Output all questions and options in English."
+        else "Output all questions, options, and summaries in English."
     )
-    prompt = f"""
-You are an expert senior robotics systems architect conducting a step-by-step "Grill Me" requirements-clarification interview.
 
-Customer Scenario Description:
+    specs_json = json.dumps(accumulated_specs or {}, indent=2, ensure_ascii=False)
+    history_json = json.dumps(history or [], indent=2, ensure_ascii=False)
+
+    prompt = f"""
+You are an expert senior robotics systems architect conducting an ongoing, multi-turn "Grill Me" technical interview to turn a vague customer request into a detailed, rock-solid engineering specification.
+
+Initial Customer Scenario Intent:
 \"\"\"{scenario_text}\"\"\"
 
-Analyze this customer scenario against robotics engineering principles and repository capabilities.
-Dynamically decide the 4 to 6 most critical technical parameters, operational boundary conditions, gripper/manipulation requirements, terrain factors, or safety constraints that MUST be clarified.
+Accumulated Specifications & Parameters Clarified So Far:
+{specs_json}
 
-For each question:
-1. Provide a concise, highly probing question tailored specifically to this customer's scenario.
-2. Provide 3 to 4 realistic, selectable option choices (e.g. concrete technical parameters, environmental factors, or target robot preferences).
+Previous Interview Q&A History:
+{history_json}
+
+Your Task:
+Critically evaluate whether the technical scenario is fully specified and detailed enough to perform a precise feasibility match against repository capabilities.
+You must systematically check ALL of the following technical dimensions for completeness. Do NOT mark as complete until the vast majority are clarified:
+
+Environment & Workspace:
+1. Specific environment type (e.g. automotive assembly line, semiconductor cleanroom, logistics warehouse, food processing plant, commercial restaurant, outdoor construction site, hospital, retail store, public exhibition)
+2. Floor surface & terrain (e.g. polished concrete, epoxy-coated, steel grating, carpet, gravel, grass, wet/oily surfaces, anti-static flooring)
+3. Workspace layout & obstacles (e.g. narrow aisles, conveyor belts, shelving racks, human foot traffic paths, doorways/thresholds, cable runs on floor)
+4. Ambient conditions (e.g. temperature range, humidity, dust/particle level, lighting conditions, noise level, explosive atmosphere classification ATEX)
+
+Mobility & Locomotion:
+5. Movement requirements (e.g. stationary workstation, wheeled AGV on flat floor, biped walking, stair climbing, slope traversal, step-over obstacles, outdoor uneven terrain)
+6. Navigation & mapping (e.g. pre-mapped fixed routes, SLAM dynamic navigation, follow-the-leader, GPS waypoints, visual landmark navigation)
+7. Speed & cycle time requirements (e.g. maximum walking speed, task cycle time, throughput per hour, response time to events)
+
+Manipulation & Payload:
+8. Object types & properties (e.g. rigid/deformable, fragile/robust, transparent, reflective, wet/slippery, hot/cold, hazardous materials)
+9. Payload weight & dimensions (e.g. max single-object mass, max volume, multi-object batch handling)
+10. Gripper & end-effector requirements (e.g. parallel jaw, vacuum suction, soft adaptive gripper, tool changer, force-torque sensing precision)
+11. Manipulation precision (e.g. placement accuracy ±mm, insertion tolerance, assembly force control, visual servoing alignment)
+
+Task Workflow & Process (CRITICAL — ask MULTIPLE questions about this):
+12. Exact task description step-by-step (e.g. "pick glass from conveyor → inspect for defects → place into shipping box" — break down every sub-step)
+13. Source & destination of objects (e.g. where do items arrive from? conveyor belt, pallet, shelf, human handoff, random bin? Where do they go? shipping box, tray, rack, another conveyor?)
+14. Sorting / grouping criteria (e.g. sort by size, color, SKU label, weight, defect status, destination address, product type)
+15. Quality inspection requirements (e.g. visual defect detection, dimensional measurement, weight verification, barcode/QR scanning, label verification)
+16. Packaging & shipping preparation (e.g. wrapping, cushioning/padding, box assembly, lid closing, labeling, palletizing, shrink-wrapping)
+17. Task throughput & speed (e.g. items per minute, boxes per hour, orders per shift, peak vs. steady-state rate)
+18. Error handling & exceptions (e.g. what happens when an object is dropped, broken, missing, wrong size? reject bin? human escalation? retry?)
+19. Multi-step sequencing & tool changes (e.g. does the robot need to switch between tasks? pick-and-place then inspection? assembly then packaging?)
+20. Object variety & SKU count (e.g. how many different object types? 1 uniform item, 5-10 variants, 100+ SKUs with different shapes/sizes?)
+21. Upstream & downstream process dependencies (e.g. does the robot wait for a conveyor signal? is there a human handing items? does a downstream machine need synchronization?)
+
+Connectivity & Control:
+22. Network infrastructure (e.g. offline standalone, local Wi-Fi, industrial Ethernet, 5G private network, mesh network, cloud connectivity requirements)
+23. Control interface & protocol (e.g. ROS2 topics, proprietary SDK API, REST/WebSocket, PLC integration, EtherCAT, OPC-UA)
+24. Integration with existing systems (e.g. MES/ERP integration, conveyor synchronization, AGV fleet coordination, vision system handoff)
+
+Safety & Compliance:
+25. Human coexistence level (e.g. no humans in workspace, occasional human entry with lockout, continuous human-robot collaboration, child/public-accessible area)
+26. Safety standards & certifications required (e.g. ISO 13849 PL-d, ISO 10218, ISO/TS 15066 collaborative, CE marking, UL certification)
+27. Emergency stop & protective measures (e.g. E-stop button placement, LiDAR safety zones, light curtains, pressure-sensitive skin, speed/force limiting)
+
+Power & Durability:
+28. Power source & battery requirements (e.g. continuous AC tethered, battery runtime hours, hot-swap battery, charging dock location, solar/hybrid)
+29. Operating schedule & duty cycle (e.g. single shift 8h, 24/7 continuous, intermittent on-demand, seasonal peaks)
+30. Environmental durability (e.g. IP rating for water/dust, operating temperature range, vibration resistance, corrosion resistance)
+
+Business & Deployment:
+31. Quantity & scale (e.g. single prototype, pilot fleet of 3-5, production fleet of 50+, multi-site deployment)
+32. Timeline & budget constraints (e.g. proof-of-concept timeline, production deployment deadline, budget range)
+33. Maintenance & support requirements (e.g. on-site technician availability, remote monitoring, predictive maintenance, spare parts logistics)
+
+Rules for your Decision:
+- ALWAYS prioritize drilling into the Task Workflow & Process dimensions FIRST. If the user says "sort glasses" or "ship packages", you must ask detailed follow-ups about exact step-by-step workflow, source/destination, sorting criteria, throughput, error handling, and inspection BEFORE moving to other categories.
+- If key boundary parameters remain vague or unclarified (e.g., user just said "factory" or "sort items" or only answered a few dimensions):
+  1. Set `is_complete: false`
+  2. Formulate 3 to 5 sharp, highly probing follow-up questions targeting the NEXT most critical unclarified dimensions.
+  3. Provide 3 to 4 concrete, realistic selectable option choices for each question.
+  4. Do NOT repeat questions already answered in the history.
+- If the technical specification is already comprehensive and detailed across at least 20 of the above dimensions (or if 6+ turns of detailed parameters have been provided covering task workflow, environment, mobility, manipulation, safety, connectivity, and power):
+  1. Set `is_complete: true`
+  2. Set `summary_if_complete` to a comprehensive, professional technical summary of the fully refined scenario specification covering all clarified dimensions.
 
 {lang_instruction}
 Return ONLY valid JSON matching this schema:
-{json.dumps(_GRILL_SCENARIO_SCHEMA, ensure_ascii=False)}
+{json.dumps(_MULTI_TURN_GRILL_SCHEMA, ensure_ascii=False)}
 """
     try:
         raw_output = await run_claude_process(
@@ -600,32 +671,30 @@ Return ONLY valid JSON matching this schema:
             base_dir=base_dir,
         )
         data = json.loads(raw_output)
-        if isinstance(data, dict) and isinstance(data.get("questions"), list) and data["questions"]:
-            return {"status": "ok", "questions": data["questions"]}
+        if isinstance(data, dict):
+            questions = data.get("questions") if isinstance(data.get("questions"), list) else []
+            is_complete = bool(data.get("is_complete", False))
+            summary_if_complete = str(data.get("summary_if_complete") or "")
+            return {
+                "status": "ok",
+                "questions": questions,
+                "is_complete": is_complete,
+                "summary_if_complete": summary_if_complete,
+            }
     except Exception as exc:
         log.exception("Grill scenario failed: %s", exc)
 
     is_zh = language in ("zh-CN", "zh", "cn")
     fallback_questions = [
         {
-            "id": "q1",
-            "question": "目标负载质量与尺寸要求？" if is_zh else "What is the maximum payload mass and dimension requirement?",
-            "options": ["< 5 kg", "5 kg - 15 kg", "15 kg - 30 kg", "自定义 / > 30 kg"] if is_zh else ["< 5 kg", "5 kg - 15 kg", "15 kg - 30 kg", "Custom / > 30 kg"],
+            "id": "q_factory_env",
+            "question": "作业场地与工厂环境类型？" if is_zh else "What specific factory or environment type is this?",
+            "options": ["汽车/重工车间" if is_zh else "Automotive/Heavy Machinery", "电子/半导体洁净室" if is_zh else "Electronics Cleanroom", "电商物流仓库" if is_zh else "Logistics Warehouse", "商业餐饮/公共场所" if is_zh else "Restaurant / Public Area"],
         },
         {
-            "id": "q2",
-            "question": "作业地面与地形环境？" if is_zh else "What is the operating terrain and environment?",
-            "options": ["平整室内混凝土地面" if is_zh else "Flat indoor concrete", "包含斜坡/坡道" if is_zh else "Includes ramps/slopes", "室外/不平整地面" if is_zh else "Outdoor/uneven terrain"],
-        },
-        {
-            "id": "q3",
-            "question": "接口与控制协议要求？" if is_zh else "What interface and control protocol is required?",
-            "options": ["ROS2 话题接口 (/cmd_vel, /tf)" if is_zh else "ROS2 Topics (/cmd_vel, /tf)", "C++ / Python SDK API", "REST API / WebSockets"],
-        },
-        {
-            "id": "q4",
-            "question": "人员共存与安全防护要求？" if is_zh else "What safety and human-coexistence requirements apply?",
-            "options": ["无人员共存（封闭区域）" if is_zh else "No humans (enclosed zone)", "人机共存（急停与LiDAR减速）" if is_zh else "Human coexistence (LiDAR & E-stop)", "最高等级 ISO 13849 工业安全" if is_zh else "ISO 13849 Industrial safety"],
+            "id": "q_mobility",
+            "question": "机器人移动与地形履约要求？" if is_zh else "Does the robot need to walk or navigate around obstacles?",
+            "options": ["固定工位/台面作业" if is_zh else "Static Station / Bench Top", "轮式平整地面移动" if is_zh else "Wheeled Flat Floor AGV", "双足跨越斜坡/障碍" if is_zh else "Biped Walking Over Slopes/Obstacles", "双足上下楼梯" if is_zh else "Biped Stair Climbing"],
         },
     ]
-    return {"status": "ok", "questions": fallback_questions}
+    return {"status": "ok", "questions": fallback_questions, "is_complete": False, "summary_if_complete": ""}

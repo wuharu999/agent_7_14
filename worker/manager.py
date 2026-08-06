@@ -578,6 +578,8 @@ class WorkerManager:
                         str(data.get("scenario_text") or ""),
                         model_id=str(data.get("model_id") or ""),
                         language=str(data.get("language") or "en"),
+                        history=data.get("history") if isinstance(data.get("history"), list) else None,
+                        accumulated_specs=data.get("accumulated_specs") if isinstance(data.get("accumulated_specs"), dict) else None,
                     )
                     await self.emit(
                         {
