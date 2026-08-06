@@ -705,6 +705,42 @@ async def analyze_capability_match(payload: AnalyzeScenarioRequest, request: Req
         return JSONResponse({"error": "Scenario analysis could not be started"}, status_code=500)
 
 
+class GrillScenarioRequest(BaseModel):
+    scenario_text: str
+    model_id: str = "tian_gong"
+    language: str = "en"
+
+
+@router.post("/api/capability-match/grill")
+async def grill_scenario_route(
+    payload: GrillScenarioRequest,
+    request: Request,
+) -> JSONResponse:
+    if not payload.scenario_text.strip():
+        return JSONResponse({"error": "Scenario text cannot be empty"}, status_code=400)
+    if not gateway.online:
+        return JSONResponse({"error": "Worker is offline"}, status_code=503)
+
+    command_id = f"GRILL-{uuid.uuid4().hex[:12].upper()}"
+    try:
+        worker_result = await gateway.send_command(
+            "grill_scenario",
+            command_id,
+            scenario_text=payload.scenario_text,
+            model_id=payload.model_id,
+            language=payload.language,
+            timeout=45,
+        )
+        if worker_result.get("status") != "ok":
+            return JSONResponse(
+                {"error": str(worker_result.get("error") or "Failed to generate Grill Me questions")},
+                status_code=500,
+            )
+        return JSONResponse({"status": "ok", "questions": worker_result.get("questions", [])})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @router.get("/api/capability-match/assessments/{assessment_id}")
 async def get_capability_match(assessment_id: str) -> JSONResponse:
     assessment = get_scenario_assessment(assessment_id)

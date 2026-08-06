@@ -48,7 +48,10 @@
         <label for="scenario" data-i18n="customerScenario">Customer scenario</label>
         <textarea id="scenario" data-i18n-placeholder="scenarioPlaceholder" placeholder="Describe the task, environment, payload, speed, people, constraints, and acceptance criteria."></textarea>
       </div>
-      <button id="analyze" type="button" data-i18n="analyze">Analyze</button>
+      <div style="display:flex; gap:8px;">
+        <button id="grill-me" type="button" class="secondary" style="background:#e11d48; color:#fff;" data-i18n="grillMe">🔥 Grill Me</button>
+        <button id="analyze" type="button" data-i18n="analyze">Analyze</button>
+      </div>
     </div>
     <div class="status" id="status" role="status"></div>
     <div class="analysis-progress hidden" id="analysisProgress" role="status" aria-live="polite">
@@ -60,6 +63,24 @@
       </div>
     </div>
   </section>
+
+  <!-- Grill Me Modal -->
+  <div id="grill-modal" class="hidden" style="position:fixed; inset:0; z-index:999; background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:18px;">
+    <div style="background:#fff; border-radius:16px; border:1px solid #cbd5e1; max-width:680px; width:100%; max-height:85vh; overflow-y:auto; padding:24px; box-shadow:0 20px 40px rgba(0,0,0,0.2);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h2 style="margin:0; font-size:20px; display:flex; align-items:center; gap:8px;" data-i18n="grillTitle">🔥 Scenario Requirement Grill-Down</h2>
+          <p style="margin:4px 0 0; color:#64748b; font-size:13px;" data-i18n="grillHelp">AI generated targeted clarifying questions to drill into missing technical constraints before capability matching.</p>
+        </div>
+        <button type="button" id="close-grill-modal" style="background:none; border:0; color:#64748b; font-size:20px; cursor:pointer; padding:0 4px;">✕</button>
+      </div>
+      <div id="grill-questions-list" style="display:flex; flex-direction:column; gap:16px; margin-bottom:20px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" class="button secondary" id="cancel-grill" data-i18n="cancel">Cancel</button>
+        <button type="button" class="button" id="submit-grill" style="background:#e11d48; color:#fff;" data-i18n="submitGrill">Confirm & Match Capabilities</button>
+      </div>
+    </div>
+  </div>
 
   <section class="workbench" id="workbench">
     <article class="panel">
@@ -88,6 +109,14 @@ const model=document.getElementById('model')||{value:'fangan'};
 const uiLanguage=document.getElementById('ui-language');
 const scenarioInput=document.getElementById('scenario');
 const analyzeButton=document.getElementById('analyze');
+const grillMeButton=document.getElementById('grill-me');
+const grillModal=document.getElementById('grill-modal');
+const closeGrillModal=document.getElementById('close-grill-modal');
+const cancelGrill=document.getElementById('cancel-grill');
+const submitGrill=document.getElementById('submit-grill');
+const grillQuestionsList=document.getElementById('grill-questions-list');
+let currentGrillQuestions=[];
+
 const statusEl=document.getElementById('status');
 const exportsEl=document.getElementById('exports');
 const analysisProgress=document.getElementById('analysisProgress');
@@ -98,8 +127,8 @@ let analysisPollGeneration=0;
 let activeAnalysisInfo=null;
 
 const translations={
-  en:{documentTitle:'Robot Scenario Feasibility Workbench',title:'🤖 Robot Scenario Feasibility & Capability Match Workbench',subtitle:'Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.',questions:'← Questions',robotModel:'Robot model',language:'Language',customerScenario:'Customer scenario',scenarioPlaceholder:'Describe the task, environment, payload, speed, people, constraints, and acceptance criteria.',analyze:'Analyze',extractedRequirements:'Extracted requirements',matchMatrix:'🧩 Atomic Skill Matchup Matrix',technicalConclusionPanel:'📊 Technical Conclusion',emptyAssessment:'Run or open an assessment.',noResults:'No match results yet.',noConclusion:'No conclusion yet.',unknown:'Unknown',id:'ID',target:'Target',businessGoal:'Business goal',environment:'Environment',payloadFacts:'Payload / facts',throughputOperations:'Throughput / operations',requirement:'Requirement',confidence:'confidence',unknownCapability:'Unknown capability',unknownLayer:'Unknown layer',hard:'Hard',soft:'Soft',gate:'gate',personWeeks:'person-weeks',next:'Next',notSpecified:'Not specified',noMatchRecords:'No match records.',technicalConclusion:'Technical conclusion',deploymentConclusion:'Deployment conclusion',rdPowerNeeded:'R&D power needed',pw:'PW',noRdDomains:'No R&D domains recorded',residualRisks:'Residual risks',nextExperiment:'Next experiment',loading:'Loading assessment…',unableLoad:'Unable to load assessment',loaded:'Assessment loaded.',enterScenario:'Enter a customer scenario first.',noRobot:'No robot model is available.',analyzing:'Extracting requirements and matching evidence-backed capabilities…',analysisFailed:'Analysis failed',completed:'Assessment completed and saved.',progressTitle:'Analysis in progress',progressQueued:'Waiting for an analysis Worker…',progressProcessing:'Claude is checking the Wiki and matching atomic capabilities.',progressReconnect:'Reconnecting to the analysis status…',refreshSafe:'You can safely refresh or leave this page. The analysis will continue.',elapsed:'Elapsed'},
-  'zh-CN':{documentTitle:'机器人场景可行性工作台',title:'🤖 机器人场景可行性与能力匹配工作台',subtitle:'基于证据的原子需求、能力分层、硬门槛与研发投入评估。',questions:'← 返回问答',robotModel:'机器人型号',language:'语言',customerScenario:'客户场景',scenarioPlaceholder:'请描述任务、环境、负载、速度、人员、约束条件和验收标准。',analyze:'开始分析',extractedRequirements:'提取的需求',matchMatrix:'🧩 原子技能匹配矩阵',technicalConclusionPanel:'📊 技术结论',emptyAssessment:'请运行或打开一个评估。',noResults:'暂无匹配结果。',noConclusion:'暂无结论。',unknown:'未知',id:'编号',target:'目标',businessGoal:'业务目标',environment:'环境',payloadFacts:'负载 / 已知事实',throughputOperations:'吞吐量 / 作业情况',requirement:'需求',confidence:'置信度',unknownCapability:'未知能力',unknownLayer:'未知层级',hard:'硬性',soft:'软性',gate:'门槛',personWeeks:'人周',next:'下一步',notSpecified:'未指定',noMatchRecords:'暂无匹配记录。',technicalConclusion:'技术结论',deploymentConclusion:'部署结论',rdPowerNeeded:'所需研发投入',pw:'人周',noRdDomains:'未记录研发领域',residualRisks:'剩余风险',nextExperiment:'下一项实验',loading:'正在加载评估……',unableLoad:'无法加载评估',loaded:'评估已加载。',enterScenario:'请先输入客户场景。',noRobot:'没有可用的机器人型号。',analyzing:'正在提取需求并匹配有证据支持的能力……',analysisFailed:'分析失败',completed:'评估已完成并保存。',progressTitle:'正在分析',progressQueued:'正在等待分析 Worker…',progressProcessing:'Claude 正在检查知识库并匹配原子能力。',progressReconnect:'正在重新连接分析状态…',refreshSafe:'可以安全刷新或离开此页面，分析会在后台继续。',elapsed:'已用时'}
+  en:{documentTitle:'Robot Scenario Feasibility Workbench',title:'🤖 Robot Scenario Feasibility & Capability Match Workbench',subtitle:'Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.',questions:'← Questions',robotModel:'Robot model',language:'Language',customerScenario:'Customer scenario',scenarioPlaceholder:'Describe the task, environment, payload, speed, people, constraints, and acceptance criteria.',analyze:'Analyze',grillMe:'🔥 Grill Me',grillTitle:'🔥 Scenario Requirement Grill-Down',grillHelp:'AI generated targeted clarifying questions to drill into missing technical constraints before capability matching.',grillGenerating:'🔥 Generating Grill Me clarifying questions...',cancel:'Cancel',submitGrill:'Confirm & Match Capabilities',extractedRequirements:'Extracted requirements',matchMatrix:'🧩 Atomic Skill Matchup Matrix',technicalConclusionPanel:'📊 Technical Conclusion',emptyAssessment:'Run or open an assessment.',noResults:'No match results yet.',noConclusion:'No conclusion yet.',unknown:'Unknown',id:'ID',target:'Target',businessGoal:'Business goal',environment:'Environment',payloadFacts:'Payload / facts',throughputOperations:'Throughput / operations',requirement:'Requirement',confidence:'confidence',unknownCapability:'Unknown capability',unknownLayer:'Unknown layer',hard:'Hard',soft:'Soft',gate:'gate',personWeeks:'person-weeks',next:'Next',notSpecified:'Not specified',noMatchRecords:'No match records.',technicalConclusion:'Technical conclusion',deploymentConclusion:'Deployment conclusion',rdPowerNeeded:'R&D power needed',pw:'PW',noRdDomains:'No R&D domains recorded',residualRisks:'Residual risks',nextExperiment:'Next experiment',loading:'Loading assessment…',unableLoad:'Unable to load assessment',loaded:'Assessment loaded.',enterScenario:'Enter a customer scenario first.',noRobot:'No robot model is available.',analyzing:'Extracting requirements and matching evidence-backed capabilities…',analysisFailed:'Analysis failed',completed:'Assessment completed and saved.',progressTitle:'Analysis in progress',progressQueued:'Waiting for an analysis Worker…',progressProcessing:'Claude is checking the Wiki and matching atomic capabilities.',progressReconnect:'Reconnecting to the analysis status…',refreshSafe:'You can safely refresh or leave this page. The analysis will continue.',elapsed:'Elapsed'},
+  'zh-CN':{documentTitle:'机器人场景可行性工作台',title:'🤖 机器人场景可行性与能力匹配工作台',subtitle:'基于证据的原子需求、能力分层、硬门槛与研发投入评估。',questions:'← 返回问答',robotModel:'机器人型号',language:'语言',customerScenario:'客户场景',scenarioPlaceholder:'请描述任务、环境、负载、速度、人员、约束条件和验收标准。',analyze:'开始分析',grillMe:'🔥 需求打磨问答 (Grill Me)',grillTitle:'🔥 场景需求打磨问答 (Grill-Down)',grillHelp:'AI 智能提取场景核心约束与边界，请针对性补充关键技术参数以获取精准匹配。',grillGenerating:'🔥 正在生成需求打磨问答题...',cancel:'取消',submitGrill:'确认并开始匹配能力',extractedRequirements:'提取的需求',matchMatrix:'🧩 原子技能匹配矩阵',technicalConclusionPanel:'📊 技术结论',emptyAssessment:'请运行或打开一个评估。',noResults:'暂无匹配结果。',noConclusion:'暂无结论。',unknown:'未知',id:'编号',target:'目标',businessGoal:'业务目标',environment:'环境',payloadFacts:'负载 / 已知事实',throughputOperations:'吞吐量 / 作业情况',requirement:'需求',confidence:'置信度',unknownCapability:'未知能力',unknownLayer:'未知层级',hard:'硬性',soft:'软性',gate:'门槛',personWeeks:'人周',next:'下一步',notSpecified:'未指定',noMatchRecords:'暂无匹配记录。',technicalConclusion:'技术结论',deploymentConclusion:'部署结论',rdPowerNeeded:'所需研发投入',pw:'人周',noRdDomains:'未记录研发领域',residualRisks:'剩余风险',nextExperiment:'下一项实验',loading:'正在加载评估……',unableLoad:'无法加载评估',loaded:'评估已加载。',enterScenario:'请先输入客户场景。',noRobot:'没有可用的机器人型号。',analyzing:'正在提取需求并匹配有证据支持的能力……',analysisFailed:'分析失败',completed:'评估已完成并保存。',progressTitle:'正在分析',progressQueued:'正在等待分析 Worker…',progressProcessing:'Claude 正在检查知识库并匹配原子能力。',progressReconnect:'正在重新连接分析状态…',refreshSafe:'可以安全刷新或离开此页面，分析会在后台继续。',elapsed:'已用时'}
 };
 const stateTranslations={'zh-CN':{verified_satisfied:'已验证满足',feasible:'可行',viable:'可落地',pass:'通过',not_satisfied:'不满足',infeasible:'不可行',not_viable:'不可落地',fail:'失败',conditional:'有条件满足',feasible_with_conditions:'有条件可行',viable_with_conditions:'有条件可落地',prototype_required:'需要原型验证',business_case_incomplete:'商业方案不完整',unknown:'未知',draft:'草稿',verified:'已验证'}};
 function tr(key){return(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key}
@@ -223,6 +252,65 @@ async function analyze(){
     statusEl.className='status error';
   }
 }
+grillMeButton.addEventListener('click',async()=>{
+  const scenario=scenarioInput.value.trim();
+  if(!scenario){statusEl.textContent=tr('enterScenario');statusEl.className='status error';return}
+  grillMeButton.disabled=true;statusEl.className='status';statusEl.textContent=tr('grillGenerating');
+  try{
+    const response=await fetch('/api/capability-match/grill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:uiLanguage.value})});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Failed to generate Grill Me questions');
+    currentGrillQuestions=data.questions||[];
+    renderGrillQuestions(currentGrillQuestions);
+    grillModal.classList.remove('hidden');
+    statusEl.textContent='';
+  }catch(err){
+    statusEl.textContent=err instanceof Error?err.message:'Grill Me failed';
+    statusEl.className='status error';
+  }finally{
+    grillMeButton.disabled=false;
+  }
+});
+
+function renderGrillQuestions(questions){
+  grillQuestionsList.replaceChildren();
+  questions.forEach((q,idx)=>{
+    const card=el('div');
+    card.style.background='#f8fafc';card.style.border='1px solid #e2e8f0';card.style.borderRadius='10px';card.style.padding='14px';
+    const title=el('div');title.style.fontWeight='700';title.style.marginBottom='10px';title.style.color='#1e293b';title.textContent=`${idx+1}. ${q.question}`;
+    card.append(title);
+    const optionsGrid=el('div');optionsGrid.style.display='flex';optionsGrid.style.flexWrap='wrap';optionsGrid.style.gap='8px';
+    (q.options||[]).forEach(opt=>{
+      const label=el('label');label.style.display='inline-flex';label.style.alignItems='center';label.style.gap='6px';label.style.background='#fff';label.style.border='1px solid #cbd5e1';label.style.borderRadius='20px';label.style.padding='6px 14px';label.style.fontSize='13px';label.style.cursor='pointer';
+      const radio=document.createElement('input');radio.type='radio';radio.name=`grill_q_${q.id||idx}`;radio.value=opt;
+      label.append(radio,document.createTextNode(opt));optionsGrid.append(label);
+    });
+    const customInput=document.createElement('input');customInput.type='text';
+    customInput.placeholder=uiLanguage.value==='zh-CN'?'补充说明或自定义要求...':'Custom notes / details...';
+    customInput.style.width='100%';customInput.style.marginTop='10px';customInput.style.padding='8px 12px';customInput.style.border='1px solid #cbd5e1';customInput.style.borderRadius='6px';
+    customInput.id=`grill_custom_${q.id||idx}`;
+    card.append(optionsGrid,customInput);grillQuestionsList.append(card);
+  });
+}
+
+function closeGrill(){grillModal.classList.add('hidden')}
+closeGrillModal.addEventListener('click',closeGrill);
+cancelGrill.addEventListener('click',closeGrill);
+
+submitGrill.addEventListener('click',()=>{
+  let extraText='\n\n【Requirement Clarifications / 需求打磨补充】:\n';
+  currentGrillQuestions.forEach((q,idx)=>{
+    const selectedRadio=document.querySelector(`input[name="grill_q_${q.id||idx}"]:checked`);
+    const customVal=(document.getElementById(`grill_custom_${q.id||idx}`)||{}).value;
+    const ans=[selectedRadio?selectedRadio.value:'',customVal?customVal.trim():''].filter(Boolean).join('; ');
+    if(ans){extraText+=`- ${q.question} => ${ans}\n`}
+  });
+  scenarioInput.value=scenarioInput.value.trim()+extraText;
+  localStorage.setItem('agent1_capability_match_scenario_text',scenarioInput.value);
+  closeGrill();
+  analyze();
+});
+
 const savedLanguage=localStorage.getItem('agent1_ui_language');
 uiLanguage.value=['en','zh-CN'].includes(savedLanguage)?savedLanguage:'en';
 applyLanguage();

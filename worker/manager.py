@@ -17,7 +17,7 @@ from worker.claude_runner import (
     run_claude,
     run_claude_stream,
 )
-from worker.capability_matcher import analyze_scenario
+from worker.capability_matcher import analyze_scenario, grill_scenario
 from worker.capability_catalog import (
     inspect_capability_source_changes,
     organize_capability_catalog,
@@ -568,31 +568,47 @@ class WorkerManager:
         while True:
             data = await self.capability_match_queue.get()
             command_id = str(data.get("id") or "")
+            msg_type = str(data.get("type") or "analyze_scenario")
             try:
-                log.info("Capability match worker %d handling %s", worker_number, command_id)
-                result = await analyze_scenario(
-                    str(data.get("scenario_text") or ""),
-                    model_id=str(data.get("model_id") or ""),
-                    language=str(data.get("language") or "en"),
-                )
-                await self.emit(
-                    {
-                        "type": "capability_match_result",
-                        "id": command_id,
-                        "status": "ok",
-                        "result": result,
-                    }
-                )
+                log.info("Capability match worker %d handling %s (%s)", worker_number, command_id, msg_type)
+                if msg_type == "grill_scenario":
+                    result = await grill_scenario(
+                        str(data.get("scenario_text") or ""),
+                        model_id=str(data.get("model_id") or ""),
+                        language=str(data.get("language") or "en"),
+                    )
+                    await self.emit(
+                        {
+                            "type": "grill_scenario_result",
+                            "id": command_id,
+                            **result,
+                        }
+                    )
+                else:
+                    result = await analyze_scenario(
+                        str(data.get("scenario_text") or ""),
+                        model_id=str(data.get("model_id") or ""),
+                        language=str(data.get("language") or "en"),
+                    )
+                    await self.emit(
+                        {
+                            "type": "capability_match_result",
+                            "id": command_id,
+                            "status": "ok",
+                            "result": result,
+                        }
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception:
-                log.exception("Scenario capability analysis failed for %s", command_id)
+                log.exception("Scenario analysis command failed for %s", command_id)
+                res_type = "grill_scenario_result" if msg_type == "grill_scenario" else "capability_match_result"
                 await self.emit(
                     {
-                        "type": "capability_match_result",
+                        "type": res_type,
                         "id": command_id,
                         "status": "failed",
-                        "error": "Scenario analysis failed; see Worker logs",
+                        "error": "Scenario analysis operation failed; see Worker logs",
                     }
                 )
             finally:

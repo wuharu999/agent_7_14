@@ -503,3 +503,94 @@ async def analyze_scenario(
     )
     payload = _structured_payload(raw)
     return enforce_abstraction_hard_gate(payload)
+
+
+_GRILL_SCENARIO_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["questions"],
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["id", "question", "options"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "question": {"type": "string"},
+                    "options": {"type": "array", "items": {"type": "string"}},
+                },
+                "additionalProperties": False,
+            },
+        }
+    },
+    "additionalProperties": False,
+}
+
+
+async def grill_scenario(
+    scenario_text: str,
+    *,
+    model_id: str = "tian_gong",
+    language: str = "en",
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    lang_instruction = (
+        "Output all questions and options in Simplified Chinese (zh-CN)."
+        if language in ("zh-CN", "zh", "cn")
+        else "Output all questions and options in English."
+    )
+    prompt = f"""
+You are a senior robotics systems architect conducting a "Grill Me" requirements-clarification interview for a customer scenario.
+
+Customer Scenario Description:
+\"\"\"{scenario_text}\"\"\"
+
+Target Robot Model ID: {model_id}
+
+Identify the 3 to 5 most critical missing technical parameters or boundary conditions (e.g. payload weight, speed, terrain/slopes, environmental conditions, ROS2 topic interface requirements, human safety distance, battery runtime).
+
+For each question:
+1. Provide a concise, probing question.
+2. Provide 3 to 4 realistic, selectable options (or concrete parameter choices).
+
+{lang_instruction}
+Return ONLY valid JSON matching this schema:
+{json.dumps(_GRILL_SCENARIO_SCHEMA, ensure_ascii=False)}
+"""
+    try:
+        raw_output = await run_claude_process(
+            prompt=prompt,
+            timeout=60.0,
+            extra_args=["--model", "haiku"],
+            base_dir=base_dir,
+        )
+        data = json.loads(raw_output)
+        if isinstance(data, dict) and isinstance(data.get("questions"), list) and data["questions"]:
+            return {"status": "ok", "questions": data["questions"]}
+    except Exception as exc:
+        log.exception("Grill scenario failed: %s", exc)
+
+    is_zh = language in ("zh-CN", "zh", "cn")
+    fallback_questions = [
+        {
+            "id": "q1",
+            "question": "目标负载质量与尺寸要求？" if is_zh else "What is the maximum payload mass and dimension requirement?",
+            "options": ["< 5 kg", "5 kg - 15 kg", "15 kg - 30 kg", "自定义 / > 30 kg"] if is_zh else ["< 5 kg", "5 kg - 15 kg", "15 kg - 30 kg", "Custom / > 30 kg"],
+        },
+        {
+            "id": "q2",
+            "question": "作业地面与地形环境？" if is_zh else "What is the operating terrain and environment?",
+            "options": ["平整室内混凝土地面" if is_zh else "Flat indoor concrete", "包含斜坡/坡道" if is_zh else "Includes ramps/slopes", "室外/不平整地面" if is_zh else "Outdoor/uneven terrain"],
+        },
+        {
+            "id": "q3",
+            "question": "接口与控制协议要求？" if is_zh else "What interface and control protocol is required?",
+            "options": ["ROS2 话题接口 (/cmd_vel, /tf)" if is_zh else "ROS2 Topics (/cmd_vel, /tf)", "C++ / Python SDK API", "REST API / WebSockets"],
+        },
+        {
+            "id": "q4",
+            "question": "人员共存与安全防护要求？" if is_zh else "What safety and human-coexistence requirements apply?",
+            "options": ["无人员共存（封闭区域）" if is_zh else "No humans (enclosed zone)", "人机共存（急停与LiDAR减速）" if is_zh else "Human coexistence (LiDAR & E-stop)", "最高等级 ISO 13849 工业安全" if is_zh else "ISO 13849 Industrial safety"],
+        },
+    ]
+    return {"status": "ok", "questions": fallback_questions}
