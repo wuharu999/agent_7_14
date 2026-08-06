@@ -190,6 +190,15 @@ class WorkerGateway:
         finally:
             self.pending_commands.pop(command_id, None)
 
+    async def send_command(
+        self,
+        message_type: str,
+        *args: Any,
+        timeout: int | float | None = None,
+        **payload: Any,
+    ) -> dict[str, Any]:
+        return await self.command(message_type, timeout=int(timeout) if timeout is not None else None, **payload)
+
     def resolve_answer(self, qid: str, answer: str) -> None:
         future = self.pending_answers.get(qid)
         if future is not None and not future.done():

@@ -723,9 +723,8 @@ async def grill_scenario_route(
 
     command_id = f"GRILL-{uuid.uuid4().hex[:12].upper()}"
     try:
-        worker_result = await gateway.send_command(
+        worker_result = await gateway.command(
             "grill_scenario",
-            command_id,
             scenario_text=payload.scenario_text,
             model_id=payload.model_id,
             language=payload.language,
@@ -992,9 +991,8 @@ async def update_capability_lifecycle_status(
 
     command_id = f"CAPSTAT-{uuid.uuid4().hex[:12].upper()}"
     try:
-        worker_result = await gateway.send_command(
+        worker_result = await gateway.command(
             "update_capability_status",
-            command_id,
             model_id=payload.model_id,
             capability_id=payload.capability_id,
             status=payload.status,
@@ -1046,9 +1044,8 @@ async def save_capability(
 
     command_id = f"CAPSAVE-{uuid.uuid4().hex[:12].upper()}"
     try:
-        worker_result = await gateway.send_command(
+        worker_result = await gateway.command(
             "save_capability",
-            command_id,
             model_id=payload.model_id,
             entry=payload.entry,
             timeout=30,
@@ -1085,9 +1082,8 @@ async def delete_capability(
 
     command_id = f"CAPDEL-{uuid.uuid4().hex[:12].upper()}"
     try:
-        worker_result = await gateway.send_command(
+        worker_result = await gateway.command(
             "delete_capability",
-            command_id,
             model_id=payload.model_id,
             capability_id=payload.capability_id,
             timeout=30,
