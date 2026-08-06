@@ -576,18 +576,17 @@ async def grill_scenario(
         else "Output all questions and options in English."
     )
     prompt = f"""
-You are a senior robotics systems architect conducting a "Grill Me" requirements-clarification interview for a customer scenario.
+You are an expert senior robotics systems architect conducting a step-by-step "Grill Me" requirements-clarification interview.
 
 Customer Scenario Description:
 \"\"\"{scenario_text}\"\"\"
 
-Target Robot Model ID: {model_id}
-
-Identify the 4 to 6 most critical missing technical parameters or boundary conditions (e.g. payload weight, speed, terrain/slopes, environmental conditions, ROS2 topic interface requirements, human safety distance, battery runtime).
+Analyze this customer scenario against robotics engineering principles and repository capabilities.
+Dynamically decide the 4 to 6 most critical technical parameters, operational boundary conditions, gripper/manipulation requirements, terrain factors, or safety constraints that MUST be clarified.
 
 For each question:
-1. Provide a concise, probing question.
-2. Provide 3 to 4 realistic, selectable options (or concrete parameter choices).
+1. Provide a concise, highly probing question tailored specifically to this customer's scenario.
+2. Provide 3 to 4 realistic, selectable option choices (e.g. concrete technical parameters, environmental factors, or target robot preferences).
 
 {lang_instruction}
 Return ONLY valid JSON matching this schema:

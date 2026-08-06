@@ -392,22 +392,11 @@ let currentQuestionIndex = 0;
 let userScenarioIntent = "";
 
 function renderGrillQuestionsInChat(questions) {
-  // Build question queue with Robot Preference + Claude generated questions
-  const robotQuestion = {
-    id: 'robot_model',
-    question: 'Do you have a target robot model in mind, or should I evaluate and recommend the best fit?',
-    options: [
-      '🤖 Tian Gong (Humanoid)',
-      '🤖 Walker S2 (Industrial Humanoid)',
-      '🤖 Walker C1 (Commercial Biped)',
-      '✨ Auto-Recommend Best Fit Robot'
-    ]
-  };
-
-  currentGrillQuestions = [robotQuestion, ...(questions || [])];
+  // Use 100% dynamic Claude-generated questions
+  currentGrillQuestions = questions || [];
   currentQuestionIndex = 0;
 
-  appendAssistantBubble(`🤖 Scenario received! To sharpen requirements and recommend the best-fit robot platform, please answer a few quick questions one by one below:`);
+  appendAssistantBubble(`🤖 Scenario received! Claude AI has analyzed your demand against repository capabilities. Answer these clarification questions one by one below:`);
   renderCurrentSingleQuestion();
 }
 
@@ -426,22 +415,15 @@ function renderCurrentSingleQuestion() {
   html += `<div style="font-weight:700; font-size:13.5px; color:#0f172a; margin-bottom:10px;">${q.question}</div>`;
   html += `<div class="chat-options-group">`;
 
-  if (q.id === 'robot_model') {
-    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'tian_gong', 'Tian Gong (Humanoid)', true)">🤖 Tian Gong (Humanoid)</button>`;
-    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'walker_s2', 'Walker S2 (Industrial Humanoid)', true)">🤖 Walker S2 (Industrial Humanoid)</button>`;
-    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'walker_c1', 'Walker C1 (Commercial Biped)', true)">🤖 Walker C1 (Commercial Biped)</button>`;
-    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'auto', 'Auto-Recommend Best Fit Robot', true)">✨ Auto-Recommend Best Fit Robot</button>`;
-  } else {
-    (q.options || []).forEach(opt => {
-      html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, '${q.id || currentQuestionIndex}', '${opt.replace(/'/g, "\\'")}', false)">⚡ ${opt}</button>`;
-    });
-  }
+  (q.options || []).forEach(opt => {
+    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, '${q.id || currentQuestionIndex}', '${opt.replace(/'/g, "\\'")}')">⚡ ${opt}</button>`;
+  });
 
   html += `</div>`;
   appendAssistantBubble(html);
 }
 
-function answerSingleQuestion(btn, idOrModel, optionText, isRobotModel) {
+function answerSingleQuestion(btn, idOrModel, optionText) {
   // Highlight selected button & disable siblings
   const parent = btn.parentElement;
   parent.querySelectorAll('.chat-pill').forEach(p => {
@@ -451,12 +433,7 @@ function answerSingleQuestion(btn, idOrModel, optionText, isRobotModel) {
   btn.classList.add('selected');
   btn.style.opacity = '1';
 
-  if (isRobotModel) {
-    targetRobotModel = idOrModel === 'auto' ? null : idOrModel;
-    selectedClarifications['robot_model'] = `Preferred Robot Model: ${optionText}`;
-  } else {
-    selectedClarifications[idOrModel] = optionText;
-  }
+  selectedClarifications[idOrModel] = optionText;
   updateClarifiedBadge();
 
   // Advance to next question!
