@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Robot Scenario Feasibility Workbench</title>
+<link rel="stylesheet" href="/petdex/styles.css">
 <link rel="stylesheet" href="/static/account_menu.css">
 <script src="/static/account_menu.js?v=20260804-1" defer></script>
 <style>
@@ -29,9 +30,12 @@
 <body>
 <main class="shell">
   <header class="topbar">
-    <div class="title">
-      <h1 data-i18n="title">🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
-      <p data-i18n="subtitle">Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.</p>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 1.8; flex-shrink:0;"></div>
+      <div class="title">
+        <h1 data-i18n="title">🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
+        <p data-i18n="subtitle">Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.</p>
+      </div>
     </div>
     <div class="actions">
       <a class="button secondary back-link" href="/" data-i18n="questions">← Questions</a>
@@ -240,10 +244,12 @@ async function monitorAssessment(id){
       if(!response.ok){const error=new Error(data.error||tr('unableLoad'));error.terminal=response.status<500;throw error}
       if(data.analysis_status==='queued'||data.analysis_status==='processing'){
         showAnalysisProgress(data);
+        setCompanionMode('charging');
         setTimeout(poll,2000);
         return;
       }
       hideAnalysisProgress();
+      setCompanionMode('sleeping');
       analyzeButton.disabled=false;
       if(data.analysis_status==='failed'){
         statusEl.textContent=data.error||tr('analysisFailed');
@@ -282,6 +288,14 @@ async function analyze(){
     statusEl.className='status error';
   }
 }
+const companionEl=document.getElementById('coding-companion');
+function setCompanionMode(mode){
+  if(companionEl){
+    companionEl.dataset.mode=mode;
+    companionEl.setAttribute('aria-label',`Robot companion: ${mode}`);
+  }
+}
+
 const aiThinkingStream=document.getElementById('aiThinkingStream');
 const aiThinkingHeaderTitle=document.getElementById('aiThinkingHeaderTitle');
 const aiThinkingSteps=document.getElementById('aiThinkingSteps');
@@ -295,8 +309,12 @@ function showThinkingStream(title,steps){
     aiThinkingSteps.append(div);
   });
   aiThinkingStream.classList.remove('hidden');
+  setCompanionMode('thinking');
 }
-function hideThinkingStream(){aiThinkingStream.classList.add('hidden')}
+function hideThinkingStream(){
+  aiThinkingStream.classList.add('hidden');
+  setCompanionMode('sleeping');
+}
 
 grillMeButton.addEventListener('click',async()=>{
   const scenario=scenarioInput.value.trim();
