@@ -933,3 +933,51 @@ async def create_gap_stub(
         details=json.dumps({"stub_id": stub["stub_id"], "assessment_id": payload.assessment_id}),
     )
     return JSONResponse({"status": "ok", "stub": stub})
+
+
+class UpdateCapabilityStatusRequest(BaseModel):
+    model_id: str = "tian_gong"
+    capability_id: str
+    status: str
+
+
+@router.post("/api/admin/capabilities/status")
+async def update_capability_lifecycle_status(
+    payload: UpdateCapabilityStatusRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+) -> JSONResponse:
+    session = require_roles(request, {"admin", "editor"})
+    verify_csrf(session, x_csrf_token)
+    if payload.status not in {"draft", "reviewed", "verified", "deprecated"}:
+        return JSONResponse({"error": "Invalid lifecycle status"}, status_code=400)
+    if not gateway.online:
+        return JSONResponse({"error": "Worker is offline"}, status_code=503)
+
+    command_id = f"CAPSTAT-{uuid.uuid4().hex[:12].upper()}"
+    try:
+        worker_result = await gateway.send_command(
+            "update_capability_status",
+            command_id,
+            model_id=payload.model_id,
+            capability_id=payload.capability_id,
+            status=payload.status,
+            timeout=30,
+        )
+        if worker_result.get("status") != "ok":
+            return JSONResponse(
+                {"error": str(worker_result.get("error") or "Failed to update capability status")},
+                status_code=500,
+            )
+        await asyncio.to_thread(
+            write_audit,
+            user_id=int(session["user_id"]),
+            username=str(session.get("username") or ""),
+            action="update_capability_status",
+            source_path=f"{payload.model_id}/{payload.capability_id}",
+            result="ok",
+            details=json.dumps({"capability_id": payload.capability_id, "new_status": payload.status}),
+        )
+        return JSONResponse({"status": "ok", **worker_result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)

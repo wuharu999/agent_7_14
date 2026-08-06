@@ -1286,3 +1286,49 @@ async def organize_capability_catalog(
     published["batch_metrics"] = batch_metrics
     published["evidence_diagnostics"] = evidence_diagnostics
     return published
+
+
+def update_capability_status(
+    *,
+    model_id: str,
+    capability_id: str,
+    new_status: str,
+    base_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    if new_status not in {"draft", "reviewed", "verified", "deprecated"}:
+        raise ValueError(f"Invalid capability status: {new_status}")
+    if not _CAPABILITY_ID.fullmatch(capability_id):
+        raise ValueError("Invalid capability ID")
+
+    target_root = base_dir or BASE_DIR
+    target_dir = Path(target_root) / "wiki" / "capabilities" / model_id
+    json_path = target_dir / f"{capability_id}.json"
+    if not json_path.exists():
+        raise ValueError(f"Capability entry {capability_id} not found under model {model_id}")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    lifecycle = data.get("lifecycle")
+    if not isinstance(lifecycle, dict):
+        lifecycle = {
+            "status": "draft",
+            "supersedes": [],
+            "replaced_by": [],
+            "deprecation_reason": None,
+        }
+        data["lifecycle"] = lifecycle
+
+    lifecycle["status"] = new_status
+    json_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    md_path = target_dir / f"{capability_id}.md"
+    if md_path.exists():
+        md_path.write_text(_entry_markdown(data), encoding="utf-8")
+
+    return {
+        "status": "ok",
+        "model_id": model_id,
+        "capability_id": capability_id,
+        "new_status": new_status,
+    }

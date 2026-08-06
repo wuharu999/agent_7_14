@@ -21,6 +21,7 @@ from worker.capability_matcher import analyze_scenario
 from worker.capability_catalog import (
     inspect_capability_source_changes,
     organize_capability_catalog,
+    update_capability_status,
 )
 from worker.authoring import AuthoringError, chat as authoring_chat, create_session as create_authoring_session
 from worker.authoring import generate_article as generate_authoring_article, get_session as get_authoring_session
@@ -316,7 +317,7 @@ class WorkerManager:
             )
             return
 
-        if message_type in {"list_sources", "delete_source", "delete_robot_folder"}:
+        if message_type in {"list_sources", "delete_source", "delete_robot_folder", "update_capability_status"}:
             command_id = str(data.get("id") or "")
             if not command_id or command_id in self.active_command_ids:
                 return
@@ -810,6 +811,24 @@ class WorkerManager:
                     await self.emit(
                         {
                             "type": "delete_robot_folder_result",
+                            "id": job.command_id,
+                            "status": "ok",
+                            **result,
+                        }
+                    )
+                elif job.operation == "update_capability_status":
+                    model_id = str(job.payload.get("model_id") or "")
+                    capability_id = str(job.payload.get("capability_id") or "")
+                    status = str(job.payload.get("status") or "draft")
+                    result = await asyncio.to_thread(
+                        update_capability_status,
+                        model_id=model_id,
+                        capability_id=capability_id,
+                        new_status=status,
+                    )
+                    await self.emit(
+                        {
+                            "type": "update_capability_status_result",
                             "id": job.command_id,
                             "status": "ok",
                             **result,
