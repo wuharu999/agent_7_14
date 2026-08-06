@@ -500,6 +500,7 @@ async def analyze_scenario(
         team=model,
         system_prompt=system_prompt,
         json_schema=MATCHER_RESPONSE_SCHEMA,
+        timeout=450,
     )
     payload = _structured_payload(raw)
     return enforce_abstraction_hard_gate(payload)

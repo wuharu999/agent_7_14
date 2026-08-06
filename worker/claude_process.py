@@ -99,6 +99,7 @@ async def _watchdog_loop(
     process: asyncio.subprocess.Process,
     last_activity: list[float],
     inactivity_timeout: float = 180.0,
+    allow_silent_tool_use: bool = False,
 ) -> None:
     while process.returncode is None:
         await asyncio.sleep(0.5)
@@ -109,12 +110,13 @@ async def _watchdog_loop(
             raise ClaudeProcessError(
                 f"Claude 进程被挂起/暂停 (SIGSTOP/State T, PID {process.pid})"
             )
-        idle_time = time.monotonic() - last_activity[0]
-        if idle_time > inactivity_timeout:
-            await stop_process(process)
-            raise ClaudeProcessError(
-                f"Claude 进程无数据输出超时 ({int(inactivity_timeout)}s)，已被终止"
-            )
+        if not allow_silent_tool_use:
+            idle_time = time.monotonic() - last_activity[0]
+            if idle_time > inactivity_timeout:
+                await stop_process(process)
+                raise ClaudeProcessError(
+                    f"Claude 进程无数据输出超时 ({int(inactivity_timeout)}s)，已被终止"
+                )
 
 
 def build_command(
@@ -261,7 +263,12 @@ async def run_claude_process(
         effective_timeout = float(timeout or CLAUDE_TIMEOUT)
         last_activity = [time.monotonic()]
         watchdog = asyncio.create_task(
-            _watchdog_loop(process, last_activity, inactivity_timeout=effective_timeout)
+            _watchdog_loop(
+                process,
+                last_activity,
+                inactivity_timeout=effective_timeout,
+                allow_silent_tool_use=json_schema is not None,
+            )
         )
 
         stdout_chunks: list[str] = []
@@ -303,6 +310,10 @@ async def run_claude_process(
             raise
         finally:
             watchdog.cancel()
+            try:
+                await watchdog
+            except (asyncio.CancelledError, Exception):
+                pass
             await stop_process(process)
 
         stdout = "".join(stdout_chunks)
