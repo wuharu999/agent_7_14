@@ -12,7 +12,6 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
 .shell{width:min(1850px,100%);margin:auto;padding:16px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px}
-.title h1{font-size:clamp(20px,2vw,26px);margin:0}.title p{color:var(--muted);margin:3px 0 0;font-size:13px}
 .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
 
 /* Workbench Grid Layout: Starts as centered single-column chat view */
@@ -33,7 +32,7 @@
   border-radius: 16px;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 110px);
+  height: calc(100vh - 90px);
   box-shadow: 0 10px 25px rgba(0,0,0,0.05);
   overflow: hidden;
   width: 100%;
@@ -122,15 +121,11 @@
 <body>
 <main class="shell">
   <header class="topbar">
-    <div style="display:flex; align-items:center; gap:14px;">
-      <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 1.8; flex-shrink:0;"></div>
-      <div class="title">
-        <h1 data-i18n="title">🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
-        <p data-i18n="subtitle">Interactive ChatGPT Grill-Me Studio & Autonomous Capability Feasibility Compiler</p>
-      </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <h2 style="margin:0; font-size:18px; font-weight:800; color:#0f172a;">🔥 Grill-Me Scenario Studio & Capability Compiler</h2>
     </div>
     <div class="actions">
-      <select id="ui-language" aria-label="Interface and report language" style="height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;">
+      <select id="ui-language" aria-label="Interface and report language" style="height:36px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;">
         <option value="en">English</option>
         <option value="zh-CN">简体中文</option>
       </select>
@@ -148,15 +143,7 @@
     <section class="chat-panel" aria-label="ChatGPT Grill-Me Interface">
       <div class="chat-header">
         <div class="chat-header-title">
-          <span>🔥 Grill-Me Scenario Studio</span>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <label style="font-size:12px; font-weight:700; color:#64748b;">Model:</label>
-          <select id="model-select" style="height:32px; font-size:12px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px;" onchange="handleModelChange()">
-            <option value="tian_gong">Tian Gong (tian_gong)</option>
-            <option value="walker_s2">Walker S2 (walker_s2)</option>
-            <option value="walker_c1">Walker C1 (walker_c1)</option>
-          </select>
+          <span>🤖 AI Scenario & Robot Compiler</span>
         </div>
       </div>
 
@@ -164,7 +151,7 @@
         <!-- Initial AI Welcome Bubble -->
         <div class="chat-bubble assistant">
           <div class="chat-bubble-title">🤖 AI Scenario Compiler</div>
-          Hello! I am your AI Scenario Feasibility Compiler. I have loaded the pre-classified atomic capability catalog. Describe your customer scenario below, or select parameters from the clarifying questions.
+          Hello! I am your AI Scenario Feasibility Compiler. I am ready to evaluate customer task scenarios and recommend the best-fit robot model based on our repository evidence.
         </div>
       </div>
 
@@ -176,7 +163,7 @@
 
       <div class="chat-input-wrap">
         <div style="position:relative; display:flex; align-items:center;">
-          <textarea id="scenario" class="chat-textarea" placeholder="Type your scenario description or details... (Press Enter to send, Shift+Enter for newline)" style="padding-right:90px;"></textarea>
+          <textarea id="scenario" class="chat-textarea" placeholder="Describe your task scenario or answer questions... (Press Enter to send, Shift+Enter for newline)" style="padding-right:90px;"></textarea>
           <button id="send-btn" type="button" onclick="handleUserSend()" style="position:absolute; right:10px; bottom:10px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:6px;">
             Send ➔
           </button>
@@ -193,7 +180,7 @@
           <span id="aiThinkingHeaderTitle">🧠 Two-Stage Evaluation: Stage 1 (Catalog Match) ➔ Stage 2 (Wiki Fallback)</span>
         </div>
         <div class="ai-thinking-steps" id="aiThinkingSteps">
-          <div class="thinking-step done" id="step-1">✓ 1. Inspecting customer scenario text & target robot model specs</div>
+          <div class="thinking-step done" id="step-1">✓ 1. Inspecting customer scenario text & robot model capabilities</div>
           <div class="thinking-step active" id="step-2">⚡ 2. Stage 1: Matching against published CAP-*.json atomic capability catalog</div>
           <div class="thinking-step" id="step-3">🔎 3. Stage 2: Fallback deep search on raw wiki text files for missing evidence</div>
         </div>
@@ -215,7 +202,7 @@
           </div>
           <div>
             <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;" id="conclusion-title">Feasibility Assessment</div>
-            <div style="font-size:13px; color:#475569; line-height:1.5;" id="conclusion-desc">Enter a scenario on the left pane to compile evidence-backed requirements.</div>
+            <div style="font-size:13px; color:#475569; line-height:1.5;" id="conclusion-desc">Describe a scenario on the left pane to compile evidence-backed requirements.</div>
           </div>
         </div>
       </div>
@@ -271,8 +258,7 @@ let assessmentId=__ASSESSMENT_ID__;
 let currentAssessment=null;
 const uiLanguage=document.getElementById('ui-language')||{value:'en'};
 const scenarioInput=document.getElementById('scenario');
-const modelSelect=document.getElementById('model-select');
-const companion=document.getElementById('coding-companion');
+const companion=null;
 const chatThread=document.getElementById('chat-thread');
 const aiThinkingStream=document.getElementById('aiThinkingStream');
 const translations={
@@ -285,12 +271,15 @@ function monitorAssessment(id){
   return id;
 }
 
+let selectedClarifications={};
+let targetRobotModel='tian_gong';
+let isAnalyzing=false;
+
 // Auto-Open Grill Me on Page Load
 window.addEventListener('DOMContentLoaded', () => {
-  setCompanionMode('thinking');
   setTimeout(() => {
     triggerGrillMeQuestions(true);
-  }, 400);
+  }, 300);
 
   // Enter to send, Shift+Enter for newline
   if (scenarioInput) {
@@ -304,19 +293,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function setCompanionMode(mode) {
-  if (companion) companion.setAttribute('data-mode', mode);
-}
-
-function handleModelChange() {
-  document.querySelector('.workbench-grid').classList.remove('has-dashboard');
-  clearClarifiedOptions();
-  chatThread.innerHTML = `
-    <div class="chat-bubble assistant">
-      <div class="chat-bubble-title">🤖 AI Scenario Compiler</div>
-      Switched to target model: <strong>${modelSelect.value}</strong>. Describe your scenario or select clarification parameters below.
-    </div>
-  `;
-  triggerGrillMeQuestions(true);
+  // Companion removed
 }
 
 function updateClarifiedBadge() {
@@ -330,6 +307,15 @@ function clearClarifiedOptions() {
   updateClarifiedBadge();
 }
 
+function selectRobotPill(btn, modelKey, modelLabel) {
+  const parent = btn.parentElement;
+  parent.querySelectorAll('.chat-pill').forEach(p => p.classList.remove('selected'));
+  btn.classList.add('selected');
+  targetRobotModel = modelKey === 'auto' ? 'tian_gong' : modelKey;
+  selectedClarifications['robot_model'] = `Requested Robot Model: ${modelLabel}`;
+  updateClarifiedBadge();
+}
+
 function selectOptionPill(btn, questionId, optionText) {
   const parent = btn.parentElement;
   parent.querySelectorAll('.chat-pill').forEach(p => p.classList.remove('selected'));
@@ -340,8 +326,7 @@ function selectOptionPill(btn, questionId, optionText) {
 
 async function triggerGrillMeQuestions(silent = false) {
   const scenarioText = scenarioInput.value.trim() || 'General scenario feasibility assessment';
-  const modelId = modelSelect.value;
-  setCompanionMode('thinking');
+  const modelId = targetRobotModel || 'tian_gong';
 
   if (!silent) {
     appendUserBubble(scenarioText);
@@ -360,8 +345,6 @@ async function triggerGrillMeQuestions(silent = false) {
     renderGrillQuestionsInChat(questions);
   } catch (err) {
     appendAssistantBubble(`⚠️ ${err.message || 'Could not generate clarification questions.'}`);
-  } finally {
-    setCompanionMode('sleeping');
   }
 }
 
@@ -382,12 +365,20 @@ function appendAssistantBubble(htmlContent) {
 }
 
 function renderGrillQuestionsInChat(questions) {
-  if (!questions.length) return;
   let html = `<div class="chat-bubble-title">🔥 Grill-Me Clarification Questions</div>`;
-  html += `Select key parameters below or describe your task:`;
+  html += `To provide precise feasibility assessment, please specify your target robot platform or scenario parameters:`;
 
-  questions.forEach((q, idx) => {
-    html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">${idx + 1}. ${q.question}</div>`;
+  // 1. Robot Model Selection & Recommendation Prompt
+  html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">1. Which robot model are you evaluating for this task?</div>`;
+  html += `<div class="chat-options-group">`;
+  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'tian_gong', 'Tian Gong (Humanoid)')">🤖 Tian Gong (Humanoid)</button>`;
+  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'walker_s2', 'Walker S2 (Industrial Humanoid)')">🤖 Walker S2 (Industrial Humanoid)</button>`;
+  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'walker_c1', 'Walker C1 (Commercial Biped)')">🤖 Walker C1 (Commercial Biped)</button>`;
+  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'auto', 'Auto-Recommend Best Fit Robot')">✨ Auto-Recommend Best Fit Robot</button>`;
+  html += `</div>`;
+
+  (questions || []).forEach((q, idx) => {
+    html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">${idx + 2}. ${q.question}</div>`;
     html += `<div class="chat-options-group">`;
     (q.options || []).forEach(opt => {
       html += `<button type="button" class="chat-pill" onclick="selectOptionPill(this, '${q.id || idx}', '${opt.replace(/'/g, "\\'")}')">⚡ ${opt}</button>`;
@@ -409,10 +400,10 @@ async function handleUserSend() {
   let displayMsg = rawText;
 
   if (choices.length && !rawText) {
-    displayMsg = "Selected Clarified Parameters:\n- " + choices.join('\n- ');
+    displayMsg = "Selected Parameters:\n- " + choices.join('\n- ');
     fullScenario = displayMsg;
   } else if (choices.length) {
-    displayMsg += "\n\nSelected Clarified Parameters:\n- " + choices.join('\n- ');
+    displayMsg += "\n\nSelected Parameters:\n- " + choices.join('\n- ');
     fullScenario = displayMsg;
   }
 
@@ -421,9 +412,10 @@ async function handleUserSend() {
   clearClarifiedOptions();
 
   isAnalyzing = true;
-  const modelId = modelSelect.value;
-  setCompanionMode('thinking');
-  appendAssistantBubble(`🤖 Requirements received! Autonomous Compiler is matching capabilities against <strong>${modelId}</strong> evidence...`);
+  const modelId = targetRobotModel || 'tian_gong';
+  const modelLabel = modelId === 'walker_s2' ? 'Walker S2 (Industrial Humanoid)' : modelId === 'walker_c1' ? 'Walker C1 (Commercial Biped)' : 'Tian Gong (Humanoid)';
+
+  appendAssistantBubble(`🤖 Scenario received! Autonomous Compiler is analyzing requirements for <strong>${modelLabel}</strong> against repository evidence...`);
 
   try {
     await runCapabilityMatch(fullScenario, modelId);
@@ -433,7 +425,6 @@ async function handleUserSend() {
 }
 
 async function runCapabilityMatch(fullScenario, modelId) {
-  setCompanionMode('charging');
   aiThinkingStream.classList.remove('hidden');
 
   try {
@@ -445,13 +436,13 @@ async function runCapabilityMatch(fullScenario, modelId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Matching analysis failed');
 
+    const recommendedName = modelId === 'walker_s2' ? 'Walker S2' : modelId === 'walker_c1' ? 'Walker C1' : 'Tian Gong';
     renderDashboard(data.result || data);
-    appendAssistantBubble(`✅ Feasibility Analysis complete! View the visual dashboard on the right ➔`);
+    appendAssistantBubble(`✅ Feasibility Analysis complete! Recommended Platform: <strong>${recommendedName}</strong>. View the visual dashboard on the right ➔`);
   } catch (err) {
     appendAssistantBubble(`⚠️ Analysis failed: ${err.message || 'Capability match analysis failed.'}`);
   } finally {
     aiThinkingStream.classList.add('hidden');
-    setCompanionMode('sleeping');
   }
 }
 
