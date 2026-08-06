@@ -387,29 +387,101 @@ function removeThinkingBubble() {
   if (el) el.remove();
 }
 
+let currentGrillQuestions = [];
+let currentQuestionIndex = 0;
+let userScenarioIntent = "";
+
 function renderGrillQuestionsInChat(questions) {
-  let html = `<div class="chat-bubble-title">🔥 Grill-Me Clarification Questions</div>`;
-  html += `To sharpen requirements and evaluate feasibility, please specify key parameters or select options below:`;
+  // Build question queue with Robot Preference + Claude generated questions
+  const robotQuestion = {
+    id: 'robot_model',
+    question: 'Do you have a target robot model in mind, or should I evaluate and recommend the best fit?',
+    options: [
+      '🤖 Tian Gong (Humanoid)',
+      '🤖 Walker S2 (Industrial Humanoid)',
+      '🤖 Walker C1 (Commercial Biped)',
+      '✨ Auto-Recommend Best Fit Robot'
+    ]
+  };
 
-  // 1. Robot Model Selection & Recommendation Prompt
-  html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">1. Do you have a target robot model in mind, or should I evaluate and recommend the best fit?</div>`;
+  currentGrillQuestions = [robotQuestion, ...(questions || [])];
+  currentQuestionIndex = 0;
+
+  appendAssistantBubble(`🤖 Scenario received! To sharpen requirements and recommend the best-fit robot platform, please answer a few quick questions one by one below:`);
+  renderCurrentSingleQuestion();
+}
+
+function renderCurrentSingleQuestion() {
+  if (currentQuestionIndex >= currentGrillQuestions.length) {
+    // All questions answered! Auto-trigger analysis
+    appendThinkingBubble("All parameters specified! Evaluating repository evidence & compiling feasibility report...");
+    handleAutoAnalysisAfterGrill();
+    return;
+  }
+
+  const q = currentGrillQuestions[currentQuestionIndex];
+  const total = currentGrillQuestions.length;
+
+  let html = `<div class="chat-bubble-title">🔥 Question ${currentQuestionIndex + 1} of ${total}</div>`;
+  html += `<div style="font-weight:700; font-size:13.5px; color:#0f172a; margin-bottom:10px;">${q.question}</div>`;
   html += `<div class="chat-options-group">`;
-  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'tian_gong', 'Tian Gong (Humanoid)')">🤖 Tian Gong (Humanoid)</button>`;
-  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'walker_s2', 'Walker S2 (Industrial Humanoid)')">🤖 Walker S2 (Industrial Humanoid)</button>`;
-  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'walker_c1', 'Walker C1 (Commercial Biped)')">🤖 Walker C1 (Commercial Biped)</button>`;
-  html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'auto', 'Auto-Recommend Best Fit Robot')">✨ Auto-Recommend Best Fit Robot</button>`;
-  html += `</div>`;
 
-  (questions || []).forEach((q, idx) => {
-    html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">${idx + 2}. ${q.question}</div>`;
-    html += `<div class="chat-options-group">`;
+  if (q.id === 'robot_model') {
+    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'tian_gong', 'Tian Gong (Humanoid)', true)">🤖 Tian Gong (Humanoid)</button>`;
+    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'walker_s2', 'Walker S2 (Industrial Humanoid)', true)">🤖 Walker S2 (Industrial Humanoid)</button>`;
+    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'walker_c1', 'Walker C1 (Commercial Biped)', true)">🤖 Walker C1 (Commercial Biped)</button>`;
+    html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, 'auto', 'Auto-Recommend Best Fit Robot', true)">✨ Auto-Recommend Best Fit Robot</button>`;
+  } else {
     (q.options || []).forEach(opt => {
-      html += `<button type="button" class="chat-pill" onclick="selectOptionPill(this, '${q.id || idx}', '${opt.replace(/'/g, "\\'")}')">⚡ ${opt}</button>`;
+      html += `<button type="button" class="chat-pill" onclick="answerSingleQuestion(this, '${q.id || currentQuestionIndex}', '${opt.replace(/'/g, "\\'")}', false)">⚡ ${opt}</button>`;
     });
-    html += `</div>`;
-  });
+  }
 
+  html += `</div>`;
   appendAssistantBubble(html);
+}
+
+function answerSingleQuestion(btn, idOrModel, optionText, isRobotModel) {
+  // Highlight selected button & disable siblings
+  const parent = btn.parentElement;
+  parent.querySelectorAll('.chat-pill').forEach(p => {
+    p.disabled = true;
+    p.style.opacity = '0.55';
+  });
+  btn.classList.add('selected');
+  btn.style.opacity = '1';
+
+  if (isRobotModel) {
+    targetRobotModel = idOrModel === 'auto' ? null : idOrModel;
+    selectedClarifications['robot_model'] = `Preferred Robot Model: ${optionText}`;
+  } else {
+    selectedClarifications[idOrModel] = optionText;
+  }
+  updateClarifiedBadge();
+
+  // Advance to next question!
+  currentQuestionIndex++;
+  setTimeout(() => {
+    renderCurrentSingleQuestion();
+  }, 300);
+}
+
+async function handleAutoAnalysisAfterGrill() {
+  isAnalyzing = true;
+  const choices = Object.values(selectedClarifications);
+  let fullScenario = userScenarioIntent;
+  if (choices.length) {
+    fullScenario += "\n\nSpecified Requirement Parameters:\n- " + choices.join('\n- ');
+  }
+
+  const modelId = targetRobotModel || 'tian_gong';
+
+  try {
+    await runCapabilityMatch(fullScenario, modelId);
+  } finally {
+    removeThinkingBubble();
+    isAnalyzing = false;
+  }
 }
 
 async function handleUserSend() {
@@ -419,32 +491,21 @@ async function handleUserSend() {
 
   if (!rawText && !choices.length) return;
 
-  let fullScenario = rawText;
-  let displayMsg = rawText;
-
-  if (choices.length && !rawText) {
-    displayMsg = "Selected Parameters:\n- " + choices.join('\n- ');
-    fullScenario = displayMsg;
-  } else if (choices.length) {
-    displayMsg += "\n\nSelected Parameters:\n- " + choices.join('\n- ');
-    fullScenario = displayMsg;
-  }
-
-  appendUserBubble(displayMsg);
+  appendUserBubble(rawText);
   scenarioInput.value = '';
-  clearClarifiedOptions();
 
-  // Handle simple conversational continuations (e.g. "continue", "thanks", "ok")
+  // Handle conversational follow-ups
   const lowerText = rawText.toLowerCase().trim();
   if (["continue", "ok", "thanks", "next", "go ahead"].includes(lowerText) && hasAnsweredQuestions) {
     appendAssistantBubble(`🤖 Of course! What specific parameters or boundary conditions would you like to explore next? (e.g., maximum battery endurance, outdoor terrain navigation, or ROS2 interface latency)`);
     return;
   }
 
-  // Step 1: If user hasn't received clarification questions yet, trigger Grill-Me questions first
+  // Step 1: User enters scenario intent
   if (!hasAnsweredQuestions && rawText) {
     hasAnsweredQuestions = true;
-    appendThinkingBubble("Analyzing scenario & generating clarification questions...");
+    userScenarioIntent = rawText;
+    appendThinkingBubble("Analyzing scenario & formulating targeted clarification questions...");
     try {
       await triggerGrillMeQuestions(rawText);
     } finally {
@@ -453,16 +514,12 @@ async function handleUserSend() {
     return;
   }
 
-  // Step 2: Once scenario & parameters are submitted, run full capability match & platform recommendation
-  isAnalyzing = true;
-  const modelId = targetRobotModel || 'tian_gong';
-  appendThinkingBubble("Evaluating requirements & compiling repository capability evidence...");
-
-  try {
-    await runCapabilityMatch(fullScenario, modelId);
-  } finally {
-    removeThinkingBubble();
-    isAnalyzing = false;
+  // If user typed custom parameter text while in questions
+  if (hasAnsweredQuestions && rawText) {
+    selectedClarifications[`custom_${Date.now()}`] = rawText;
+    updateClarifiedBadge();
+    currentQuestionIndex++;
+    renderCurrentSingleQuestion();
   }
 }
 

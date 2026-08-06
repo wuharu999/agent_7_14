@@ -583,7 +583,7 @@ Customer Scenario Description:
 
 Target Robot Model ID: {model_id}
 
-Identify the 3 to 5 most critical missing technical parameters or boundary conditions (e.g. payload weight, speed, terrain/slopes, environmental conditions, ROS2 topic interface requirements, human safety distance, battery runtime).
+Identify the 4 to 6 most critical missing technical parameters or boundary conditions (e.g. payload weight, speed, terrain/slopes, environmental conditions, ROS2 topic interface requirements, human safety distance, battery runtime).
 
 For each question:
 1. Provide a concise, probing question.
