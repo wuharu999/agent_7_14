@@ -442,12 +442,12 @@ def _publish_drafts(
             if entry.get("lifecycle", {}).get("status") != "draft":
                 raise ValueError("Organizer may only write draft capability entries")
             json_path = catalog_stage / f"{capability_id}.json"
-            if operation.get("action") == "create" and json_path.exists():
-                raise ValueError(f"Create operation would overwrite {capability_id}")
             if json_path.exists():
                 existing = json.loads(json_path.read_text(encoding="utf-8"))
                 if existing.get("lifecycle", {}).get("status") != "draft":
                     raise ValueError(f"Organizer cannot overwrite non-draft entry {capability_id}")
+                if operation.get("action") == "create":
+                    operation["action"] = "update"
             json_path.write_text(
                 json.dumps(entry, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
