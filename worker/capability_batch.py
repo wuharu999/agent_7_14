@@ -413,6 +413,36 @@ def normalize_candidate_ids(identifier: str, payload: dict[str, Any]) -> dict[st
     return payload
 
 
+def _sanitize_after_entry(entry: dict[str, Any]) -> None:
+    if not isinstance(entry, dict):
+        return
+    for field in ("dependencies",):
+        if field in entry and isinstance(entry[field], list):
+            clean_list: list[str] = []
+            for item in entry[field]:
+                if isinstance(item, str) and item.strip():
+                    clean_list.append(item.strip())
+                elif isinstance(item, dict):
+                    val = str(item.get("capability_id") or item.get("id") or item.get("name") or "").strip()
+                    if val:
+                        clean_list.append(val)
+            entry[field] = clean_list
+
+    scope = entry.get("scope")
+    if isinstance(scope, dict):
+        for field in ("source_model_names", "body_parts"):
+            if field in scope and isinstance(scope[field], list):
+                clean_list: list[str] = []
+                for item in scope[field]:
+                    if isinstance(item, str) and item.strip():
+                        clean_list.append(item.strip())
+                    elif isinstance(item, dict):
+                        val = str(item.get("name") or item.get("id") or "").strip()
+                        if val:
+                            clean_list.append(val)
+                scope[field] = clean_list
+
+
 def parse_reduction(
     raw: str,
     *,
@@ -453,6 +483,7 @@ def parse_reduction(
         if action in {"create", "update", "implementation-instance"}:
             if not isinstance(after_entry, dict):
                 raise ValueError("Writable capability reduction requires an entry")
+            _sanitize_after_entry(after_entry)
         elif after_entry is not None:
             raise ValueError("Non-writing capability reduction must not include an entry")
         if action == "update" and not str(target_entry_id or ""):

@@ -65,7 +65,7 @@ def _unique_strings(value: Any, path: str, errors: list[str]) -> None:
         return
     if any(not _nonempty_string(item) for item in value):
         errors.append(f"{path}: every item must be a non-empty string")
-    if len(value) != len(set(value)):
+    elif len(value) != len(set(value)):
         errors.append(f"{path}: duplicate items are not allowed")
 
 
@@ -204,7 +204,8 @@ def validate_entry(data: Any) -> list[str]:
             errors.append(f"$.dependencies: invalid capability id {dependency!r}")
         if dependency == capability_id:
             errors.append("$.dependencies: capability cannot depend on itself")
-    if isinstance(data["dependencies"], list) and len(data["dependencies"]) != len(set(data["dependencies"])):
+    deps = data["dependencies"]
+    if isinstance(deps, list) and all(isinstance(x, str) for x in deps) and len(deps) != len(set(deps)):
         errors.append("$.dependencies: duplicate dependency ids")
 
     confidence = data["confidence"]
