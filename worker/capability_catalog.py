@@ -763,27 +763,43 @@ async def _reduce_candidates(
         candidates[i : i + REDUCE_CHUNK_SIZE]
         for i in range(0, len(candidates), REDUCE_CHUNK_SIZE)
     ]
-    all_decisions: list[dict[str, Any]] = []
-    for chunk_index, chunk in enumerate(chunks, start=1):
-        if on_progress:
-            await on_progress(
-                "batch_reducing",
-                (
-                    f"Merging candidate capabilities (chunk {chunk_index}/{len(chunks)}, "
-                    f"{len(all_decisions)}/{len(candidates)} complete)..."
-                ),
-                progress_snapshot,
+    decisions_by_chunk: list[list[dict[str, Any]]] = [[] for _ in chunks]
+    sem = asyncio.Semaphore(3)
+    completed_chunks = [0]
+    completed_candidates = [0]
+
+    async def process_chunk(chunk_index: int, chunk: list[dict[str, Any]]) -> None:
+        async with sem:
+            sub_reducer_id = f"{reducer_id}-chunk{chunk_index}"
+            chunk_reduction = await _reduce_candidate_chunk(
+                model=model,
+                reducer_id=sub_reducer_id,
+                candidates=chunk,
+                existing_entries=existing_entries,
             )
-        sub_reducer_id = f"{reducer_id}-chunk{chunk_index}"
-        chunk_reduction = await _reduce_candidate_chunk(
-            model=model,
-            reducer_id=sub_reducer_id,
-            candidates=chunk,
-            existing_entries=existing_entries,
-        )
-        decisions = chunk_reduction.get("decisions", [])
-        if isinstance(decisions, list):
-            all_decisions.extend(decisions)
+            decisions = chunk_reduction.get("decisions", [])
+            if isinstance(decisions, list):
+                decisions_by_chunk[chunk_index - 1] = decisions
+                completed_candidates[0] += len(decisions)
+            completed_chunks[0] += 1
+            if on_progress:
+                await on_progress(
+                    "batch_reducing",
+                    (
+                        f"Merging candidate capabilities (chunk {completed_chunks[0]}/{len(chunks)}, "
+                        f"{completed_candidates[0]}/{len(candidates)} complete)..."
+                    ),
+                    progress_snapshot,
+                )
+
+    await asyncio.gather(
+        *(process_chunk(idx, chunk) for idx, chunk in enumerate(chunks, start=1))
+    )
+
+    all_decisions: list[dict[str, Any]] = []
+    for chunk_decisions in decisions_by_chunk:
+        all_decisions.extend(chunk_decisions)
+
     return {
         "reducer_id": reducer_id,
         "decisions": all_decisions,
