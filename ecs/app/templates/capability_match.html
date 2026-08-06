@@ -321,6 +321,41 @@ function selectOptionPill(btn, questionId, optionText) {
   updateClarifiedBadge();
 }
 
+function appendUserBubble(text) {
+  const div = document.createElement('div');
+  div.className = 'chat-bubble user';
+  div.textContent = text;
+  chatThread.appendChild(div);
+  chatThread.scrollTop = chatThread.scrollHeight;
+}
+
+function appendAssistantBubble(htmlContent) {
+  const div = document.createElement('div');
+  div.className = 'chat-bubble assistant';
+  div.innerHTML = htmlContent;
+  chatThread.appendChild(div);
+  chatThread.scrollTop = chatThread.scrollHeight;
+}
+
+function appendThinkingBubble(text) {
+  removeThinkingBubble();
+  const div = document.createElement('div');
+  div.className = 'chat-bubble assistant';
+  div.id = 'active-thinking';
+  div.style.background = '#f1f5f9';
+  div.style.color = '#475569';
+  div.style.fontStyle = 'italic';
+  div.innerHTML = `<span class="spinner" style="width:14px; height:14px; display:inline-block; margin-right:8px; vertical-align:middle;"></span> ${text}`;
+  chatThread.appendChild(div);
+  chatThread.scrollTop = chatThread.scrollHeight;
+  return div;
+}
+
+function removeThinkingBubble() {
+  const el = document.getElementById('active-thinking');
+  if (el) el.remove();
+}
+
 let currentGrillQuestions = [];
 let currentQuestionIndex = 0;
 let userScenarioIntent = "";
