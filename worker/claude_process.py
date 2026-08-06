@@ -232,35 +232,83 @@ async def run_claude_process(
     except OSError as exc:
         raise ClaudeProcessError(f"Unable to start Claude: {exc}") from exc
 
-    last_activity = [time.monotonic()]
-    watchdog = asyncio.create_task(
-        _watchdog_loop(process, last_activity, inactivity_timeout=180.0)
-    )
+    if hasattr(process, "communicate") and not (
+        hasattr(process, "stdout")
+        and hasattr(getattr(process, "stdout", None), "read")
+        and hasattr(getattr(process, "stdin", None), "write")
+    ):
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(input=user_prompt.encode("utf-8")),
+                timeout=timeout or CLAUDE_TIMEOUT,
+            )
+            stdout = stdout_bytes.decode("utf-8", errors="replace")
+            stderr = stderr_bytes.decode("utf-8", errors="replace")
+        except asyncio.TimeoutError as exc:
+            await stop_process(process)
+            raise ClaudeProcessError(
+                f"Claude 调用超时 ({timeout or CLAUDE_TIMEOUT}s)"
+            ) from exc
+        except asyncio.CancelledError:
+            await stop_process(process)
+            raise
+    else:
+        if process.stdin is not None and hasattr(process.stdin, "write"):
+            process.stdin.write(user_prompt.encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
 
-    try:
-        async def communicate_with_activity():
-            out, err = await process.communicate(input=user_prompt.encode("utf-8"))
-            last_activity[0] = time.monotonic()
-            return out, err
-
-        stdout, stderr = await asyncio.wait_for(
-            communicate_with_activity(),
-            timeout=timeout or CLAUDE_TIMEOUT,
+        last_activity = [time.monotonic()]
+        watchdog = asyncio.create_task(
+            _watchdog_loop(process, last_activity, inactivity_timeout=180.0)
         )
-    except asyncio.TimeoutError as exc:
-        await stop_process(process)
-        raise ClaudeProcessError(
-            f"Claude 调用超时 ({timeout or CLAUDE_TIMEOUT}s)"
-        ) from exc
-    except asyncio.CancelledError:
-        await stop_process(process)
-        raise
-    finally:
-        watchdog.cancel()
-        await stop_process(process)
+
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        async def read_stdout():
+            if process.stdout is None or not hasattr(process.stdout, "read"):
+                return
+            while True:
+                chunk = await process.stdout.read(4096)
+                if not chunk:
+                    break
+                last_activity[0] = time.monotonic()
+                stdout_chunks.append(chunk.decode("utf-8", errors="replace"))
+
+        async def read_stderr():
+            if process.stderr is None or not hasattr(process.stderr, "read"):
+                return
+            while True:
+                chunk = await process.stderr.read(1024)
+                if not chunk:
+                    break
+                last_activity[0] = time.monotonic()
+                stderr_chunks.append(chunk.decode("utf-8", errors="replace"))
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(read_stdout(), read_stderr()),
+                timeout=timeout or CLAUDE_TIMEOUT,
+            )
+            await process.wait()
+        except asyncio.TimeoutError as exc:
+            await stop_process(process)
+            raise ClaudeProcessError(
+                f"Claude 调用超时 ({timeout or CLAUDE_TIMEOUT}s)"
+            ) from exc
+        except asyncio.CancelledError:
+            await stop_process(process)
+            raise
+        finally:
+            watchdog.cancel()
+            await stop_process(process)
+
+        stdout = "".join(stdout_chunks)
+        stderr = "".join(stderr_chunks)
 
     if process.returncode != 0:
-        detail = stderr.decode("utf-8", errors="replace").strip()[:800]
+        detail = stderr.strip()[:800]
         if process.returncode in (143, -15, -9):
             raise ClaudeProcessError(
                 f"Claude 进程接收到终止信号 SIGTERM/SIGKILL (code={process.returncode})。"
@@ -269,7 +317,7 @@ async def run_claude_process(
         raise ClaudeProcessError(
             f"Claude 执行失败 (code={process.returncode}): {detail}"
         )
-    result = stdout.decode("utf-8", errors="replace").strip()
+    result = stdout.strip()
     if not result:
         raise ClaudeProcessError("Claude returned an empty response")
     if canary in result:
