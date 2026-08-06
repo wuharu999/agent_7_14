@@ -182,7 +182,7 @@
 const csrfToken='__CSRF_TOKEN__';
 const robots=__ROBOTS__;
 const uiLanguage=document.getElementById('ui-language');
-const defaultModel='fangan';
+const defaultModel=(robots&&robots[0]&&robots[0].name)?robots[0].name:'tian_gong';
 const organizerStatus=document.getElementById('organizer-status');
 let latestData={catalog_jobs:[],gaps:[],draft_stubs:[]};
 let latestCatalog={};

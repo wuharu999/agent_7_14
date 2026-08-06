@@ -281,21 +281,21 @@ def _catalog_entries(target: Path) -> list[dict[str, Any]]:
             entry.get("lifecycle") if isinstance(entry.get("lifecycle"), dict) else {}
         )
         evidence = entry.get("evidence") if isinstance(entry.get("evidence"), list) else []
-        entries.append(
-            {
-                "capability_id": str(entry.get("capability_id") or path.stem),
-                "name": str(entry.get("name") or ""),
-                "semantic_key": str(entry.get("semantic_key") or ""),
-                "abstraction_level": str(entry.get("abstraction_level") or entry.get("abstraction") or "L0_primitive_driver"),
-                "effect": " ".join(
-                    str(effect.get(key) or "").strip()
-                    for key in ("action", "object", "observable_result")
-                    if str(effect.get(key) or "").strip()
-                ),
-                "lifecycle_status": str(lifecycle.get("status") or "draft"),
-                "evidence_count": len(evidence),
-            }
-        )
+        item = dict(entry)
+        item.update({
+            "capability_id": str(entry.get("capability_id") or path.stem),
+            "name": str(entry.get("name") or ""),
+            "semantic_key": str(entry.get("semantic_key") or ""),
+            "abstraction_level": str(entry.get("abstraction_level") or entry.get("abstraction") or "L0_primitive_driver"),
+            "effect": " ".join(
+                str(effect.get(key) or "").strip()
+                for key in ("action", "object", "observable_result")
+                if str(effect.get(key) or "").strip()
+            ) if isinstance(effect, dict) else str(effect or ""),
+            "lifecycle_status": str(lifecycle.get("status") or "draft") if isinstance(lifecycle, dict) else str(lifecycle or "draft"),
+            "evidence_count": len(evidence) if isinstance(evidence, list) else 0,
+        })
+        entries.append(item)
     return entries
 
 
