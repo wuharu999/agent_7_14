@@ -39,40 +39,53 @@
 </section>
 
 <section class="card">
-  <h2 data-i18n="catalogTitle">Organized atomic capabilities</h2>
-  <p class="muted" data-i18n="catalogHelp">Draft entries published from generated Wiki evidence across all robot models and platforms.</p>
-  <div id="coverage" class="baseline" data-i18n="noCoverage">No scan coverage has been recorded.</div>
-  <div id="coverage-details" class="diagnostics"></div>
-  <div class="controls" style="margin: 12px 0; display:flex; gap:10px; align-items:center;">
-    <input type="text" id="capability-search" data-i18n-placeholder="searchPlaceholder" placeholder="🔍 Search capabilities by ID, name, effect, or abstraction..." style="flex:1; max-width:420px; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;" />
-    <select id="status-filter" style="height:38px; padding:0 30px 0 10px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;">
-      <option value="" data-i18n="allStatuses">All Statuses</option>
-      <option value="draft">draft</option>
-      <option value="reviewed">reviewed</option>
-      <option value="verified">verified</option>
-      <option value="deprecated">deprecated</option>
-    </select>
-    <button type="button" class="btn secondary" id="btn-add-capability" onclick="openCapabilityModal()" style="height:38px; display:inline-flex; align-items:center; gap:6px; font-weight:700; background:#3b82f6; color:#ffffff; border:none; border-radius:8px; padding:0 16px; cursor:pointer;">
-      ➕ Add Capability
+  <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none;" onclick="toggleCatalogCardFold()">
+    <div>
+      <h2 style="margin:0; display:inline-flex; align-items:center; gap:8px;">
+        <span id="catalog-toggle-icon" style="font-size:14px; color:#64748b;">▼</span>
+        <span data-i18n="catalogTitle">Organized atomic capabilities</span>
+      </h2>
+      <p class="muted" data-i18n="catalogHelp" style="margin:4px 0 0 0;">Draft entries published from generated Wiki evidence across all robot models and platforms.</p>
+    </div>
+    <button type="button" class="btn secondary" style="font-size:12px; padding:6px 14px; border-radius:8px;" onclick="event.stopPropagation(); toggleCatalogCardFold();">
+      <span id="catalog-toggle-btn-text">▼ / ▶ Fold</span>
     </button>
-    <span id="search-count" class="muted" style="font-weight: 600; font-size: 13px;"></span>
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th style="width:36px; text-align:center;"></th>
-          <th data-i18n="capabilityId">Capability ID</th>
-          <th data-i18n="capabilityName">Name</th>
-          <th data-i18n="abstractionLevel">Abstraction Level</th>
-          <th data-i18n="effect">Observable effect</th>
-          <th data-i18n="evidence">Evidence</th>
-          <th data-i18n="status">Status</th>
-          <th style="text-align:right;">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="catalog-entries"></tbody>
-    </table>
+
+  <div id="catalog-card-body" style="margin-top:16px;">
+    <div id="coverage" class="baseline" data-i18n="noCoverage">No scan coverage has been recorded.</div>
+    <div id="coverage-details" class="diagnostics"></div>
+    <div class="controls" style="margin: 12px 0; display:flex; gap:10px; align-items:center;">
+      <input type="text" id="capability-search" data-i18n-placeholder="searchPlaceholder" placeholder="🔍 Search capabilities by ID, name, effect, or abstraction..." style="flex:1; max-width:420px; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;" />
+      <select id="status-filter" style="height:38px; padding:0 30px 0 10px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;">
+        <option value="" data-i18n="allStatuses">All Statuses</option>
+        <option value="draft">draft</option>
+        <option value="reviewed">reviewed</option>
+        <option value="verified">verified</option>
+        <option value="deprecated">deprecated</option>
+      </select>
+      <button type="button" class="btn secondary" id="btn-add-capability" onclick="openCapabilityModal()" style="height:38px; display:inline-flex; align-items:center; gap:6px; font-weight:700; background:#3b82f6; color:#ffffff; border:none; border-radius:8px; padding:0 16px; cursor:pointer;">
+        ➕ Add Capability
+      </button>
+      <span id="search-count" class="muted" style="font-weight: 600; font-size: 13px;"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px; text-align:center;"></th>
+            <th data-i18n="capabilityId">Capability ID</th>
+            <th data-i18n="capabilityName">Name</th>
+            <th data-i18n="abstractionLevel">Abstraction Level</th>
+            <th data-i18n="effect">Observable effect</th>
+            <th data-i18n="evidence">Evidence</th>
+            <th data-i18n="status">Status</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="catalog-entries"></tbody>
+      </table>
+    </div>
   </div>
 </section>
 
@@ -528,6 +541,21 @@ async function refresh(silent=false){if(!silent){organizerStatus.textContent=tr(
 async function loadChanges(){organizerStatus.textContent=tr('loadingChanges');organizerStatus.className='status';try{const response=await fetch(`/api/admin/capabilities/source-changes?model_id=${encodeURIComponent(defaultModel)}`);const data=await response.json();if(!response.ok)throw new Error(data.error||data.detail||tr('failedStart'));renderChanges(data);renderCatalog(data);organizerStatus.textContent=''}catch(error){organizerStatus.textContent=error instanceof Error?error.message:tr('failedStart');organizerStatus.className='status error'}}
 async function startOrganization(scanMode='incremental'){const confirmation=scanMode==='full_fresh'?'confirmFresh':scanMode==='full'?'confirmFull':'confirm';if(!window.confirm(tr(confirmation)))return;const button=document.getElementById(scanMode==='full_fresh'?'force-reextract':scanMode==='full'?'full-rescan':'organize');button.disabled=true;organizerStatus.textContent=tr('queued');organizerStatus.className='status';try{const response=await fetch('/api/admin/capabilities/organize',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({model_id:defaultModel,scan_mode:scanMode})});const data=await response.json();if(!response.ok&&response.status!==409)throw new Error(data.error||data.detail||tr('failedStart'));await refresh(true)}catch(error){organizerStatus.textContent=error instanceof Error?error.message:tr('failedStart');organizerStatus.className='status error';button.disabled=false}}
 async function createStub(gap,button){button.disabled=true;organizerStatus.textContent=tr('draftCreating');try{const response=await fetch('/api/admin/capabilities/stubs',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({assessment_id:gap.latest_assessment_id,requirement_id:gap.latest_requirement_id})});const data=await response.json();if(!response.ok)throw new Error(data.error||data.detail||tr('failedStart'));organizerStatus.textContent=tr('draftReady',{id:data.stub.stub_id});await refresh(true)}catch(error){organizerStatus.textContent=error instanceof Error?error.message:tr('failedStart');organizerStatus.className='status error'}finally{button.disabled=false}}
+function toggleCatalogCardFold(){
+  const body=document.getElementById('catalog-card-body');
+  const icon=document.getElementById('catalog-toggle-icon');
+  const btnText=document.getElementById('catalog-toggle-btn-text');
+  if(!body)return;
+  if(body.style.display==='none'){
+    body.style.display='block';
+    if(icon)icon.textContent='▼';
+    if(btnText)btnText.textContent='▼ Fold';
+  }else{
+    body.style.display='none';
+    if(icon)icon.textContent='▶';
+    if(btnText)btnText.textContent='▶ Unfold';
+  }
+}
 function startPolling(){if(pollTimer===null)pollTimer=window.setInterval(async()=>{try{await refresh(true);const jobs=latestData.catalog_jobs||[];const current=jobs.find(job=>['queued','processing'].includes(job.status)||(job.status&&['completed','partial'].includes(job.status)));if(current)await loadChanges()}catch(_){}},2000)}
 function stopPolling(){if(pollTimer!==null){window.clearInterval(pollTimer);pollTimer=null}}
 uiLanguage.value=localStorage.getItem('agent1_ui_language')==='zh-CN'?'zh-CN':'en';applyLanguage();uiLanguage.addEventListener('change',()=>{localStorage.setItem('agent1_ui_language',uiLanguage.value);applyLanguage()});
