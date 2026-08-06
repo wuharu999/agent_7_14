@@ -62,16 +62,15 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 "delete_source_result",
                 "create_robot_folder_result",
                 "delete_robot_folder_result",
+                "authoring_result",
+                "capability_match_result",
+                "grill_scenario_result",
+                "capability_catalog_result",
+                "capability_source_changes_result",
+                "update_capability_status_result",
+                "save_capability_result",
+                "delete_capability_result",
             }:
-                gateway.resolve_command(str(data.get("id") or ""), data)
-
-            elif message_type == "authoring_result":
-                gateway.resolve_command(str(data.get("id") or ""), data)
-
-            elif message_type == "capability_match_result":
-                gateway.resolve_command(str(data.get("id") or ""), data)
-
-            elif message_type in {"capability_catalog_result", "capability_source_changes_result", "update_capability_status_result", "save_capability_result", "delete_capability_result"}:
                 gateway.resolve_command(str(data.get("id") or ""), data)
 
             elif message_type == "capability_catalog_progress":

@@ -344,7 +344,19 @@ async function triggerGrillMeQuestions(silent = false) {
     const questions = data.questions || [];
     renderGrillQuestionsInChat(questions);
   } catch (err) {
-    appendAssistantBubble(`⚠️ ${err.message || 'Could not generate clarification questions.'}`);
+    // Graceful fallback clarification questions if Claude is offline/busy
+    renderGrillQuestionsInChat([
+      {
+        id: 'payload',
+        question: 'What is your required payload capacity for this task?',
+        options: ['Light (< 3 kg)', 'Medium (3 - 10 kg)', 'Heavy (> 10 kg)']
+      },
+      {
+        id: 'environment',
+        question: 'What operational environment will the robot work in?',
+        options: ['Indoor Smooth Floor', 'Outdoor Rough Terrain', 'Cleanroom / Laboratory']
+      }
+    ]);
   }
 }
 
