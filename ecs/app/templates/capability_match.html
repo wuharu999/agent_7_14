@@ -272,15 +272,12 @@ function monitorAssessment(id){
 }
 
 let selectedClarifications={};
-let targetRobotModel='tian_gong';
+let targetRobotModel=null;
+let hasAnsweredQuestions=false;
 let isAnalyzing=false;
 
 // Auto-Open Grill Me on Page Load
 window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    triggerGrillMeQuestions(true);
-  }, 300);
-
   // Enter to send, Shift+Enter for newline
   if (scenarioInput) {
     scenarioInput.addEventListener('keydown', (e) => {
@@ -311,8 +308,8 @@ function selectRobotPill(btn, modelKey, modelLabel) {
   const parent = btn.parentElement;
   parent.querySelectorAll('.chat-pill').forEach(p => p.classList.remove('selected'));
   btn.classList.add('selected');
-  targetRobotModel = modelKey === 'auto' ? 'tian_gong' : modelKey;
-  selectedClarifications['robot_model'] = `Requested Robot Model: ${modelLabel}`;
+  targetRobotModel = modelKey === 'auto' ? null : modelKey;
+  selectedClarifications['robot_model'] = `Preferred Robot Model: ${modelLabel}`;
   updateClarifiedBadge();
 }
 
@@ -324,13 +321,8 @@ function selectOptionPill(btn, questionId, optionText) {
   updateClarifiedBadge();
 }
 
-async function triggerGrillMeQuestions(silent = false) {
-  const scenarioText = scenarioInput.value.trim() || 'General scenario feasibility assessment';
+async function triggerGrillMeQuestions(scenarioText) {
   const modelId = targetRobotModel || 'tian_gong';
-
-  if (!silent) {
-    appendUserBubble(scenarioText);
-  }
 
   try {
     const res = await fetch('/api/capability-match/grill', {
@@ -354,7 +346,7 @@ async function triggerGrillMeQuestions(silent = false) {
       {
         id: 'environment',
         question: 'What operational environment will the robot work in?',
-        options: ['Indoor Smooth Floor', 'Outdoor Rough Terrain', 'Cleanroom / Laboratory']
+        options: ['Indoor Factory Floor', 'Outdoor Rough Terrain', 'Cleanroom / Laboratory']
       }
     ]);
   }
@@ -378,10 +370,10 @@ function appendAssistantBubble(htmlContent) {
 
 function renderGrillQuestionsInChat(questions) {
   let html = `<div class="chat-bubble-title">🔥 Grill-Me Clarification Questions</div>`;
-  html += `To provide precise feasibility assessment, please specify your target robot platform or scenario parameters:`;
+  html += `To sharpen requirements and evaluate feasibility, please specify key parameters or select options below:`;
 
   // 1. Robot Model Selection & Recommendation Prompt
-  html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">1. Which robot model are you evaluating for this task?</div>`;
+  html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">1. Do you have a target robot model in mind, or should I evaluate and recommend the best fit?</div>`;
   html += `<div class="chat-options-group">`;
   html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'tian_gong', 'Tian Gong (Humanoid)')">🤖 Tian Gong (Humanoid)</button>`;
   html += `<button type="button" class="chat-pill" onclick="selectRobotPill(this, 'walker_s2', 'Walker S2 (Industrial Humanoid)')">🤖 Walker S2 (Industrial Humanoid)</button>`;
@@ -423,11 +415,20 @@ async function handleUserSend() {
   scenarioInput.value = '';
   clearClarifiedOptions();
 
+  // Step 1: If user hasn't received clarification questions yet, trigger Grill-Me questions first
+  if (!hasAnsweredQuestions && rawText) {
+    hasAnsweredQuestions = true;
+    appendAssistantBubble(`🤖 Scenario received! Analyzing requirement parameters...`);
+    await triggerGrillMeQuestions(rawText);
+    return;
+  }
+
+  // Step 2: Once scenario & parameters are submitted, run full capability match & platform recommendation
   isAnalyzing = true;
   const modelId = targetRobotModel || 'tian_gong';
-  const modelLabel = modelId === 'walker_s2' ? 'Walker S2 (Industrial Humanoid)' : modelId === 'walker_c1' ? 'Walker C1 (Commercial Biped)' : 'Tian Gong (Humanoid)';
+  const modelLabel = targetRobotModel ? (targetRobotModel === 'walker_s2' ? 'Walker S2' : targetRobotModel === 'walker_c1' ? 'Walker C1' : 'Tian Gong') : 'Optimal Robot Platform';
 
-  appendAssistantBubble(`🤖 Scenario received! Autonomous Compiler is analyzing requirements for <strong>${modelLabel}</strong> against repository evidence...`);
+  appendAssistantBubble(`🤖 Parameters received! Autonomous Compiler is matching capabilities and evaluating <strong>${modelLabel}</strong> against repository evidence...`);
 
   try {
     await runCapabilityMatch(fullScenario, modelId);
@@ -448,7 +449,7 @@ async function runCapabilityMatch(fullScenario, modelId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Matching analysis failed');
 
-    const recommendedName = modelId === 'walker_s2' ? 'Walker S2' : modelId === 'walker_c1' ? 'Walker C1' : 'Tian Gong';
+    const recommendedName = modelId === 'walker_s2' ? 'Walker S2 (Industrial Humanoid)' : modelId === 'walker_c1' ? 'Walker C1 (Commercial Biped)' : 'Tian Gong (Humanoid)';
     renderDashboard(data.result || data);
     appendAssistantBubble(`✅ Feasibility Analysis complete! Recommended Platform: <strong>${recommendedName}</strong>. View the visual dashboard on the right ➔`);
   } catch (err) {
