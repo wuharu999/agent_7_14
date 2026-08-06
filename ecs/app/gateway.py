@@ -49,6 +49,15 @@ class WorkerGateway:
             if self.sender_task and not self.sender_task.done():
                 self.sender_task.cancel()
             self.sender_task = None
+        log.warning("Worker WebSocket detached (granting 120s reconnection grace period)")
+        asyncio.create_task(self._graceful_disconnect_cleanup(websocket))
+
+    async def _graceful_disconnect_cleanup(self, detached_ws: WebSocket) -> None:
+        await asyncio.sleep(120.0)
+        async with self._connection_lock:
+            if self.websocket is not None:
+                log.info("Worker reconnected within 120s grace period; active background jobs preserved")
+                return
         error = ConnectionError("Worker disconnected")
         for qid, future in list(self.pending_answers.items()):
             if not future.done():
@@ -65,7 +74,7 @@ class WorkerGateway:
         for qid, queue in list(self.pending_streams.items()):
             queue.put_nowait({"status": "error", "error": "Worker disconnected"})
             self.pending_streams.pop(qid, None)
-        log.warning("Worker WebSocket detached")
+        log.warning("Reconnection grace period expired; pending worker jobs marked failed")
 
     async def _sender_loop(self, websocket: WebSocket) -> None:
         while True:
