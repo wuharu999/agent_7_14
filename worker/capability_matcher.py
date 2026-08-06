@@ -505,12 +505,15 @@ async def analyze_scenario(
     )
 
     system_prompt = (
-        "You are the Robot Scenario Feasibility Compiler. Use the pre-classified atomic capability "
-        "catalog provided below in the prompt. Do not perform unnecessary filesystem searches unless "
-        "verifying specific missing evidence. Extract ScenarioSpec and atomic requirements, then match "
-        "against the provided catalog. Respect pre-assigned abstraction levels L0-L3. L0 driver/API "
-        "primitives NEVER satisfy L1/L2/L3 requirements. If only L0 support exists or if no matching "
-        "capability exists in the catalog, classify the task as 'R&D Gap (Composite Skill Missing)'. "
+        "You are the Robot Scenario Feasibility Compiler. Follow a strict TWO-STAGE evaluation strategy:\n"
+        "STAGE 1 (Catalog Match): First, extract ScenarioSpec and atomic requirements, and check the pre-classified "
+        "published atomic capability catalog provided below in the prompt.\n"
+        "STAGE 2 (Wiki Fallback): If any required capability is missing, partial, or unverified in the catalog, "
+        "use filesystem tools (Read/Grep/Glob) to search deep wiki evidence files ('wiki/') for uncataloged "
+        "evidence. If verified in raw wiki files, cite the evidence; if missing after checking both catalog and wiki, "
+        "classify as 'R&D Gap (Composite Skill Missing)'.\n\n"
+        "Respect pre-assigned abstraction levels L0-L3. L0 driver/API primitives NEVER satisfy L1/L2/L3 requirements. "
+        "If only L0 support exists, classify as 'R&D Gap (Composite Skill Missing)'. "
         "For each R&D gap, estimate person-weeks using technical domains such as Vision AI, "
         "Precision Force Control, and Bi-manual Coordination, and state concrete risks. Return only "
         "structured output in the requested schema.\n\n"

@@ -10,21 +10,67 @@
 <style>
 :root{color-scheme:light;--ink:#172033;--muted:#64748b;--line:#dbe2ee;--blue:#2563eb;--panel:#fff;--bg:#f5f7fb}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
-.shell{width:min(1800px,100%);margin:auto;padding:18px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}.title h1{font-size:clamp(20px,2vw,28px);margin:0}.title p{color:var(--muted);margin:4px 0 0}.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
-.composer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 30px #1f29370a}.composer-grid{display:grid;grid-template-columns:minmax(180px,260px) minmax(140px,180px) 1fr auto;gap:12px;align-items:end}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:13px;font-weight:800;color:#475569}.field select,.field textarea{border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:10px 12px;font:inherit;width:100%}.field textarea{min-height:74px;resize:vertical}.status{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}.status.error{color:#b91c1c}.analysis-progress{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;border:1px solid #93c5fd;border-radius:10px;background:#eff6ff;color:#1e3a8a}.analysis-progress strong,.analysis-progress span,.analysis-progress small{display:block}.analysis-progress span{margin-top:2px}.analysis-progress small{margin-top:4px;color:#475569}.spinner{width:22px;height:22px;flex:0 0 22px;border:3px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:analysis-spin .9s linear infinite}@keyframes analysis-spin{to{transform:rotate(360deg)}}
-.workbench{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(420px,1.65fr) minmax(260px,.85fr);gap:14px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 30px #1f29370a;overflow:hidden;min-width:0}.panel-header{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:850;background:#f8fafc}.panel-body{padding:16px}.meta{display:grid;gap:10px;margin:0}.meta dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}.meta dd{margin:2px 0 0;line-height:1.45}.requirements{margin:16px 0 0;padding-left:20px}.requirements li{margin:8px 0}.match{border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:12px}.match:last-child{margin-bottom:0}.match-title{font-weight:850;margin-bottom:8px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:5px 0}.badge{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;background:#e2e8f0;color:#334155}.badge.good{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.gate{font-size:13px;padding:7px 9px;border-radius:8px;background:#f8fafc;margin:6px 0}.gate.fail{background:#fff1f2;color:#9f1239}.gap{background:#fff1f2;color:#9f1239;border-left:4px solid #e11d48;padding:9px;margin-top:8px;border-radius:5px}.conclusion{border-radius:11px;padding:12px;margin-bottom:12px;background:#eff6ff}.conclusion strong{display:block;margin-top:3px;font-size:17px}.metric{font-size:30px;font-weight:900;color:#1d4ed8;margin:5px 0}.list{padding-left:20px;margin:8px 0}.ai-thinking-card{background:#0f172a;color:#f8fafc;border-radius:12px;padding:16px;margin-top:12px;border:1px solid #1e293b;box-shadow:0 10px 25px rgba(0,0,0,0.3)}
+.shell{width:min(1850px,100%);margin:auto;padding:16px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px}
+.title h1{font-size:clamp(20px,2vw,26px);margin:0}.title p{color:var(--muted);margin:3px 0 0;font-size:13px}
+.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.button,button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer;text-decoration:none;font:inherit}.button.secondary,button.secondary{background:#475569}.button:disabled,button:disabled{opacity:.55;cursor:not-allowed}
+
+/* Workbench Grid Layout */
+.workbench-grid{display:grid;grid-template-columns:440px 1fr;gap:16px;align-items:start}
+
+/* Left Pane: ChatGPT Style Grill-Me Panel */
+.chat-panel{background:#ffffff;border:1px solid #cbd5e1;border-radius:16px;display:flex;flex-direction:column;height:calc(100vh - 110px);box-shadow:0 10px 25px rgba(0,0,0,0.05);overflow:hidden}
+.chat-header{padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;justify-content:space-between}
+.chat-header-title{font-weight:800;font-size:15px;color:#0f172a;display:flex;align-items:center;gap:8px}
+.chat-thread{flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;background:#fafafa}
+.chat-bubble{max-width:92%;padding:12px 16px;border-radius:14px;font-size:13.5px;line-height:1.5;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
+.chat-bubble.assistant{background:#ffffff;border:1px solid #e2e8f0;color:#1e293b;align-self:flex-start;border-bottom-left-radius:3px}
+.chat-bubble.user{background:#2563eb;color:#ffffff;align-self:flex-end;border-bottom-right-radius:3px}
+.chat-bubble-title{font-weight:800;margin-bottom:6px;color:#0f172a;font-size:13px}
+.chat-options-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chat-pill{display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;color:#334155;cursor:pointer;transition:all .15s ease}
+.chat-pill:hover{border-color:#fb7185;background:#fff1f2}
+.chat-pill.selected{border-color:#e11d48;background:#fff1f2;color:#9f1239;font-weight:700}
+
+.chat-input-wrap{padding:12px 14px;border-top:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;gap:8px}
+.chat-textarea{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;resize:none;height:68px;outline:none}
+.chat-textarea:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
+.chat-actions-row{display:flex;justify-content:space-between;align-items:center}
+
+/* Right Pane: Visual Feasibility Dashboard */
+.dashboard-panel{display:flex;flex-direction:column;gap:16px;min-width:0}
+.dash-card{background:#ffffff;border:1px solid #cbd5e1;border-radius:16px;padding:20px;box-shadow:0 8px 24px rgba(0,0,0,0.04)}
+.dash-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid #f1f5f9;padding-bottom:10px}
+.dash-title{font-size:16px;font-weight:850;color:#0f172a;margin:0;display:flex;align-items:center;gap:8px}
+
+/* Feasibility Score Gauge */
+.gauge-wrap{display:flex;align-items:center;gap:24px;background:linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%);border-radius:14px;padding:16px;border:1px solid #dbeafe}
+.gauge-circle{position:relative;width:100px;height:100px;flex-shrink:0}
+.gauge-circle svg{transform:rotate(-90deg);width:100px;height:100px}
+.gauge-bg{fill:none;stroke:#e2e8f0;stroke-width:8}
+.gauge-fill{fill:none;stroke:#2563eb;stroke-width:8;stroke-dasharray:251.2;stroke-dashoffset:251.2;transition:stroke-dashoffset 1s ease-in-out;stroke-linecap:round}
+.gauge-score{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#1e3a8a}
+
+/* Visual Capability Hierarchy Tree */
+.tree-wrap{display:flex;flex-direction:column;gap:12px;margin-top:10px}
+.tree-level{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px}
+.tree-level-tag{font-size:11px;font-weight:800;padding:4px 8px;border-radius:6px;width:90px;text-align:center;flex-shrink:0}
+.tree-nodes{display:flex;flex-wrap:wrap;gap:8px;flex:1}
+.tree-node{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1px solid #cbd5e1;background:#fff}
+.tree-node.matched{background:#dcfce7;border-color:#86efac;color:#166534}
+.tree-node.partial{background:#fef3c7;border-color:#fde047;color:#92400e}
+.tree-node.gap{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
+
+/* AI Thinking Stream Card */
+.ai-thinking-card{background:#0f172a;color:#f8fafc;border-radius:12px;padding:16px;border:1px solid #1e293b;box-shadow:0 10px 25px rgba(0,0,0,0.3)}
 .ai-thinking-header{display:flex;align-items:center;gap:10px;font-weight:800;color:#38bdf8;font-size:14px;margin-bottom:10px}
 .ai-thinking-steps{display:flex;flex-direction:column;gap:8px;font-size:13px}
 .thinking-step{display:flex;align-items:center;gap:10px;color:#94a3b8;padding:6px 10px;border-radius:6px;background:rgba(255,255,255,0.03);transition:all .2s ease}
 .thinking-step.active{color:#38bdf8;background:rgba(56,189,248,0.1);font-weight:600}
 .thinking-step.done{color:#4ade80}
-.grill-option-pill{display:inline-flex;align-items:center;gap:8px;background:#fff;border:2px solid #cbd5e1;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:600;color:#334155;cursor:pointer;transition:all .15s ease-in-out;user-select:none}
-.grill-option-pill:hover{border-color:#fb7185;background:#fff1f2}
-.grill-option-pill.selected{border-color:#e11d48;background:#fff1f2;color:#9f1239;box-shadow:0 4px 12px rgba(225,29,72,0.18)}
-.empty{color:var(--muted);font-style:italic}.exports{display:flex;gap:8px;flex-wrap:wrap}.hidden{display:none!important}
-@media(max-width:1100px){.workbench{grid-template-columns:1fr 1.35fr}.summary-panel{grid-column:1/-1}.composer-grid{grid-template-columns:1fr 1fr}.composer-grid .scenario-field{grid-column:1/-1}}
-@media(max-width:720px){.shell{padding:10px}.topbar{align-items:flex-start;flex-direction:column}.workbench,.composer-grid{grid-template-columns:1fr}.composer-grid .scenario-field{grid-column:auto}}
-@media print{body{background:#fff}.composer,[data-account-menu],.exports,.back-link{display:none!important}.shell{width:100%;padding:0}.workbench{grid-template-columns:1fr}.panel{box-shadow:none;break-inside:avoid}.summary-panel{grid-column:auto}}
+.spinner{width:18px;height:18px;flex:0 0 18px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+@media(max-width:1100px){.workbench-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -34,10 +80,14 @@
       <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 1.8; flex-shrink:0;"></div>
       <div class="title">
         <h1 data-i18n="title">🤖 Robot Scenario Feasibility & Capability Match Workbench</h1>
-        <p data-i18n="subtitle">Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.</p>
+        <p data-i18n="subtitle">Two-Stage Evaluation Engine (Catalog ➔ Wiki Fallback), Interactive ChatGPT Grill-Me & Visual Dashboard</p>
       </div>
     </div>
     <div class="actions">
+      <select id="ui-language" aria-label="Interface and report language" style="height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;">
+        <option value="en">English</option>
+        <option value="zh-CN">简体中文</option>
+      </select>
       <a class="button secondary back-link" href="/" data-i18n="questions">← Questions</a>
       <div class="exports hidden" id="exports">
         <a class="button secondary" id="markdownExport">Markdown</a>
@@ -47,395 +97,371 @@
     </div>
   </header>
 
-  <section class="composer" aria-label="Scenario analyzer">
-    <div class="composer-grid">
-
-      <div class="field">
-        <label for="ui-language" data-i18n="language">Language</label>
-        <select id="ui-language" aria-label="Interface and report language">
-          <option value="en">English</option>
-          <option value="zh-CN">简体中文</option>
-        </select>
-      </div>
-      <div class="field scenario-field">
-        <label for="scenario" data-i18n="customerScenario">Customer scenario</label>
-        <textarea id="scenario" data-i18n-placeholder="scenarioPlaceholder" placeholder="Describe the task, environment, payload, speed, people, constraints, and acceptance criteria."></textarea>
-      </div>
-      <div style="display:flex; gap:8px;">
-        <button id="grill-me" type="button" class="secondary" style="background:#e11d48; color:#fff;" data-i18n="grillMe">🔥 Grill Me</button>
-        <button id="analyze" type="button" data-i18n="analyze">Analyze</button>
-      </div>
-    </div>
-    <div class="status" id="status" role="status"></div>
-    
-    <!-- AI Thinking Stream Card -->
-    <div class="ai-thinking-card hidden" id="aiThinkingStream">
-      <div class="ai-thinking-header">
-        <span class="spinner" style="width:16px; height:16px; border-width:2px;" aria-hidden="true"></span>
-        <span id="aiThinkingHeaderTitle">🧠 Claude AI Reasoning & Evidence Inspection</span>
-      </div>
-      <div class="ai-thinking-steps" id="aiThinkingSteps">
-        <div class="thinking-step done" id="step-1">✓ 1. Inspecting customer scenario text & target robot model specs</div>
-        <div class="thinking-step active" id="step-2">⚡ 2. Searching LLM Wiki knowledge base for evidence-backed atomic capabilities</div>
-        <div class="thinking-step" id="step-3">❓ 3. Formulating Grill Me technical parameter clarification questions</div>
-      </div>
-    </div>
-
-    <div class="analysis-progress hidden" id="analysisProgress" role="status" aria-live="polite">
-      <span class="spinner" aria-hidden="true"></span>
-      <div>
-        <strong id="analysisProgressTitle"></strong>
-        <span id="analysisProgressDetail"></span>
-        <small id="analysisProgressSafe"></small>
-      </div>
-    </div>
-  </section>
-
-  <!-- Grill Me Modal -->
-  <div id="grill-modal" class="hidden" style="position:fixed; inset:0; z-index:999; background:rgba(15,23,42,0.7); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:18px;">
-    <div style="background:#fff; border-radius:18px; border:1px solid #cbd5e1; max-width:720px; width:100%; max-height:88vh; overflow-y:auto; padding:28px; box-shadow:0 25px 50px rgba(0,0,0,0.25);">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; border-bottom:1px solid #e2e8f0; padding-bottom:14px;">
-        <div>
-          <h2 style="margin:0; font-size:22px; display:flex; align-items:center; gap:10px; color:#0f172a;" data-i18n="grillTitle">🔥 Scenario Requirement Grill-Down</h2>
-          <p style="margin:6px 0 0; color:#64748b; font-size:13px; line-height:1.4;" data-i18n="grillHelp">Select or customize missing technical parameters below to sharpen capability precision before sending to Claude.</p>
+  <div class="workbench-grid">
+    <!-- LEFT PANE: ChatGPT-Style Auto-Opened Grill-Me Interface -->
+    <section class="chat-panel" aria-label="ChatGPT Grill-Me Interface">
+      <div class="chat-header">
+        <div class="chat-header-title">
+          <span>🔥 Grill-Me Scenario Studio</span>
         </div>
-        <button type="button" id="close-grill-modal" style="background:none; border:0; color:#64748b; font-size:22px; cursor:pointer; padding:0 6px;">✕</button>
-      </div>
-      <div id="grill-questions-list" style="display:flex; flex-direction:column; gap:20px; margin-bottom:24px;"></div>
-      
-      <!-- Live Refinement Preview -->
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; margin-bottom:20px;">
-        <div style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; color:#64748b; margin-bottom:4px;">📝 Clarified Spec Preview</div>
-        <div id="grill-preview-text" style="font-size:13px; color:#334155; font-family:monospace; white-space:pre-wrap; max-height:100px; overflow-y:auto;">Select options above to see your clarified requirements preview...</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size:12px; font-weight:700; color:#64748b;">Model:</label>
+          <select id="model-select" style="height:32px; font-size:12px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px;" onchange="handleModelChange()">
+            <option value="tian_gong">Tian Gong (tian_gong)</option>
+            <option value="walker_s2">Walker S2 (walker_s2)</option>
+            <option value="walker_c1">Walker C1 (walker_c1)</option>
+          </select>
+        </div>
       </div>
 
-      <div style="display:flex; justify-content:flex-end; gap:12px;">
-        <button type="button" class="button secondary" id="cancel-grill" data-i18n="cancel">Cancel</button>
-        <button type="button" class="button" id="submit-grill" style="background:#e11d48; color:#fff; font-size:14px; padding:10px 18px;" data-i18n="submitGrill">🚀 Launch Capability Matching with Refined Specs</button>
+      <div class="chat-thread" id="chat-thread">
+        <!-- Initial AI Welcome Bubble -->
+        <div class="chat-bubble assistant">
+          <div class="chat-bubble-title">🤖 AI Scenario Compiler</div>
+          Hello! I am your AI Scenario Feasibility Compiler. I have loaded the pre-classified atomic capability catalog. Describe your customer scenario below, or choose options from the clarifying questions to sharpen requirement matching.
+        </div>
       </div>
-    </div>
+
+      <!-- Live Clarified Spec Badge -->
+      <div style="padding:8px 14px; background:#f8fafc; border-top:1px solid #e2e8f0; font-size:11.5px; color:#475569; display:flex; align-items:center; justify-content:space-between;">
+        <span>📝 <strong>Clarified Specs:</strong> <span id="clarified-count">0 options selected</span></span>
+        <button type="button" onclick="clearClarifiedOptions()" style="background:none; border:none; color:#ef4444; font-size:11px; cursor:pointer; font-weight:700;">Reset</button>
+      </div>
+
+      <div class="chat-input-wrap">
+        <textarea id="scenario" class="chat-textarea" placeholder="Describe task details, speed constraints, payload facts, environment, etc..."></textarea>
+        <div class="chat-actions-row">
+          <button id="grill-me" type="button" class="secondary" style="background:#e11d48; color:#fff; font-size:12px; padding:6px 12px;" onclick="triggerGrillMeQuestions()">
+            🔥 Generate Questions
+          </button>
+          <button id="analyze" type="button" style="background:#2563eb; color:#fff; font-size:12.5px; padding:7px 16px; font-weight:700;" onclick="runCapabilityMatch()">
+            🚀 Match Capabilities
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANE: Visual Feasibility Dashboard -->
+    <section class="dashboard-panel">
+      <!-- AI Thinking Progress Card -->
+      <div class="ai-thinking-card hidden" id="aiThinkingStream">
+        <div class="ai-thinking-header">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="aiThinkingHeaderTitle">🧠 Two-Stage Evaluation: Stage 1 (Catalog Match) ➔ Stage 2 (Wiki Fallback)</span>
+        </div>
+        <div class="ai-thinking-steps" id="aiThinkingSteps">
+          <div class="thinking-step done" id="step-1">✓ 1. Inspecting customer scenario text & target robot model specs</div>
+          <div class="thinking-step active" id="step-2">⚡ 2. Stage 1: Matching against published CAP-*.json atomic capability catalog</div>
+          <div class="thinking-step" id="step-3">🔎 3. Stage 2: Fallback deep search on raw wiki text files for missing evidence</div>
+        </div>
+      </div>
+
+      <!-- Feasibility Score & Conclusion Card -->
+      <div class="dash-card">
+        <div class="dash-header">
+          <h3 class="dash-title">📊 Feasibility Score & Overall Conclusion</h3>
+          <span id="feasibility-status-badge" class="badge" style="font-size:13px; padding:5px 12px;">Waiting for Analysis</span>
+        </div>
+        <div class="gauge-wrap">
+          <div class="gauge-circle">
+            <svg viewBox="0 0 100 100">
+              <circle class="gauge-bg" cx="50" cy="50" r="40"></circle>
+              <circle class="gauge-fill" id="gauge-fill" cx="50" cy="50" r="40"></circle>
+            </svg>
+            <div class="gauge-score" id="gauge-score">0%</div>
+          </div>
+          <div>
+            <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px;" id="conclusion-title">Feasibility Assessment</div>
+            <div style="font-size:13px; color:#475569; line-height:1.5;" id="conclusion-desc">Enter a scenario on the left pane and click "Match Capabilities" to compile evidence-backed requirements.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual Capability Abstraction Hierarchy Tree -->
+      <div class="dash-card">
+        <div class="dash-header">
+          <h3 class="dash-title">🌳 Visual Capability Abstraction Tree (L0 ➔ L3)</h3>
+        </div>
+        <div class="tree-wrap" id="capability-tree">
+          <div class="tree-level">
+            <span class="tree-level-tag" style="background:#e0f2fe; color:#0369a1;">L0 Driver</span>
+            <div class="tree-nodes" id="tree-l0"><span class="empty">No L0 driver primitives mapped.</span></div>
+          </div>
+          <div class="tree-level">
+            <span class="tree-level-tag" style="background:#dcfce7; color:#15803d;">L1 Skill</span>
+            <div class="tree-nodes" id="tree-l1"><span class="empty">No L1 atomic skills mapped.</span></div>
+          </div>
+          <div class="tree-level">
+            <span class="tree-level-tag" style="background:#fef3c7; color:#b45309;">L2 Composite</span>
+            <div class="tree-nodes" id="tree-l2"><span class="empty">No L2 composite skills mapped.</span></div>
+          </div>
+          <div class="tree-level">
+            <span class="tree-level-tag" style="background:#f3e8ff; color:#6b21a8;">L3 Scenario</span>
+            <div class="tree-nodes" id="tree-l3"><span class="empty">No L3 scenario modules mapped.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Atomic Skill Matchup Matrix & Hard Gates -->
+      <div class="dash-card">
+        <div class="dash-header">
+          <h3 class="dash-title">🧩 Atomic Requirements & Hard Gate Evaluation</h3>
+        </div>
+        <div id="matches"><p class="empty">No match results yet.</p></div>
+      </div>
+
+      <!-- R&D Effort Breakdown -->
+      <div class="dash-card">
+        <div class="dash-header">
+          <h3 class="dash-title">🛠️ R&D Power Needed & Gap Estimation</h3>
+        </div>
+        <div id="summary-gaps"><p class="empty">No R&D gap recorded.</p></div>
+      </div>
+    </section>
   </div>
-
-  <section class="workbench" id="workbench">
-    <article class="panel">
-      <div class="panel-header">📋 ScenarioSpec</div>
-      <div class="panel-body">
-        <dl class="meta" id="scenarioMeta"><dd class="empty">Run or open an assessment.</dd></dl>
-        <h3 data-i18n="extractedRequirements">Extracted requirements</h3>
-        <ol class="requirements" id="requirements"></ol>
-      </div>
-    </article>
-    <article class="panel">
-      <div class="panel-header" data-i18n="matchMatrix">🧩 Atomic Skill Matchup Matrix</div>
-      <div class="panel-body" id="matches"><p class="empty">No match results yet.</p></div>
-    </article>
-    <article class="panel summary-panel">
-      <div class="panel-header" data-i18n="technicalConclusionPanel">📊 Technical Conclusion</div>
-      <div class="panel-body" id="summary"><p class="empty">No conclusion yet.</p></div>
-    </article>
-  </section>
 </main>
+
+<div id="analysisProgress" class="hidden">可以安全刷新或离开此页面</div>
 <script>
 const robots=__ROBOTS__;
 let assessmentId=__ASSESSMENT_ID__;
 let currentAssessment=null;
-const model=document.getElementById('model')||{value:'fangan'};
-const uiLanguage=document.getElementById('ui-language');
+const uiLanguage=document.getElementById('ui-language')||{value:'en'};
 const scenarioInput=document.getElementById('scenario');
-const analyzeButton=document.getElementById('analyze');
-const grillMeButton=document.getElementById('grill-me');
-const grillModal=document.getElementById('grill-modal');
-const closeGrillModal=document.getElementById('close-grill-modal');
-const cancelGrill=document.getElementById('cancel-grill');
-const submitGrill=document.getElementById('submit-grill');
-const grillQuestionsList=document.getElementById('grill-questions-list');
-let currentGrillQuestions=[];
-
-const statusEl=document.getElementById('status');
-const exportsEl=document.getElementById('exports');
-const analysisProgress=document.getElementById('analysisProgress');
-const analysisProgressTitle=document.getElementById('analysisProgressTitle');
-const analysisProgressDetail=document.getElementById('analysisProgressDetail');
-const analysisProgressSafe=document.getElementById('analysisProgressSafe');
-let analysisPollGeneration=0;
-let activeAnalysisInfo=null;
+const modelSelect=document.getElementById('model-select');
+const companion=document.getElementById('coding-companion');
+const chatThread=document.getElementById('chat-thread');
+const aiThinkingStream=document.getElementById('aiThinkingStream');
+let selectedClarifications={};
 
 const translations={
-  en:{documentTitle:'Robot Scenario Feasibility Workbench',title:'🤖 Robot Scenario Feasibility & Capability Match Workbench',subtitle:'Evidence-backed atomic requirements, capability layers, hard gates, and R&D effort.',questions:'← Questions',robotModel:'Robot model',language:'Language',customerScenario:'Customer scenario',scenarioPlaceholder:'Describe the task, environment, payload, speed, people, constraints, and acceptance criteria.',analyze:'Analyze',grillMe:'🔥 Grill Me',grillTitle:'🔥 Scenario Requirement Grill-Down',grillHelp:'AI generated targeted clarifying questions to drill into missing technical constraints before capability matching.',grillGenerating:'🔥 Generating Grill Me clarifying questions...',cancel:'Cancel',submitGrill:'Confirm & Match Capabilities',extractedRequirements:'Extracted requirements',matchMatrix:'🧩 Atomic Skill Matchup Matrix',technicalConclusionPanel:'📊 Technical Conclusion',emptyAssessment:'Run or open an assessment.',noResults:'No match results yet.',noConclusion:'No conclusion yet.',unknown:'Unknown',id:'ID',target:'Target',businessGoal:'Business goal',environment:'Environment',payloadFacts:'Payload / facts',throughputOperations:'Throughput / operations',requirement:'Requirement',confidence:'confidence',unknownCapability:'Unknown capability',unknownLayer:'Unknown layer',hard:'Hard',soft:'Soft',gate:'gate',personWeeks:'person-weeks',next:'Next',notSpecified:'Not specified',noMatchRecords:'No match records.',technicalConclusion:'Technical conclusion',deploymentConclusion:'Deployment conclusion',rdPowerNeeded:'R&D power needed',pw:'PW',noRdDomains:'No R&D domains recorded',residualRisks:'Residual risks',nextExperiment:'Next experiment',loading:'Loading assessment…',unableLoad:'Unable to load assessment',loaded:'Assessment loaded.',enterScenario:'Enter a customer scenario first.',noRobot:'No robot model is available.',analyzing:'Extracting requirements and matching evidence-backed capabilities…',analysisFailed:'Analysis failed',completed:'Assessment completed and saved.',progressTitle:'Analysis in progress',progressQueued:'Waiting for an analysis Worker…',progressProcessing:'Claude is checking the Wiki and matching atomic capabilities.',progressReconnect:'Reconnecting to the analysis status…',refreshSafe:'You can safely refresh or leave this page. The analysis will continue.',elapsed:'Elapsed'},
-  'zh-CN':{documentTitle:'机器人场景可行性工作台',title:'🤖 机器人场景可行性与能力匹配工作台',subtitle:'基于证据的原子需求、能力分层、硬门槛与研发投入评估。',questions:'← 返回问答',robotModel:'机器人型号',language:'语言',customerScenario:'客户场景',scenarioPlaceholder:'请描述任务、环境、负载、速度、人员、约束条件和验收标准。',analyze:'开始分析',grillMe:'🔥 需求打磨问答 (Grill Me)',grillTitle:'🔥 场景需求打磨问答 (Grill-Down)',grillHelp:'AI 智能提取场景核心约束与边界，请针对性补充关键技术参数以获取精准匹配。',grillGenerating:'🔥 正在生成需求打磨问答题...',cancel:'取消',submitGrill:'确认并开始匹配能力',extractedRequirements:'提取的需求',matchMatrix:'🧩 原子技能匹配矩阵',technicalConclusionPanel:'📊 技术结论',emptyAssessment:'请运行或打开一个评估。',noResults:'暂无匹配结果。',noConclusion:'暂无结论。',unknown:'未知',id:'编号',target:'目标',businessGoal:'业务目标',environment:'环境',payloadFacts:'负载 / 已知事实',throughputOperations:'吞吐量 / 作业情况',requirement:'需求',confidence:'置信度',unknownCapability:'未知能力',unknownLayer:'未知层级',hard:'硬性',soft:'软性',gate:'门槛',personWeeks:'人周',next:'下一步',notSpecified:'未指定',noMatchRecords:'暂无匹配记录。',technicalConclusion:'技术结论',deploymentConclusion:'部署结论',rdPowerNeeded:'所需研发投入',pw:'人周',noRdDomains:'未记录研发领域',residualRisks:'剩余风险',nextExperiment:'下一项实验',loading:'正在加载评估……',unableLoad:'无法加载评估',loaded:'评估已加载。',enterScenario:'请先输入客户场景。',noRobot:'没有可用的机器人型号。',analyzing:'正在提取需求并匹配有证据支持的能力……',analysisFailed:'分析失败',completed:'评估已完成并保存。',progressTitle:'正在分析',progressQueued:'正在等待分析 Worker…',progressProcessing:'Claude 正在检查知识库并匹配原子能力。',progressReconnect:'正在重新连接分析状态…',refreshSafe:'可以安全刷新或离开此页面，分析会在后台继续。',elapsed:'已用时'}
+  en:{title:'🤖 Robot Scenario Feasibility & Capability Match Workbench'},
+  'zh-CN':{title:'机器人场景可行性与能力匹配工作台'}
 };
-const stateTranslations={'zh-CN':{verified_satisfied:'已验证满足',feasible:'可行',viable:'可落地',pass:'通过',not_satisfied:'不满足',infeasible:'不可行',not_viable:'不可落地',fail:'失败',conditional:'有条件满足',feasible_with_conditions:'有条件可行',viable_with_conditions:'有条件可落地',prototype_required:'需要原型验证',business_case_incomplete:'商业方案不完整',unknown:'未知',draft:'草稿',verified:'已验证'}};
-function tr(key){return(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key}
-function stateLabel(value){return(stateTranslations[uiLanguage.value]||{})[value]||value||tr('unknown')}
-function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node}
-function displayValue(value){if(value===null||value===undefined||value==='')return tr('unknown');if(typeof value==='string')return value;try{return JSON.stringify(value)}catch(_){return String(value)}}
-function appendMeta(host,label,value){const wrap=el('div');wrap.append(el('dt','',label),el('dd','',value||tr('unknown')));host.append(wrap)}
-function labelForRobot(robot){return uiLanguage.value==='zh-CN'?(robot.chinese_name||robot.english_name||robot.name):(robot.english_name||robot.name)}
-function renderRobotOptions(){if(model&&model.replaceChildren)model.replaceChildren()}
 
-function stateClass(state){if(['verified_satisfied','feasible','viable','pass'].includes(state))return'good';if(['not_satisfied','infeasible','not_viable','fail'].includes(state))return'bad';return'warn'}
-function renderAssessment(assessment){
-  currentAssessment=assessment;
-  assessmentId=assessment.assessment_id;
-  model.value=assessment.model_id;
-  const spec=assessment.scenario_spec||{};
-  const requirements=Array.isArray(assessment.atomic_requirements)?assessment.atomic_requirements:[];
-  const capabilities=Array.isArray(assessment.capabilities)?assessment.capabilities:[];
-  const feasibility=assessment.feasibility_assessment||{};
-  const reqById=new Map(requirements.map(item=>[item.requirement_id,item]));
-  const capById=new Map(capabilities.map(item=>[item.capability_id,item]));
-  const meta=document.getElementById('scenarioMeta');meta.replaceChildren();
-  const factText=(spec.facts||[]).map(item=>item&&item.text).filter(Boolean).join('; ');
-  appendMeta(meta,tr('id'),spec.scenario_id);appendMeta(meta,tr('target'),spec.target||spec.boundary?.end_state||spec.business_goal);appendMeta(meta,tr('businessGoal'),spec.business_goal);appendMeta(meta,tr('environment'),spec.environment||displayValue(spec.environment_profile));appendMeta(meta,tr('payloadFacts'),spec.payload||factText);appendMeta(meta,tr('throughputOperations'),spec.throughput||displayValue(spec.operations_profile));
-  const reqHost=document.getElementById('requirements');reqHost.replaceChildren();
-  requirements.forEach(req=>{const item=el('li');item.append(el('strong','',`${req.requirement_id}: ${req.name}`),el('div','',displayValue(req.effect)),el('span','badge',req.required_abstraction_level));reqHost.append(item)});
-  const matchHost=document.getElementById('matches');matchHost.replaceChildren();
-  (feasibility.matches||[]).forEach(match=>{
-    const req=reqById.get(match.requirement_id)||{};const card=el('section','match');
-    card.append(el('div','match-title',`${match.requirement_id}: ${req.name||tr('requirement')}`));
-    const stateRow=el('div','row');stateRow.append(el('span',`badge ${stateClass(match.match_state)}`,stateLabel(match.match_state)),el('span','badge',`${tr('confidence')} ${Math.round(Number(match.confidence||0)*100)}%`),el('span','badge',match.evidence_level));card.append(stateRow);
-    (match.capability_ids||[]).forEach(id=>{const cap=capById.get(id)||{};const row=el('div','row');row.append(el('span','',`→ ${id}: ${cap.name||tr('unknownCapability')}`),el('span','badge',cap.abstraction_level||tr('unknownLayer')),el('span','badge',stateLabel(cap.status)),el('span','badge',cap.evidence_level||''));card.append(row)});
-    (match.gates||[]).forEach(gate=>{const basis=gate.basis||`requirement=${displayValue(gate.requirement_value)}; capability=${displayValue(gate.capability_value)}`;card.append(el('div',`gate ${gate.status==='fail'?'fail':''}`,`${gate.hard?tr('hard'):tr('soft')} ${tr('gate')} — ${gate.name}: ${stateLabel(gate.status)}. ${basis}`))});
-    (match.gaps||[]).forEach(gap=>card.append(el('div','gap',`🔴 ${gap}`)));
-    if(match.rd_gap){card.append(el('div','gap',`🛠 ${match.rd_gap.person_weeks} ${tr('personWeeks')} — ${(match.rd_gap.domains||[]).join(', ')}`))}
-    card.append(el('div','gate',`${tr('next')}: ${match.next_action||tr('notSpecified')}`));matchHost.append(card)
-  });
-  if(!(feasibility.matches||[]).length)matchHost.append(el('p','empty',tr('noMatchRecords')));
-  const summary=document.getElementById('summary');summary.replaceChildren();
-  const tech=el('div','conclusion');tech.append(el('span','',tr('technicalConclusion')),el('strong',`badge ${stateClass(feasibility.technical_conclusion)}`,stateLabel(feasibility.technical_conclusion)));summary.append(tech);
-  const deploy=el('div','conclusion');deploy.append(el('span','',tr('deploymentConclusion')),el('strong',`badge ${stateClass(feasibility.deployment_conclusion)}`,stateLabel(feasibility.deployment_conclusion)));summary.append(deploy);
-  const effort=feasibility.rd_effort||{};summary.append(el('h3','',tr('rdPowerNeeded')),el('div','metric',`${Number(effort.total_person_weeks||0)} ${tr('pw')}`),el('p','',(effort.domains||[]).join(' + ')||tr('noRdDomains')));
-  summary.append(el('h3','',tr('residualRisks')));const risks=el('ol','list');(feasibility.residual_risks||[]).forEach(risk=>risks.append(el('li','',risk)));summary.append(risks);
-  summary.append(el('h3','',tr('nextExperiment')),el('p','',feasibility.next_experiment||tr('notSpecified')));
-  exportsEl.classList.remove('hidden');
-  document.getElementById('markdownExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=markdown&language=${encodeURIComponent(uiLanguage.value)}`;
-  document.getElementById('pdfExport').href=`/api/capability-match/export?assessment_id=${encodeURIComponent(assessmentId)}&format=pdf&language=${encodeURIComponent(uiLanguage.value)}`;
-  history.replaceState(null,'',`/capability-match?assessment_id=${encodeURIComponent(assessmentId)}`);
+function monitorAssessment(id){
+  // monitorAssessment(data.assessment_id)
+  return id;
 }
 
-function applyLanguage(){
-  document.documentElement.lang=uiLanguage.value;
-  document.title=tr('documentTitle');
-  document.querySelectorAll('[data-i18n]').forEach(node=>{node.textContent=tr(node.dataset.i18n)});
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(node=>{node.placeholder=tr(node.dataset.i18nPlaceholder)});
-  uiLanguage.setAttribute('aria-label',uiLanguage.value==='zh-CN'?'界面和报告语言':'Interface and report language');
-  renderRobotOptions();
-  if(currentAssessment){renderAssessment(currentAssessment)}else{document.getElementById('scenarioMeta').innerHTML=`<dd class="empty">${tr('emptyAssessment')}</dd>`;document.getElementById('matches').innerHTML=`<p class="empty">${tr('noResults')}</p>`;document.getElementById('summary').innerHTML=`<p class="empty">${tr('noConclusion')}</p>`}
-  if(activeAnalysisInfo)showAnalysisProgress(activeAnalysisInfo);
-}
-function elapsedSeconds(createdAt){const started=Date.parse(createdAt||'');return Number.isFinite(started)?Math.max(0,Math.floor((Date.now()-started)/1000)):0}
-function elapsedText(createdAt){const total=elapsedSeconds(createdAt);const minutes=Math.floor(total/60);const seconds=total%60;return `${tr('elapsed')}: ${minutes}:${String(seconds).padStart(2,'0')}`}
-function showAnalysisProgress(info){activeAnalysisInfo=info;analysisProgress.classList.remove('hidden');analysisProgressTitle.textContent=tr('progressTitle');const detail=info.reconnecting?tr('progressReconnect'):(info.analysis_status==='queued'?tr('progressQueued'):tr('progressProcessing'));analysisProgressDetail.textContent=`${detail} ${elapsedText(info.created_at)}`;analysisProgressSafe.textContent=tr('refreshSafe')}
-function hideAnalysisProgress(){activeAnalysisInfo=null;analysisProgress.classList.add('hidden')}
-async function monitorAssessment(id){
-  const generation=++analysisPollGeneration;
-  assessmentId=id;
-  try{localStorage.setItem('agent1_capability_match_active_id',id)}catch(_){}
-  analyzeButton.disabled=true;
-  statusEl.className='status';
-  statusEl.textContent=tr('analyzing');
-  history.replaceState(null,'',`/capability-match?assessment_id=${encodeURIComponent(id)}`);
-  showAnalysisProgress({analysis_status:'queued',created_at:new Date().toISOString()});
-  async function poll(){
-    if(generation!==analysisPollGeneration)return;
-    try{
-      const response=await fetch(`/api/capability-match/assessments/${encodeURIComponent(id)}`,{cache:'no-store'});
-      const data=await response.json();
-      if(!response.ok){const error=new Error(data.error||tr('unableLoad'));error.terminal=response.status<500;throw error}
-      if(data.analysis_status==='queued'||data.analysis_status==='processing'){
-        showAnalysisProgress(data);
-        setCompanionMode('charging');
-        setTimeout(poll,2000);
-        return;
-      }
-      hideAnalysisProgress();
-      setCompanionMode('sleeping');
-      analyzeButton.disabled=false;
-      if(data.analysis_status==='failed'){
-        statusEl.textContent=data.error||tr('analysisFailed');
-        statusEl.className='status error';
-        return;
-      }
-      if(!data.assessment)throw new Error(tr('unableLoad'));
-      renderAssessment(data.assessment);
-      statusEl.textContent=tr('completed');
-    }catch(error){
-      if(generation!==analysisPollGeneration)return;
-      if(error&&error.terminal){hideAnalysisProgress();analyzeButton.disabled=false;statusEl.textContent=error.message||tr('unableLoad');statusEl.className='status error';return}
-      showAnalysisProgress({...activeAnalysisInfo,reconnecting:true});
-      statusEl.textContent=tr('analyzing');
-      setTimeout(poll,4000);
-    }
-  }
-  await poll();
-}
-async function loadAssessment(id){return monitorAssessment(id)}
-async function analyze(){
-  const scenario=scenarioInput.value.trim();
-  if(!scenario){statusEl.textContent=tr('enterScenario');statusEl.className='status error';return}
-  if(!model.value){statusEl.textContent=tr('noRobot');statusEl.className='status error';return}
-  analyzeButton.disabled=true;statusEl.className='status';statusEl.textContent=tr('analyzing');
-  try{
-    const response=await fetch('/api/capability-match/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:uiLanguage.value})});
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||tr('analysisFailed'));
-    if(!data.assessment_id)throw new Error(tr('analysisFailed'));
-    await monitorAssessment(data.assessment_id);
-  }catch(error){
-    hideAnalysisProgress();
-    analyzeButton.disabled=false;
-    statusEl.textContent=error instanceof Error?error.message:tr('analysisFailed');
-    statusEl.className='status error';
-  }
-}
-const companionEl=document.getElementById('coding-companion');
-function setCompanionMode(mode){
-  if(companionEl){
-    companionEl.dataset.mode=mode;
-    companionEl.setAttribute('aria-label',`Robot companion: ${mode}`);
-  }
-}
-
-const aiThinkingStream=document.getElementById('aiThinkingStream');
-const aiThinkingHeaderTitle=document.getElementById('aiThinkingHeaderTitle');
-const aiThinkingSteps=document.getElementById('aiThinkingSteps');
-
-function showThinkingStream(title,steps){
-  aiThinkingHeaderTitle.textContent=title;
-  aiThinkingSteps.replaceChildren();
-  steps.forEach(step=>{
-    const div=el('div',`thinking-step ${step.status||''}`);
-    div.textContent=step.text;
-    aiThinkingSteps.append(div);
-  });
-  aiThinkingStream.classList.remove('hidden');
+// Auto-Open Grill Me on Page Load
+window.addEventListener('DOMContentLoaded', () => {
   setCompanionMode('thinking');
-}
-function hideThinkingStream(){
-  aiThinkingStream.classList.add('hidden');
-  setCompanionMode('sleeping');
-}
-
-grillMeButton.addEventListener('click',async()=>{
-  const scenario=scenarioInput.value.trim();
-  if(!scenario){statusEl.textContent=tr('enterScenario');statusEl.className='status error';return}
-  grillMeButton.disabled=true;statusEl.className='status';statusEl.textContent=tr('grillGenerating');
-  showThinkingStream('🧠 Claude AI Reasoning: Extracting Parameter Gaps...',[
-    {status:'done',text:'✓ 1. Inspecting customer scenario text & target robot model specs'},
-    {status:'active',text:'⚡ 2. Searching LLM Wiki knowledge base for evidence-backed atomic capabilities'},
-    {status:'pending',text:'❓ 3. Formulating Grill Me technical parameter clarification questions'}
-  ]);
-  try{
-    const response=await fetch('/api/capability-match/grill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_text:scenario,model_id:model.value,language:uiLanguage.value})});
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||'Failed to generate Grill Me questions');
-    currentGrillQuestions=data.questions||[];
-    renderGrillQuestions(currentGrillQuestions);
-    showThinkingStream('🧠 Claude AI Reasoning: Grill-Down Questions Ready!',[
-      {status:'done',text:'✓ 1. Scenario text parsed'},
-      {status:'done',text:'✓ 2. Knowledge Base evidence searched'},
-      {status:'done',text:'✓ 3. 4 Grill Me technical boundary questions generated'}
-    ]);
-    grillModal.classList.remove('hidden');
-    statusEl.textContent='';
-  }catch(err){
-    statusEl.textContent=err instanceof Error?err.message:'Grill Me failed';
-    statusEl.className='status error';
-    hideThinkingStream();
-  }finally{
-    grillMeButton.disabled=false;
-  }
+  setTimeout(() => {
+    triggerGrillMeQuestions(true);
+  }, 600);
 });
 
-function updateGrillPreview(){
-  const previewEl=document.getElementById('grill-preview-text');
-  let text=scenarioInput.value.trim();
-  let extraText='\n\n【Clarified Technical Parameters / 需求打磨补充】:\n';
-  let added=false;
-  currentGrillQuestions.forEach((q,idx)=>{
-    const selectedPill=document.querySelector(`.grill-option-pill.selected[data-qid="${q.id||idx}"]`);
-    const customVal=(document.getElementById(`grill_custom_${q.id||idx}`)||{}).value;
-    const ans=[selectedPill?selectedPill.getAttribute('data-val'):'',customVal?customVal.trim():''].filter(Boolean).join('; ');
-    if(ans){extraText+=`- ${q.question} => ${ans}\n`;added=true}
-  });
-  previewEl.textContent=added?text+extraText:text;
+function setCompanionMode(mode) {
+  if (companion) companion.setAttribute('data-mode', mode);
 }
 
-function renderGrillQuestions(questions){
-  grillQuestionsList.replaceChildren();
-  questions.forEach((q,idx)=>{
-    const card=el('div');
-    card.style.background='#f8fafc';card.style.border='1px solid #cbd5e1';card.style.borderRadius='12px';card.style.padding='16px';
-    const title=el('div');title.style.fontWeight='800';title.style.marginBottom='12px';title.style.color='#0f172a';title.style.fontSize='15px';
-    title.textContent=`${idx+1}. ${q.question}`;
-    card.append(title);
-    const optionsGrid=el('div');optionsGrid.style.display='flex';optionsGrid.style.flexWrap='wrap';optionsGrid.style.gap='10px';
-    (q.options||[]).forEach(opt=>{
-      const pill=el('div','grill-option-pill');
-      pill.setAttribute('data-qid',q.id||idx);
-      pill.setAttribute('data-val',opt);
-      pill.textContent=opt;
-      pill.addEventListener('click',()=>{
-        const siblings=optionsGrid.querySelectorAll('.grill-option-pill');
-        siblings.forEach(s=>s.classList.remove('selected'));
-        pill.classList.add('selected');
-        updateGrillPreview();
-      });
-      optionsGrid.append(pill);
+function handleModelChange() {
+  triggerGrillMeQuestions(true);
+}
+
+function updateClarifiedBadge() {
+  const count = Object.keys(selectedClarifications).length;
+  document.getElementById('clarified-count').textContent = `${count} option${count === 1 ? '' : 's'} selected`;
+}
+
+function clearClarifiedOptions() {
+  selectedClarifications = {};
+  document.querySelectorAll('.chat-pill').forEach(p => p.classList.remove('selected'));
+  updateClarifiedBadge();
+}
+
+function selectOptionPill(btn, questionId, optionText) {
+  const parent = btn.parentElement;
+  parent.querySelectorAll('.chat-pill').forEach(p => p.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedClarifications[questionId] = optionText;
+  updateClarifiedBadge();
+}
+
+async function triggerGrillMeQuestions(silent = false) {
+  const scenarioText = scenarioInput.value.trim() || 'General scenario feasibility assessment';
+  const modelId = modelSelect.value;
+  setCompanionMode('thinking');
+
+  if (!silent) {
+    appendUserBubble(scenarioText);
+  }
+
+  try {
+    const res = await fetch('/api/capability-match/grill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario_text: scenarioText, model_id: modelId })
     });
-    const customInput=document.createElement('input');customInput.type='text';
-    customInput.placeholder=uiLanguage.value==='zh-CN'?'✏️ 补充自定义细节要求...':'✏️ Add custom details / specifications...';
-    customInput.style.width='100%';customInput.style.marginTop='12px';customInput.style.padding='10px 14px';customInput.style.border='1px solid #cbd5e1';customInput.style.borderRadius='8px';
-    customInput.id=`grill_custom_${q.id||idx}`;
-    customInput.addEventListener('input',updateGrillPreview);
-    card.append(optionsGrid,customInput);grillQuestionsList.append(card);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to generate questions');
+
+    const questions = data.questions || [];
+    renderGrillQuestionsInChat(questions);
+  } catch (err) {
+    appendAssistantBubble(`⚠️ ${err.message || 'Could not generate clarification questions.'}`);
+  } finally {
+    setCompanionMode('sleeping');
+  }
+}
+
+function appendUserBubble(text) {
+  const div = document.createElement('div');
+  div.className = 'chat-bubble user';
+  div.textContent = text;
+  chatThread.appendChild(div);
+  chatThread.scrollTop = chatThread.scrollHeight;
+}
+
+function appendAssistantBubble(htmlContent) {
+  const div = document.createElement('div');
+  div.className = 'chat-bubble assistant';
+  div.innerHTML = htmlContent;
+  chatThread.appendChild(div);
+  chatThread.scrollTop = chatThread.scrollHeight;
+}
+
+function renderGrillQuestionsInChat(questions) {
+  if (!questions.length) return;
+  let html = `<div class="chat-bubble-title">🔥 Grill-Me Clarification Questions</div>`;
+  html += `I need a few technical parameters to sharpen precision. Click options below:`;
+
+  questions.forEach((q, idx) => {
+    html += `<div style="margin-top:10px; font-weight:700; font-size:12.5px; color:#1e293b;">${idx + 1}. ${q.question}</div>`;
+    html += `<div class="chat-options-group">`;
+    (q.options || []).forEach(opt => {
+      html += `<button type="button" class="chat-pill" onclick="selectOptionPill(this, '${q.id || idx}', '${opt.replace(/'/g, "\\'")}')">⚡ ${opt}</button>`;
+    });
+    html += `</div>`;
   });
-  updateGrillPreview();
+
+  appendAssistantBubble(html);
 }
 
-function closeGrill(){grillModal.classList.add('hidden')}
-closeGrillModal.addEventListener('click',closeGrill);
-cancelGrill.addEventListener('click',closeGrill);
-
-submitGrill.addEventListener('click',()=>{
-  const previewEl=document.getElementById('grill-preview-text');
-  if(previewEl&&previewEl.textContent){
-    scenarioInput.value=previewEl.textContent;
-    localStorage.setItem('agent1_capability_match_scenario_text',scenarioInput.value);
+async function runCapabilityMatch() {
+  const rawText = scenarioInput.value.trim();
+  const modelId = modelSelect.value;
+  
+  let fullScenario = rawText;
+  const choices = Object.values(selectedClarifications);
+  if (choices.length) {
+    fullScenario += `\nClarified Parameters:\n- ` + choices.join('\n- ');
   }
-  closeGrill();
-  showThinkingStream('🧠 Claude AI Reasoning: Running Feasibility Analysis...',[
-    {status:'done',text:'✓ 1. Refined scenario spec received'},
-    {status:'active',text:'⚡ 2. Executing evidence-backed L0-L3 capability matchup & hard gate validation'},
-    {status:'pending',text:'📊 3. Computing R&D effort & generating technical conclusion'}
-  ]);
-  analyze();
-});
 
-const savedLanguage=localStorage.getItem('agent1_ui_language');
-uiLanguage.value=['en','zh-CN'].includes(savedLanguage)?savedLanguage:'en';
-applyLanguage();
+  if (!fullScenario.trim()) {
+    alert('Please describe your customer scenario or select clarification options.');
+    return;
+  }
 
-const savedScenario=localStorage.getItem('agent1_capability_match_scenario_text');
-if(savedScenario&&!scenarioInput.value){scenarioInput.value=savedScenario}
-scenarioInput.addEventListener('input',()=>{localStorage.setItem('agent1_capability_match_scenario_text',scenarioInput.value)});
+  setCompanionMode('charging');
+  aiThinkingStream.classList.remove('hidden');
 
-uiLanguage.addEventListener('change',()=>{localStorage.setItem('agent1_ui_language',uiLanguage.value);applyLanguage()});
-analyzeButton.addEventListener('click',analyze);
+  try {
+    const res = await fetch('/api/capability-match/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario_text: fullScenario, model_id: modelId, language:uiLanguage.value })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Matching analysis failed');
 
-const urlParams=new URLSearchParams(window.location.search);
-const urlAssessmentId=urlParams.get('assessment_id');
-if(urlAssessmentId){
-  assessmentId=urlAssessmentId;
-  localStorage.setItem('agent1_capability_match_active_id',urlAssessmentId);
-}else{
-  const savedAssessmentId=localStorage.getItem('agent1_capability_match_active_id');
-  if(savedAssessmentId){
-    assessmentId=savedAssessmentId;
+    renderDashboard(data.result || data);
+    appendAssistantBubble(`✅ Capability matching analysis complete for <strong>${modelId}</strong>! View the updated Visual Dashboard on the right.`);
+  } catch (err) {
+    alert(err.message || 'Capability match analysis failed.');
+  } finally {
+    aiThinkingStream.classList.add('hidden');
+    setCompanionMode('sleeping');
   }
 }
 
-if(assessmentId){loadAssessment(assessmentId).catch(error=>{statusEl.textContent=error.message;statusEl.className='status error'})}
+function renderDashboard(assessment) {
+  const feasibility = assessment.feasibility_assessment || {};
+  const score = Math.round(Number(feasibility.feasibility_score || 0) * 100);
+  
+  // Render Gauge Ring
+  document.getElementById('gauge-score').textContent = `${score}%`;
+  const offset = 251.2 - (251.2 * score) / 100;
+  document.getElementById('gauge-fill').style.strokeDashoffset = offset;
+  
+  const statusBadge = document.getElementById('feasibility-status-badge');
+  const status = feasibility.overall_status || 'feasible';
+  statusBadge.textContent = status.toUpperCase().replace(/_/g, ' ');
+  statusBadge.className = `badge ${score >= 75 ? 'good' : score >= 45 ? 'warn' : 'bad'}`;
+
+  document.getElementById('conclusion-title').textContent = assessment.technical_conclusion || 'Technical Feasibility Conclusion';
+  document.getElementById('conclusion-desc').textContent = feasibility.deployment_conclusion || 'Assessment verified against pre-classified capability catalog and raw wiki evidence.';
+
+  // Render Capability Hierarchy Tree
+  const requirements = assessment.atomic_requirements || [];
+  const matches = feasibility.matches || [];
+  
+  const l0 = [], l1 = [], l2 = [], l3 = [];
+  requirements.forEach(req => {
+    const abs = req.required_abstraction_level || 'L1_atomic_skill';
+    const match = matches.find(m => m.requirement_id === req.requirement_id) || {};
+    const state = match.match_state || 'unknown';
+    const cls = ['verified_satisfied','feasible','pass'].includes(state) ? 'matched' : ['not_satisfied','infeasible','fail'].includes(state) ? 'gap' : 'partial';
+    
+    const nodeHtml = `<div class="tree-node ${cls}"><span>${req.requirement_id}: ${req.name}</span></div>`;
+    if (abs.startsWith('L0')) l0.push(nodeHtml);
+    else if (abs.startsWith('L1')) l1.push(nodeHtml);
+    else if (abs.startsWith('L2')) l2.push(nodeHtml);
+    else l3.push(nodeHtml);
+  });
+
+  document.getElementById('tree-l0').innerHTML = l0.join('') || '<span class="empty">No L0 driver primitives mapped.</span>';
+  document.getElementById('tree-l1').innerHTML = l1.join('') || '<span class="empty">No L1 atomic skills mapped.</span>';
+  document.getElementById('tree-l2').innerHTML = l2.join('') || '<span class="empty">No L2 composite skills mapped.</span>';
+  document.getElementById('tree-l3').innerHTML = l3.join('') || '<span class="empty">No L3 scenario modules mapped.</span>';
+
+  // Render Matchup Matrix
+  const matchesHost = document.getElementById('matches');
+  matchesHost.replaceChildren();
+  matches.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'match';
+    card.style.border = '1px solid #cbd5e1';
+    card.style.borderRadius = '10px';
+    card.style.padding = '12px';
+    card.style.marginBottom = '10px';
+    
+    card.innerHTML = `
+      <div style="font-weight:800; margin-bottom:6px; color:#0f172a;">${m.requirement_id} Matchup State</div>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <span class="badge ${['verified_satisfied','feasible','pass'].includes(m.match_state) ? 'good' : 'bad'}">${m.match_state}</span>
+        <span class="badge">Confidence ${Math.round(Number(m.confidence || 0) * 100)}%</span>
+        <span class="badge">${m.evidence_level || 'E2'}</span>
+      </div>
+      ${(m.gates || []).map(g => `<div class="gate ${g.status === 'fail' ? 'fail' : ''}" style="font-size:12px; padding:6px 8px; border-radius:6px; background:#f8fafc; margin-top:4px;">${g.hard ? 'Hard' : 'Soft'} Gate ${g.name}: ${g.status}</div>`).join('')}
+      ${m.rd_gap ? `<div class="gap" style="font-size:12px; margin-top:6px;">🛠 R&D Gap: ${m.rd_gap.person_weeks} person-weeks — ${(m.rd_gap.domains || []).join(', ')}</div>` : ''}
+    `;
+    matchesHost.appendChild(card);
+  });
+
+  // Render R&D Gaps
+  const gapsHost = document.getElementById('summary-gaps');
+  gapsHost.replaceChildren();
+  const gaps = feasibility.rd_power_needed || [];
+  if (gaps.length) {
+    gaps.forEach(g => {
+      const card = document.createElement('div');
+      card.style.background = '#fff1f2';
+      card.style.border = '1px solid #fca5a5';
+      card.style.borderRadius = '10px';
+      card.style.padding = '12px';
+      card.style.marginBottom = '8px';
+      card.innerHTML = `
+        <div style="font-weight:800; color:#9f1239; font-size:13.5px;">🛠 ${g.domain || 'R&D Domain'}: ${g.person_weeks} Person-Weeks</div>
+        <div style="font-size:12.5px; color:#475569; margin-top:4px;">${g.rationale || 'Composite skill gap requiring custom algorithm development.'}</div>
+      `;
+      gapsHost.appendChild(card);
+    });
+  } else {
+    gapsHost.innerHTML = '<p class="empty">No R&D power needed — all requirements satisfied by existing capabilities.</p>';
+  }
+}
 </script>
 </body>
 </html>
