@@ -167,6 +167,7 @@ function hideAnalysisProgress(){activeAnalysisInfo=null;analysisProgress.classLi
 async function monitorAssessment(id){
   const generation=++analysisPollGeneration;
   assessmentId=id;
+  try{localStorage.setItem('agent1_capability_match_active_id',id)}catch(_){}
   analyzeButton.disabled=true;
   statusEl.className='status';
   statusEl.textContent=tr('analyzing');
@@ -225,8 +226,26 @@ async function analyze(){
 const savedLanguage=localStorage.getItem('agent1_ui_language');
 uiLanguage.value=['en','zh-CN'].includes(savedLanguage)?savedLanguage:'en';
 applyLanguage();
+
+const savedScenario=localStorage.getItem('agent1_capability_match_scenario_text');
+if(savedScenario&&!scenarioInput.value){scenarioInput.value=savedScenario}
+scenarioInput.addEventListener('input',()=>{localStorage.setItem('agent1_capability_match_scenario_text',scenarioInput.value)});
+
 uiLanguage.addEventListener('change',()=>{localStorage.setItem('agent1_ui_language',uiLanguage.value);applyLanguage()});
 analyzeButton.addEventListener('click',analyze);
+
+const urlParams=new URLSearchParams(window.location.search);
+const urlAssessmentId=urlParams.get('assessment_id');
+if(urlAssessmentId){
+  assessmentId=urlAssessmentId;
+  localStorage.setItem('agent1_capability_match_active_id',urlAssessmentId);
+}else{
+  const savedAssessmentId=localStorage.getItem('agent1_capability_match_active_id');
+  if(savedAssessmentId){
+    assessmentId=savedAssessmentId;
+  }
+}
+
 if(assessmentId){loadAssessment(assessmentId).catch(error=>{statusEl.textContent=error.message;statusEl.className='status error'})}
 </script>
 </body>
