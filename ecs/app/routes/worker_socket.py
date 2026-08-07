@@ -65,6 +65,7 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 "authoring_result",
                 "capability_match_result",
                 "grill_scenario_result",
+                "scenario_message_classification_result",
                 "capability_catalog_result",
                 "capability_source_changes_result",
                 "update_capability_status_result",
@@ -72,6 +73,9 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 "delete_capability_result",
             }:
                 gateway.resolve_command(str(data.get("id") or ""), data)
+
+            elif message_type == "scenario_analysis_progress":
+                await gateway.resolve_command_progress(str(data.get("id") or ""), data)
 
             elif message_type == "capability_catalog_progress":
                 job_id = str(data.get("job_id") or "")

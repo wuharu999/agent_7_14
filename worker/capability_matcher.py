@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -513,17 +514,62 @@ def load_model_capability_catalog(model_id: str) -> list[dict[str, Any]]:
     return entries
 
 
+def retrieve_relevant_capability_evidence(
+    scenario_state: dict[str, Any], model_id: str, *, limit: int = 12
+) -> list[dict[str, Any]]:
+    """Return bounded catalog evidence whose public fields overlap the scenario."""
+    catalog = load_model_capability_catalog(normalize_team_name(model_id, allow_reserved=False))
+    query = json.dumps(scenario_state, ensure_ascii=False).casefold()
+    terms = {
+        token
+        for token in re.findall(r"[\w-]+", query)
+        if len(token) >= 4 and not token.isdigit()
+    }
+    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    for item in catalog:
+        searchable = " ".join(
+            str(item.get(key) or "")
+            for key in ("capability_id", "name", "effect", "description", "unknowns")
+        ).casefold()
+        score = sum(1 for term in terms if term in searchable)
+        profiles = [
+            profile
+            for profile in item.get("verification_profiles", [])
+            if isinstance(profile, dict)
+        ]
+        if profiles:
+            score += 1
+        summary = {
+            "capability_id": str(item.get("capability_id") or ""),
+            "name": str(item.get("name") or ""),
+            "capability_type": str(item.get("capability_type") or "unclassified"),
+            "effect": str(item.get("effect") or ""),
+            "status": str(item.get("status") or "draft"),
+            "evidence_level": str(item.get("evidence_level") or ""),
+            "verification_profiles": profiles[:4],
+            "unknowns": [str(value) for value in item.get("unknowns", [])][:12],
+            "migration_warnings": [
+                str(value) for value in item.get("migration_warnings", [])
+            ][:12],
+        }
+        ranked.append((score, summary["capability_id"], summary))
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    positively_ranked = [row[2] for row in ranked if row[0] > 0]
+    return (positively_ranked or [row[2] for row in ranked])[: max(1, min(limit, 24))]
+
+
 async def analyze_scenario(
     scenario_text: str,
     *,
     model_id: str,
     language: str = "en",
+    evidence_context: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     model = normalize_team_name(model_id, allow_reserved=False)
     if not scenario_text.strip():
         raise ValueError("Scenario text cannot be empty")
 
-    catalog = load_model_capability_catalog(model)
+    catalog = evidence_context or load_model_capability_catalog(model)
     catalog_summary = (
         json.dumps(catalog, ensure_ascii=False, indent=2)
         if catalog

@@ -34,12 +34,31 @@ def progress_event(
         raise ValueError("Unknown analysis stage")
     if status not in {"queued", "running", "completed", "failed"}:
         raise ValueError("Invalid progress status")
+    allowed_keys = {
+        "requirements_identified",
+        "documents_checked",
+        "matches",
+        "gaps",
+        "elapsed_seconds",
+    }
     facts = {
         key: value
         for key, value in (approved_facts or {}).items()
-        if key in {"requirements_identified", "documents_checked", "matches", "gaps", "elapsed_seconds"}
-        and isinstance(value, (int, str))
+        if key in allowed_keys and isinstance(value, int) and not isinstance(value, bool)
     }
+    summaries = []
+    for key, label in (
+        ("documents_checked", "capability records checked"),
+        ("requirements_identified", "requirements identified"),
+        ("matches", "candidate matches"),
+        ("gaps", "gaps requiring action"),
+        ("elapsed_seconds", "seconds elapsed"),
+    ):
+        if key in facts:
+            summaries.append(f"{facts[key]} {label}")
+    message = STAGE_LABELS[stage]
+    if summaries:
+        message = f"{message}: {', '.join(summaries)}"
     return {
         "event_id": new_identifier("EVT"),
         "session_id": session_id,
@@ -48,7 +67,7 @@ def progress_event(
         "type": "stage_summary",
         "stage": stage,
         "status": status,
-        "message": STAGE_LABELS[stage],
+        "message": message,
         "approved_facts": facts,
         "created_at": utc_now(),
     }

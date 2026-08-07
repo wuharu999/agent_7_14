@@ -20,7 +20,23 @@ CLARIFICATION_RESPONSE_SCHEMA: dict[str, Any] = {
         "model_readiness_opinion",
     ],
     "properties": {
-        "state_patch": {"type": "array", "maxItems": 32},
+        "state_patch": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+                "type": "object",
+                "required": ["op", "path", "value"],
+                "properties": {
+                    "op": {"enum": ["set", "append", "upsert"]},
+                    "path": {
+                        "type": "string",
+                        "pattern": "^(goal|workflow|environment|operating_profile|allowed_modifications|human_intervention)(\\.[A-Za-z0-9_]+){1,3}$|^(actors|objects|acceptance_criteria|facts|assumptions|requirements|unresolved_issues|candidate_solution_paths)$",
+                    },
+                    "value": {},
+                },
+                "additionalProperties": False,
+            },
+        },
         "candidate_questions": {
             "type": "array",
             "maxItems": 8,
@@ -100,6 +116,19 @@ CLARIFICATION_RESPONSE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+FOLLOWUP_INTENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["intent", "reason", "proposed_change"],
+    "properties": {
+        "intent": {
+            "enum": ["report_question", "requirement_change", "new_scenario", "unclear"]
+        },
+        "reason": {"type": "string", "maxLength": 400},
+        "proposed_change": {"type": ["string", "null"], "maxLength": 5000},
+    },
+    "additionalProperties": False,
+}
+
 
 def _safe_response(payload: Any, state: dict[str, Any], language: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
@@ -173,4 +202,61 @@ async def clarify_scenario(
                 "stable": False,
                 "reason": "The clarification model was unavailable; a deterministic question was selected.",
             },
+        }
+
+
+async def classify_followup_intent(
+    scenario_state: dict[str, Any],
+    *,
+    model_id: str,
+    language: str,
+    user_message: str,
+    report_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Classify a post-report/in-analysis message without exposing model reasoning."""
+    validate_state(scenario_state)
+    prompt = (
+        "Classify the user's message into exactly one product intent. A report_question asks about the "
+        "existing analysis. A requirement_change changes a scenario fact, constraint, acceptance target, "
+        "workflow, or assumption. A new_scenario is a materially separate use case. Use unclear when the "
+        "message does not safely determine one class. Return a short user-safe reason, not chain of thought. "
+        "For requirement_change, copy only the requested change into proposed_change; otherwise return null.\n\n"
+        f"Robot model: {model_id}\nLanguage: {language}\n"
+        f"Scenario state: {json.dumps(scenario_state, ensure_ascii=False)[:24000]}\n"
+        f"Current report summary: {json.dumps(report_summary or {}, ensure_ascii=False)[:6000]}\n"
+        f"User message: {user_message[:5000]}"
+    )
+    try:
+        raw = await run_claude_process(
+            prompt,
+            team=model_id,
+            json_schema=FOLLOWUP_INTENT_SCHEMA,
+            timeout=45,
+            extra_args=["--model", "haiku"],
+        )
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or payload.get("intent") not in {
+            "report_question",
+            "requirement_change",
+            "new_scenario",
+            "unclear",
+        }:
+            raise ValueError("Invalid follow-up classification")
+        return {
+            "status": "ok",
+            "intent": str(payload["intent"]),
+            "reason": str(payload.get("reason") or "")[:400],
+            "proposed_change": (
+                str(payload.get("proposed_change") or "")[:5000]
+                if payload["intent"] == "requirement_change"
+                else None
+            ),
+        }
+    except Exception:
+        log.exception("Structured follow-up intent classification failed")
+        return {
+            "status": "retryable",
+            "intent": "unclear",
+            "reason": "The message needs clarification before it can change the scenario.",
+            "proposed_change": None,
         }

@@ -417,6 +417,48 @@ def initialize_database() -> None:
             """,
             (utc_now(),),
         )
+        interrupted_sessions = connection.execute(
+            """
+            SELECT session_id, current_state_version, current_report_revision_id
+            FROM scenario_sessions WHERE status = 'analyzing'
+            """
+        ).fetchall()
+        for interrupted in interrupted_sessions:
+            fallback_status = (
+                "report_ready"
+                if interrupted["current_report_revision_id"]
+                else "minimum_ready"
+            )
+            state_row = connection.execute(
+                """
+                SELECT state_json FROM scenario_state_versions
+                WHERE session_id = ? AND state_version = ?
+                """,
+                (interrupted["session_id"], interrupted["current_state_version"]),
+            ).fetchone()
+            if state_row is not None:
+                try:
+                    interrupted_state = json.loads(str(state_row["state_json"]))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    interrupted_state = None
+                if isinstance(interrupted_state, dict):
+                    interrupted_state["status"] = fallback_status
+                    interrupted_state["updated_at"] = utc_now()
+                    connection.execute(
+                        """
+                        UPDATE scenario_state_versions SET state_json = ?
+                        WHERE session_id = ? AND state_version = ?
+                        """,
+                        (
+                            json.dumps(interrupted_state, ensure_ascii=False),
+                            interrupted["session_id"],
+                            interrupted["current_state_version"],
+                        ),
+                    )
+            connection.execute(
+                "UPDATE scenario_sessions SET status = ?, updated_at = ? WHERE session_id = ?",
+                (fallback_status, utc_now(), interrupted["session_id"]),
+            )
 
         connection.executescript(
             """
@@ -2277,10 +2319,49 @@ def save_scenario_state_version(
     return session
 
 
+def _sync_current_scenario_state_status(
+    connection: sqlite3.Connection, session_id: str, status: str
+) -> None:
+    row = connection.execute(
+        """
+        SELECT v.state_json, s.current_state_version
+        FROM scenario_sessions s
+        JOIN scenario_state_versions v
+          ON v.session_id = s.session_id
+         AND v.state_version = s.current_state_version
+        WHERE s.session_id = ?
+        """,
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        return
+    try:
+        state = json.loads(str(row["state_json"]))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return
+    if not isinstance(state, dict):
+        return
+    state["status"] = status
+    state["updated_at"] = utc_now()
+    connection.execute(
+        """
+        UPDATE scenario_state_versions
+        SET state_json = ?
+        WHERE session_id = ? AND state_version = ?
+        """,
+        (
+            json.dumps(state, ensure_ascii=False),
+            session_id,
+            int(row["current_state_version"]),
+        ),
+    )
+
+
 def update_scenario_session_status(
     session_id: str, *, status: str, current_report_revision_id: str | None = None
 ) -> None:
     with _DB_LOCK, _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
         connection.execute(
             """
             UPDATE scenario_sessions
@@ -2291,6 +2372,7 @@ def update_scenario_session_status(
             """,
             (status, current_report_revision_id, utc_now(), session_id),
         )
+        _sync_current_scenario_state_status(connection, session_id, status)
 
 
 def claim_scenario_session(session_id: str, *, user_id: int) -> bool:
@@ -2437,6 +2519,19 @@ def get_scenario_analysis_job(job_id: str) -> dict[str, Any] | None:
     return dict(row) if row is not None else None
 
 
+def get_active_scenario_analysis_job(session_id: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT * FROM scenario_analysis_jobs
+            WHERE session_id = ? AND status IN ('queued', 'processing')
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
 def create_scenario_report_revision(
     *,
     report_revision_id: str,
@@ -2498,6 +2593,17 @@ def create_scenario_report_revision(
                 """,
                 (report_revision_id, now, session_id),
             )
+            _sync_current_scenario_state_status(connection, session_id, "report_ready")
+        elif status == "superseded":
+            connection.execute(
+                """
+                UPDATE scenario_sessions
+                SET current_report_revision_id = COALESCE(current_report_revision_id, ?),
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (report_revision_id, now, session_id),
+            )
     revision = get_scenario_report_revision(session_id, report_revision_id)
     if revision is None:
         raise RuntimeError("Scenario report revision was not created")
@@ -2551,11 +2657,12 @@ def supersede_current_scenario_report(session_id: str) -> None:
         connection.execute(
             """
             UPDATE scenario_sessions
-            SET current_report_revision_id = NULL, status = 'refining', updated_at = ?
+            SET status = 'refining', updated_at = ?
             WHERE session_id = ?
             """,
             (now, session_id),
         )
+        _sync_current_scenario_state_status(connection, session_id, "refining")
 
 
 def create_scenario_share_link(

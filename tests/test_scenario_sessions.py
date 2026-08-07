@@ -15,12 +15,13 @@ from ecs.app.routes import scenario_sessions as routes
 from shared.capability_types import migrate_legacy_capability
 from shared.scenario_state import (
     apply_answer,
+    apply_state_patch,
     attach_next_question,
     default_candidate_questions,
     initial_state,
     select_question,
 )
-from worker.analysis_progress import sanitize_summary
+from worker.analysis_progress import progress_event, sanitize_summary
 from worker.manager import WorkerManager
 
 
@@ -29,6 +30,7 @@ def isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(database, "DATABASE_PATH", tmp_path / "agent_jobs.db")
     database.initialize_database()
     gateway.websocket = None
+    routes.mutation_limiter.history.clear()
 
     async def immediate_to_thread(function, /, *args, **kwargs):
         return function(*args, **kwargs)
@@ -36,6 +38,7 @@ def isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(asyncio, "to_thread", immediate_to_thread)
     yield
     gateway.websocket = None
+    routes._analysis_tasks.clear()
 
 
 def _request(*, method: str = "POST", token: str = "") -> Request:
@@ -87,9 +90,12 @@ def test_one_question_flow_minimum_gate_and_semantic_deduplication() -> None:
     assert state["minimum_gate"] == {"passed": True, "missing": []}
     assert state["candidate_solution_paths"]
     assert len(state["question_history"]) == 4
+    assert state["stability"]["stable"] is True
+    assert state["status"] == "stability_countdown"
+    assert state["current_question"] is None
 
 
-def test_unknown_is_unresolved_and_not_reasked_as_other() -> None:
+def test_unknown_gets_explicit_assumption_or_owner_resolution_path() -> None:
     state = attach_next_question(initial_state("SCNSESSION-UNKNOWN", "Move parcels"))
     first = state["current_question"]
     state = apply_answer(
@@ -102,7 +108,17 @@ def test_unknown_is_unresolved_and_not_reasked_as_other() -> None:
     assert state["question_history"][0]["answer_mode"] == "unknown"
     assert state["question_history"][0]["resolution"] == "unresolved"
     assert state["unresolved_issues"][0]["knowledge_state"] == "unknown"
-    assert state["current_question"]["semantic_key"] != first["semantic_key"]
+    assert state["current_question"]["semantic_key"] == first["semantic_key"]
+    assert state["current_question"]["refines_question_id"] == first["question_id"]
+    assert state["current_question"]["unknown_resolution"] is True
+    state = apply_answer(
+        state,
+        question_id=state["current_question"]["question_id"],
+        answer="Assign verification to the vendor",
+        answer_mode="option",
+    )
+    assert state["unresolved_issues"][0]["owner"] == "vendor"
+    assert state["unresolved_issues"][0]["can_change_conclusion"] is False
 
 
 def test_question_selector_rejects_wrong_owner_and_resolved_key() -> None:
@@ -302,6 +318,25 @@ def test_capability_migration_and_progress_sanitization() -> None:
     assert l3["record_type"] == "solution_artifact"
     assert missing["capability_type"] == "unclassified"
     assert sanitize_summary("Traceback from /root/app/.env SECRET=abc", fallback_stage="gap_evaluation") == "Evaluating gaps and risks"
+    migrated_evidence = migrate_legacy_capability(
+        {
+            "capability_id": "CAP-LEGACY-EVIDENCE",
+            "capability_type": "operational_behavior",
+            "evidence_level": "E4",
+            "evidence_refs": ["wiki/locker-validation.md"],
+        }
+    )
+    assert migrated_evidence["verification_profiles"][0]["support_state"] == "conditional"
+    event = progress_event(
+        session_id="SCN-PROGRESS",
+        analysis_job_id="JOB-PROGRESS",
+        state_version=1,
+        stage="gap_evaluation",
+        status="completed",
+        approved_facts={"gaps": 2, "secret": "do not expose", "matches": "not-an-int"},
+    )
+    assert event["message"] == "Evaluating gaps and risks: 2 gaps requiring action"
+    assert event["approved_facts"] == {"gaps": 2}
 
 
 def test_workbench_uses_safe_dom_and_accessible_report_drawer() -> None:
@@ -314,6 +349,9 @@ def test_workbench_uses_safe_dom_and_accessible_report_drawer() -> None:
     assert 'aria-label="Scenario report"' in page
     assert "50vh" in page and "88vh" in page
     assert "onclick=" not in page
+    assert "confirm(" not in page
+    assert "confirmation-card" in page
+    assert "eventReconnectTimer=setTimeout(connectEvents,2000)" in page
 
 
 def _minimum_ready_state(session_id: str) -> dict:
@@ -430,7 +468,10 @@ def test_locker_analysis_creates_immutable_report_export_and_private_share(
     assert database.get_scenario_analysis_job(job["job_id"])["status"] == "completed"
     assert revision["is_current"] is True
     assert revision["report"]["conclusion"] == "fit_with_conditions"
-    assert revision["report"]["status"] == "partial"
+    assert revision["report"]["status"] == "current"
+    completed_session = database.get_scenario_session(session_id)
+    assert completed_session["status"] == "report_ready"
+    assert completed_session["current_state"]["status"] == "report_ready"
     assert b"Package width" in exported_md.body
     assert exported_pdf.body.startswith(b"%PDF-")
     assert shared.status_code == 201
@@ -512,3 +553,412 @@ def test_superseded_report_is_preserved_while_new_revision_becomes_current() -> 
     assert current["is_current"] is True
     assert [item["ordinal"] for item in reports] == [2, 1]
     assert reports[1]["status"] == "superseded"
+
+
+def test_allowlisted_state_patch_updates_dynamic_spec_and_rejects_runtime_fields() -> None:
+    state = initial_state("SCNSESSION-PATCH", "Inspect parcels")
+    patched = apply_state_patch(
+        state,
+        [
+            {"op": "set", "path": "environment.lighting", "value": "300-500 lux"},
+            {
+                "op": "upsert",
+                "path": "facts",
+                "value": {
+                    "semantic_key": "locker.opening.width",
+                    "normalized_value": "450 mm",
+                    "knowledge_state": "known",
+                    "owner": "customer",
+                },
+            },
+        ],
+    )
+    assert patched["environment"]["lighting"] == "300-500 lux"
+    assert patched["facts"][0]["semantic_key"] == "locker.opening.width"
+    state["current_question"] = {
+        "question_id": "Q-DYNAMIC",
+        "semantic_key": "locker.internal.depth",
+        "question": "What is the locker depth?",
+        "options": ["400 mm"],
+    }
+    answered = apply_answer(
+        state,
+        question_id="Q-DYNAMIC",
+        answer="520 mm",
+        answer_mode="custom",
+    )
+    assert answered["facts"][0]["semantic_key"] == "locker.internal.depth"
+    assert answered["facts"][0]["normalized_value"] == "520 mm"
+    with pytest.raises(ValueError, match="not allowed"):
+        apply_state_patch(
+            state,
+            [{"op": "set", "path": "status.value", "value": "report_ready"}],
+        )
+
+
+def test_ecs_requests_worker_evidence_and_returns_validated_state_patch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _minimum_ready_state("SCNSESSION-EVIDENCE")
+    gateway.websocket = object()
+
+    async def fake_command(message_type: str, **payload):
+        assert message_type == "grill_scenario"
+        assert payload["retrieve_evidence_context"] is True
+        assert payload["scenario_state"]["minimum_gate"]["passed"] is True
+        return {
+            "status": "ok",
+            "candidate_questions": [],
+            "candidate_issues": [],
+            "state_patch": [
+                {"op": "set", "path": "environment.lighting", "value": "controlled"}
+            ],
+        }
+
+    monkeypatch.setattr(gateway, "command", fake_command)
+    candidates, issues, patches = asyncio.run(
+        routes._candidate_questions(
+            state,
+            model_id=database.get_allowed_teams()[0],
+            language="en",
+            user_message="Lighting is controlled",
+        )
+    )
+    assert candidates
+    assert issues == []
+    assert apply_state_patch(state, patches)["environment"]["lighting"] == "controlled"
+
+
+def test_answer_route_applies_worker_patch_to_authoritative_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-ROUTE-PATCH"
+    token = "route-patch-token"
+    state = _minimum_ready_state(session_id)
+    state["status"] = "refining"
+    state["countdown_suppressed_at_version"] = state["state_version"]
+    state["current_question"] = {
+        "question_id": "Q-LIGHTING",
+        "semantic_key": "environment.lighting_range",
+        "question": "What lighting range is available?",
+        "reason_for_asking": "Lighting changes perception evidence applicability.",
+        "decision_impact": ["feasibility"],
+        "can_change_conclusion": True,
+        "blocking": False,
+        "target_owner": "customer",
+        "answer_type": "single_select_or_custom",
+        "options": ["300-500 lux"],
+        "prerequisite_keys": [],
+        "refines_question_id": None,
+    }
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    gateway.websocket = object()
+
+    async def fake_command(message_type: str, **payload):
+        return {
+            "status": "ok",
+            "candidate_questions": [],
+            "candidate_issues": [],
+            "state_patch": [
+                {
+                    "op": "set",
+                    "path": "environment.lighting",
+                    "value": "300-500 lux",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(gateway, "command", fake_command)
+    response = asyncio.run(
+        routes.answer_route(
+            session_id,
+            routes.AnswerRequest(
+                expected_state_version=state["state_version"],
+                question_id="Q-LIGHTING",
+                answer_mode="option",
+                answer="300-500 lux",
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    updated = json.loads(response.body)["session"]["current_state"]
+    assert response.status_code == 200
+    assert updated["environment"]["lighting"] == "300-500 lux"
+    assert any(
+        item.get("semantic_key") == "environment.lighting_range"
+        for item in updated["facts"]
+    )
+
+
+def _create_current_report(session_id: str, state: dict) -> str:
+    job, _ = database.create_scenario_analysis_job_record(
+        job_id=f"JOB-{session_id}",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog",
+        evidence_revision="evidence",
+        pipeline_version="v2",
+        language="en",
+        idempotency_key=f"idempotency-{session_id}",
+    )
+    database.update_scenario_analysis_job_record(job["job_id"], status="completed")
+    revision = database.create_scenario_report_revision(
+        report_revision_id=f"REPORT-{session_id}",
+        session_id=session_id,
+        state_version=state["state_version"],
+        analysis_job_id=job["job_id"],
+        status="current",
+        report={"conclusion": "fit_with_conditions", "conditions": []},
+    )
+    return str(revision["report_revision_id"])
+
+
+def test_structured_intent_classification_overrides_question_mark_heuristic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-INTENT"
+    token = "intent-token"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    _create_current_report(session_id, state)
+    gateway.websocket = object()
+
+    async def fake_command(message_type: str, **payload):
+        assert message_type == "classify_scenario_message"
+        return {
+            "status": "ok",
+            "intent": "requirement_change",
+            "proposed_change": "Reduce the maximum payload to 2 kg?",
+        }
+
+    monkeypatch.setattr(gateway, "command", fake_command)
+    response = asyncio.run(
+        routes.message_route(
+            session_id,
+            routes.MessageRequest(
+                expected_state_version=state["state_version"],
+                message="Reduce the maximum payload to 2 kg?",
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    body = json.loads(response.body)
+    assert body["intent"] == "requirement_change"
+    assert body["confirmation_required"] is True
+
+
+def test_confirmed_refinement_keeps_report_visible_and_queues_reanalysis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-REFINE"
+    token = "refine-token"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    report_id = _create_current_report(session_id, state)
+    gateway.websocket = object()
+
+    async def fake_queue(scenario: dict, *, trigger: str):
+        assert trigger == "coalesced_reanalysis"
+        database.update_scenario_session_status(session_id, status="analyzing")
+        return {"job_id": "JOB-COALESCED"}, True
+
+    monkeypatch.setattr(routes, "_queue_analysis", fake_queue)
+    response = asyncio.run(
+        routes.confirm_change_route(
+            session_id,
+            routes.ConfirmChangeRequest(
+                expected_state_version=state["state_version"],
+                confirmed=True,
+                proposed_change="Locker opening width is at least 450 mm",
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    body = json.loads(response.body)
+    loaded = database.get_scenario_session(session_id)
+    assert response.status_code == 202
+    assert body["analysis_job_id"] == "JOB-COALESCED"
+    assert loaded["current_report_revision_id"] == report_id
+    assert loaded["status"] == loaded["current_state"]["status"] == "analyzing"
+    assert database.get_scenario_report_revision(session_id, report_id)["status"] == "superseded"
+
+
+def test_change_during_analysis_reuses_running_job_and_defers_one_reanalysis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-INFLIGHT"
+    token = "inflight-token"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    report_id = _create_current_report(session_id, state)
+    active, _ = database.create_scenario_analysis_job_record(
+        job_id="JOB-INFLIGHT",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog-new",
+        evidence_revision="evidence-new",
+        pipeline_version="v2-new",
+        language="en",
+        idempotency_key="inflight-analysis",
+    )
+    database.update_scenario_analysis_job_record(active["job_id"], status="processing")
+    gateway.websocket = object()
+
+    async def forbidden_queue(*args, **kwargs):
+        raise AssertionError("A second analysis must not be queued while one is running")
+
+    monkeypatch.setattr(routes, "_queue_analysis", forbidden_queue)
+    response = asyncio.run(
+        routes.confirm_change_route(
+            session_id,
+            routes.ConfirmChangeRequest(
+                expected_state_version=state["state_version"],
+                confirmed=True,
+                proposed_change="Allow low-cost fiducial markers",
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    body = json.loads(response.body)
+    loaded = database.get_scenario_session(session_id)
+    assert response.status_code == 202
+    assert body["analysis_job_id"] == "JOB-INFLIGHT"
+    assert loaded["current_state_version"] == state["state_version"] + 1
+    assert loaded["current_report_revision_id"] == report_id
+    assert loaded["status"] == loaded["current_state"]["status"] == "analyzing"
+
+
+def test_sse_is_long_lived_and_browser_reconnects_after_normal_eof() -> None:
+    route_source = Path("ecs/app/routes/scenario_sessions.py").read_text(encoding="utf-8")
+    page = Path("ecs/app/templates/capability_match.html").read_text(encoding="utf-8")
+    assert "for _ in range(20)" not in route_source
+    assert "while not await request.is_disconnected()" in route_source
+    assert "retry: 2000" in route_source
+    assert "eventReconnectTimer=setTimeout(connectEvents,2000)" in page
+
+
+def test_keep_asking_attaches_a_real_question_instead_of_dead_ending() -> None:
+    session_id = "SCNSESSION-KEEP-ASKING"
+    token = "keep-asking-token"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    response = asyncio.run(
+        routes.keep_asking_route(
+            session_id,
+            routes.AnalyzeNowRequest(
+                expected_state_version=state["state_version"],
+                trigger="automatic_stability",
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    updated = json.loads(response.body)["session"]["current_state"]
+    assert response.status_code == 200
+    assert updated["status"] == "refining"
+    assert updated["current_question"] is not None
+    assert updated["current_question"]["semantic_key"] == "deployment.stage"
+
+
+def test_first_superseded_snapshot_remains_visible_during_reanalysis() -> None:
+    session_id = "SCNSESSION-FIRST-SUPERSEDED"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    job, _ = database.create_scenario_analysis_job_record(
+        job_id="JOB-FIRST-SUPERSEDED",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog",
+        evidence_revision="evidence",
+        pipeline_version="v2",
+        language="en",
+        idempotency_key="first-superseded",
+    )
+    database.update_scenario_session_status(session_id, status="analyzing")
+    revision = database.create_scenario_report_revision(
+        report_revision_id="REPORT-FIRST-SUPERSEDED",
+        session_id=session_id,
+        state_version=state["state_version"],
+        analysis_job_id=job["job_id"],
+        status="superseded",
+        report={"conclusion": "prototype_required"},
+    )
+    loaded = database.get_scenario_session(session_id)
+    assert revision["is_current"] is False
+    assert loaded["current_report_revision_id"] == revision["report_revision_id"]
+    assert loaded["status"] == loaded["current_state"]["status"] == "analyzing"
+
+
+def test_restart_recovers_interrupted_analysis_status_canonically() -> None:
+    session_id = "SCNSESSION-RESTART"
+    state = _minimum_ready_state(session_id)
+    state["status"] = "analyzing"
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    job, _ = database.create_scenario_analysis_job_record(
+        job_id="JOB-RESTART",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog",
+        evidence_revision="evidence",
+        pipeline_version="v2",
+        language="en",
+        idempotency_key="restart-analysis",
+    )
+    database.update_scenario_analysis_job_record(job["job_id"], status="processing")
+    database.initialize_database()
+    loaded = database.get_scenario_session(session_id)
+    assert database.get_scenario_analysis_job(job["job_id"])["status"] == "failed"
+    assert loaded["status"] == loaded["current_state"]["status"] == "minimum_ready"

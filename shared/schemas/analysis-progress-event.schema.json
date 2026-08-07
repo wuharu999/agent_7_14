@@ -13,7 +13,17 @@
     "stage": {"enum": ["workflow_understanding", "requirement_extraction", "evidence_retrieval", "envelope_comparison", "gap_evaluation", "recommendation_building", "report_generation"]},
     "status": {"enum": ["queued", "running", "completed", "failed"]},
     "message": {"type": "string", "maxLength": 240},
-    "approved_facts": {"type": "object", "additionalProperties": {"type": ["string", "integer"]}},
+    "approved_facts": {
+      "type": "object",
+      "properties": {
+        "requirements_identified": {"type": "integer", "minimum": 0},
+        "documents_checked": {"type": "integer", "minimum": 0},
+        "matches": {"type": "integer", "minimum": 0},
+        "gaps": {"type": "integer", "minimum": 0},
+        "elapsed_seconds": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
     "created_at": {"type": "string", "format": "date-time"}
   },
   "additionalProperties": false

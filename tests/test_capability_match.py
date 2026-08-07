@@ -29,7 +29,11 @@ from ecs.app.routes.capability_match import (
     start_capability_catalog_organization,
 )
 from ecs.app.routes import capability_match as capability_match_routes
-from worker.capability_matcher import R_AND_D_CLASSIFICATION, enforce_abstraction_hard_gate
+from worker.capability_matcher import (
+    R_AND_D_CLASSIFICATION,
+    enforce_abstraction_hard_gate,
+    retrieve_relevant_capability_evidence,
+)
 from worker import capability_matcher
 from worker.manager import WorkerManager
 
@@ -201,6 +205,48 @@ def test_supported_operational_behavior_is_not_reclassified_by_evidence_gate() -
     assert match["match_state"] == "conditional"
     assert match["gaps"] == []
     assert match["rd_gap"] is None
+
+
+def test_relevant_evidence_retrieval_prioritizes_operating_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        capability_matcher,
+        "load_model_capability_catalog",
+        lambda model_id: [
+            {
+                "capability_id": "CAP-GENERIC-WALK",
+                "name": "Generic walking",
+                "capability_type": "building_block",
+                "effect": "Walk forward",
+                "verification_profiles": [],
+            },
+            {
+                "capability_id": "CAP-LOCKER-RETRIEVAL",
+                "name": "Locker parcel retrieval",
+                "capability_type": "operational_behavior",
+                "effect": "Retrieve a parcel from a locker opening",
+                "verification_profiles": [
+                    {
+                        "workspace_type": "locker aisle",
+                        "lighting": "300-500 lux",
+                        "object_payload_boundary": "up to 2 kg and 450 mm width",
+                        "support_state": "conditional",
+                    }
+                ],
+            },
+        ],
+    )
+    evidence = retrieve_relevant_capability_evidence(
+        {
+            "initial_intent": "Retrieve a parcel from a locker",
+            "objects": [{"normalized_value": "2 kg parcel"}],
+        },
+        "walker_s2",
+        limit=1,
+    )
+    assert evidence[0]["capability_id"] == "CAP-LOCKER-RETRIEVAL"
+    assert evidence[0]["verification_profiles"][0]["lighting"] == "300-500 lux"
 
 
 def test_worker_analysis_embeds_skills_and_reapplies_hard_gate(

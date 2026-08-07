@@ -7,12 +7,63 @@ from typing import Any
 CAPABILITY_TYPES = {"building_block", "operational_behavior"}
 
 
+def _legacy_verification_profile(entry: dict[str, Any]) -> dict[str, Any] | None:
+    if entry.get("capability_type") != "operational_behavior":
+        return None
+    raw_references = entry.get("evidence_refs", entry.get("evidence", []))
+    if isinstance(raw_references, str):
+        raw_references = [raw_references]
+    references = [
+        str(value)
+        for value in raw_references
+        if isinstance(value, str) and value.strip()
+    ]
+    if not references:
+        return None
+    level = str(entry.get("evidence_level") or "")
+    test_level = {"E5": "field", "E4": "pilot", "E3": "bench"}.get(
+        level, "simulation"
+    )
+    return {
+        "workspace_type": "legacy evidence; envelope not yet normalized",
+        "lighting": "unknown",
+        "terrain_weather": "unknown",
+        "workspace_dynamics": "unknown",
+        "object_payload_boundary": "unknown",
+        "duty_cycle": "unknown",
+        "versions": {},
+        "test_level": test_level,
+        "sample_size": 0,
+        "passed_count": 0,
+        "measured_values": [],
+        "evidence_locator": references[0],
+        "support_state": "conditional",
+        "limitations": ["Legacy evidence requires operating-envelope backfill"],
+        "unknowns": [
+            "workspace boundary",
+            "lighting boundary",
+            "payload boundary",
+            "duty-cycle boundary",
+        ],
+    }
+
+
+def _backfill_legacy_profile(result: dict[str, Any], warnings: list[str]) -> None:
+    if result.get("verification_profiles"):
+        return
+    profile = _legacy_verification_profile(result)
+    result["verification_profiles"] = [profile] if profile else []
+    if profile:
+        warnings.append("legacy_verification_profile_backfilled_conditionally")
+
+
 def migrate_legacy_capability(entry: dict[str, Any]) -> dict[str, Any]:
     """Map a legacy capability without silently treating a missing level as L0."""
     result = deepcopy(entry)
     warnings = [str(value) for value in result.get("migration_warnings", [])]
     existing = str(result.get("capability_type") or "")
     if existing in CAPABILITY_TYPES:
+        _backfill_legacy_profile(result, warnings)
         result["migration_warnings"] = list(dict.fromkeys(warnings))
         return result
 
@@ -39,8 +90,8 @@ def migrate_legacy_capability(entry: dict[str, Any]) -> dict[str, Any]:
         result["legacy_abstraction_level"] = legacy
     result.pop("abstraction_level", None)
     result.pop("abstraction", None)
+    _backfill_legacy_profile(result, warnings)
     result["migration_warnings"] = list(dict.fromkeys(warnings))
-    result.setdefault("verification_profiles", [])
     return result
 
 

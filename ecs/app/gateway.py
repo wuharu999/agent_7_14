@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from fastapi import WebSocket
 
@@ -18,6 +18,9 @@ class WorkerGateway:
         self.outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
         self.pending_answers: dict[str, asyncio.Future[str]] = {}
         self.pending_commands: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self.pending_command_progress: dict[
+            str, Callable[[dict[str, Any]], Awaitable[None]]
+        ] = {}
         self.pending_streams: dict[str, asyncio.Queue[dict[str, Any]]] = {}
         self.pending_exports: dict[str, asyncio.Future[str]] = {}
         self.sender_task: asyncio.Task[None] | None = None
@@ -173,6 +176,7 @@ class WorkerGateway:
         message_type: str,
         *,
         timeout: int | None = None,
+        on_progress: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         **payload: Any,
     ) -> dict[str, Any]:
         if not self.online:
@@ -181,6 +185,8 @@ class WorkerGateway:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         self.pending_commands[command_id] = future
+        if on_progress is not None:
+            self.pending_command_progress[command_id] = on_progress
         try:
             await self.send({"type": message_type, "id": command_id, **payload})
             return await asyncio.wait_for(
@@ -189,6 +195,7 @@ class WorkerGateway:
             )
         finally:
             self.pending_commands.pop(command_id, None)
+            self.pending_command_progress.pop(command_id, None)
 
     async def send_command(
         self,
@@ -208,6 +215,13 @@ class WorkerGateway:
         future = self.pending_commands.get(command_id)
         if future is not None and not future.done():
             future.set_result(result)
+
+    async def resolve_command_progress(
+        self, command_id: str, event: dict[str, Any]
+    ) -> None:
+        callback = self.pending_command_progress.get(command_id)
+        if callback is not None:
+            await callback(event)
 
     def resolve_export(self, export_id: str, path: str) -> None:
         future = self.pending_exports.get(export_id)

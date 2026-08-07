@@ -17,7 +17,36 @@ assessment API and stored assessments during rollout.
 5. The immutable report opens in a draggable bottom drawer. Earlier revisions
    stay selectable; Markdown and PDF exports bind to the selected revision.
 6. `Continue refining` preserves the report. A proposed requirement change is
-   confirmed before creating a new scenario-state version.
+   confirmed with an in-chat card before creating a new scenario-state version.
+
+## State-machine correctness guarantees
+
+- Deterministic stability takes precedence over fallback questions. A stable
+  state has no current question and enters `stability_countdown` immediately.
+- `scenario_sessions.status` and the current state-version status are updated
+  together, including report completion and interrupted-analysis recovery.
+- Claude may propose only allowlisted `set`, `append`, and `upsert` operations
+  under customer specification roots. ECS validates those patches and never
+  permits model updates to IDs, versions, ownership, report pointers, or status.
+- Every dynamic custom answer is also retained as a semantic customer fact,
+  even when it is not one of the original built-in question keys.
+- Before technical clarification, the Worker retrieves relevant catalog
+  records and verification profiles from the selected model's live Wiki.
+- A requirement change during analysis creates a newer state version without
+  cancelling the old snapshot. The old report is retained as superseded and
+  one idempotent analysis of the latest version is queued afterward.
+- The most recent report pointer remains visible while refinement or reanalysis
+  is running. The composer also remains available during analysis.
+- SSE progress stays open until disconnect and resumes from `Last-Event-ID` or
+  the explicit cursor. The browser reconnects after normal EOF.
+- Progress text is constructed only from server stage labels and allowlisted
+  integer counts. Raw Claude text, paths, prompts, and tool details are never
+  progress summaries.
+- Post-report messages use the Worker's structured intent classifier. When the
+  Worker is unavailable or classification fails, ECS returns `unclear`; it does
+  not guess from punctuation.
+- `I don't know yet` creates an explicit follow-up that lets the user provide a
+  value, select a conservative assumption, or assign vendor/pilot validation.
 
 Anonymous sessions store a high-entropy resume token in the browser. The ECS
 stores only its SHA-256 hash. Signed-in sessions are owned by the account and
@@ -79,7 +108,10 @@ Legacy L0 records map to `building_block`; L2 records map to
 `operational_behavior`; L1 records receive an explicit review warning; L3
 scenario modules move outside the capability catalog. Missing types become
 `unclassified` with a review warning and never silently default to a building
-block.
+block. Legacy operational records with evidence references receive a
+conditional verification profile whose unknown operating-envelope fields are
+explicitly marked for backfill; the migration does not silently treat those
+unknown boundaries as verified.
 
 ## Deployment sequence
 

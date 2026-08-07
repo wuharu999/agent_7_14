@@ -9,6 +9,7 @@ import secrets
 import time
 import uuid
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -25,6 +26,7 @@ from ecs.app.database import (
     create_scenario_session,
     create_scenario_share_link,
     get_allowed_teams,
+    get_active_scenario_analysis_job,
     get_scenario_report_revision,
     get_scenario_session,
     get_scenario_share_link_by_hash,
@@ -43,6 +45,7 @@ from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 from shared.scenario_state import (
     apply_answer,
+    apply_state_patch,
     attach_next_question,
     default_candidate_questions,
     evaluate_state,
@@ -233,10 +236,10 @@ def _normalize_worker_questions(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def _candidate_questions(
     state: dict[str, Any], *, model_id: str, language: str, user_message: str
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     deterministic = default_candidate_questions(state, language)
     if not state.get("minimum_gate", {}).get("passed") or not gateway.online:
-        return deterministic, []
+        return deterministic, [], []
     try:
         result = await gateway.command(
             "grill_scenario",
@@ -251,6 +254,7 @@ async def _candidate_questions(
             },
             scenario_state=state,
             user_message=user_message,
+            retrieve_evidence_context=True,
         )
         candidates = _normalize_worker_questions(result)
         issues = [
@@ -261,10 +265,13 @@ async def _candidate_questions(
                 "wiki", "vendor", "calculation", "simulation", "bench", "pilot", "field"
             }
         ]
-        return candidates + deterministic, issues
+        patches = [
+            patch for patch in result.get("state_patch", []) if isinstance(patch, dict)
+        ][:32]
+        return candidates + deterministic, issues, patches
     except Exception:
         log.exception("Worker clarification failed; using deterministic candidates")
-        return deterministic, []
+        return deterministic, [], []
 
 
 def _conclusion_from_legacy(result: dict[str, Any]) -> str:
@@ -396,15 +403,40 @@ async def _run_analysis(job: dict[str, Any], state: dict[str, Any], *, partial: 
         await asyncio.to_thread(update_scenario_analysis_job_record, job_id, status="processing")
         await _emit_progress(session_id, job_id, state_version, "workflow_understanding", "completed")
         await _emit_progress(session_id, job_id, state_version, "requirement_extraction", "running")
+        async def worker_progress(event: dict[str, Any]) -> None:
+            stage = str(event.get("stage") or "")
+            status = str(event.get("status") or "")
+            facts = event.get("approved_facts")
+            if stage not in {
+                "workflow_understanding",
+                "requirement_extraction",
+                "evidence_retrieval",
+                "envelope_comparison",
+                "gap_evaluation",
+                "recommendation_building",
+                "report_generation",
+            } or status not in {"queued", "running", "completed", "failed"}:
+                return
+            await _emit_progress(
+                session_id,
+                job_id,
+                state_version,
+                stage,
+                status,
+                facts if isinstance(facts, dict) else None,
+            )
+
         result = await gateway.command(
             "analyze_scenario",
             timeout=480,
+            on_progress=worker_progress,
             scenario_text=scenario_narrative(state),
             model_id=str(get_scenario_session(session_id)["model_id"]),
             language=str(job["language"]),
             scenario_session_id=session_id,
             scenario_state_version=state_version,
             pipeline_version=PIPELINE_VERSION,
+            scenario_state=state,
         )
         if result.get("status") != "ok" or not isinstance(result.get("result"), dict):
             raise RuntimeError(str(result.get("error") or "Worker analysis failed"))
@@ -609,12 +641,14 @@ async def answer_route(
             answer=payload.answer,
             answer_mode=payload.answer_mode,
         )
-        candidates, technical_issues = await _candidate_questions(
+        candidates, technical_issues, state_patches = await _candidate_questions(
             updated,
             model_id=str(scenario["model_id"]),
             language=str(scenario["language"]),
             user_message=payload.answer,
         )
+        if state_patches:
+            updated = apply_state_patch(updated, state_patches)
         if technical_issues:
             existing_keys = {
                 str(item.get("semantic_key") or item.get("issue_id") or "")
@@ -753,10 +787,22 @@ async def keep_asking_route(
     state = scenario["current_state"]
     if int(state["state_version"]) != payload.expected_state_version:
         return JSONResponse({"error": "Scenario state changed"}, status_code=409)
-    updated = dict(state)
+    updated = deepcopy(state)
     updated["state_version"] = int(state["state_version"]) + 1
     updated["status"] = "refining"
     updated["countdown_suppressed_at_version"] = updated["state_version"]
+    candidates, technical_issues, patches = await _candidate_questions(
+        updated,
+        model_id=str(scenario["model_id"]),
+        language=str(scenario["language"]),
+        user_message="Keep asking before analysis",
+    )
+    if patches:
+        updated = apply_state_patch(updated, patches)
+    if technical_issues:
+        updated.setdefault("unresolved_issues", []).extend(technical_issues)
+    updated = attach_next_question(updated, candidates, str(scenario["language"]))
+    updated["status"] = "refining"
     saved = await asyncio.to_thread(
         save_scenario_state_version,
         session_id=session_id,
@@ -790,15 +836,41 @@ async def message_route(
     if int(scenario["current_state_version"]) != payload.expected_state_version:
         return JSONResponse({"error": "Scenario state changed"}, status_code=409)
     text = payload.message.strip()
-    lowered = text.casefold()
-    if "new scenario" in lowered or "新场景" in text:
-        intent = "new_scenario"
+    current_report_id = scenario.get("current_report_revision_id")
+    report = (
+        get_scenario_report_revision(session_id, str(current_report_id))
+        if current_report_id
+        else None
+    )
+    content = report.get("report", {}) if report else {}
+    if gateway.online:
+        try:
+            classified = await gateway.command(
+                "classify_scenario_message",
+                timeout=60,
+                scenario_state=scenario["current_state"],
+                model_id=str(scenario["model_id"]),
+                language=str(scenario["language"]),
+                user_message=text,
+                report_summary={
+                    "conclusion": content.get("conclusion"),
+                    "conditions": content.get("conditions", [])[:5],
+                    "high_impact_unknowns": content.get("high_impact_unknowns", [])[:5],
+                },
+            )
+            intent = str(classified.get("intent") or "unclear")
+            proposed_change = classified.get("proposed_change")
+        except Exception:
+            log.exception("Follow-up intent classification failed")
+            intent = "unclear"
+            proposed_change = None
+    else:
+        intent = "unclear"
+        proposed_change = None
+
+    if intent == "new_scenario":
         response = "Start a new scenario session to keep this report and its evidence snapshot intact."
-    elif text.endswith("?") or text.endswith("？") or lowered.startswith(("why ", "how ", "what ")):
-        intent = "report_question"
-        current_report_id = scenario.get("current_report_revision_id")
-        report = get_scenario_report_revision(session_id, str(current_report_id)) if current_report_id else None
-        content = report.get("report", {}) if report else {}
+    elif intent == "report_question":
         conclusion = content.get("conclusion", "insufficient_evidence")
         conditions = [str(value) for value in content.get("conditions", [])][:3]
         unknowns = [
@@ -811,19 +883,20 @@ async def message_route(
             response += " Conditions: " + "; ".join(conditions) + "."
         if unknowns:
             response += " High-impact unknowns: " + "; ".join(unknowns) + "."
-    elif len(text) < 3:
-        intent = "unclear"
-        response = "Is this a question about the report, a requirement change, or a new scenario?"
+    elif intent == "requirement_change" and proposed_change:
+        response = "Please confirm the proposed requirement change in this conversation before it updates the scenario."
     else:
-        intent = "requirement_change"
-        response = "Confirm this proposed requirement change before it updates the scenario or creates a new report revision."
+        intent = "unclear"
+        proposed_change = None
+        response = "Is this a question about the report, a requirement change, or a new scenario?"
     await asyncio.to_thread(_append_event, session_id, "post_report_intent", {"intent": intent, "message": text})
     return JSONResponse(
         {
             "status": "ok",
             "intent": intent,
             "response": response,
-            "proposed_change": text if intent == "requirement_change" else None,
+            "proposed_change": proposed_change,
+            "confirmation_required": intent == "requirement_change",
         }
     )
 
@@ -852,9 +925,11 @@ async def confirm_change_route(
     if not payload.confirmed:
         await asyncio.to_thread(_append_event, session_id, "requirement_change_rejected", {"proposed_change": payload.proposed_change})
         return JSONResponse({"status": "ok", "session": _public_session(scenario)})
-    updated = dict(state)
+    updated = deepcopy(state)
     updated["state_version"] = int(state["state_version"]) + 1
-    updated["status"] = "refining"
+    active_job = await asyncio.to_thread(get_active_scenario_analysis_job, session_id)
+    should_analyze = bool(updated.get("minimum_gate", {}).get("passed")) and gateway.online
+    updated["status"] = "analyzing" if active_job or should_analyze else "refining"
     requirements = list(state.get("requirements", []))
     requirements.append(
         {
@@ -870,6 +945,18 @@ async def confirm_change_route(
         }
     )
     updated["requirements"] = requirements
+    if not active_job and not should_analyze:
+        updated["countdown_suppressed_at_version"] = updated["state_version"]
+        candidates, _, patches = await _candidate_questions(
+            updated,
+            model_id=str(scenario["model_id"]),
+            language=str(scenario["language"]),
+            user_message=payload.proposed_change,
+        )
+        if patches:
+            updated = apply_state_patch(updated, patches)
+        updated = attach_next_question(updated, candidates, str(scenario["language"]))
+        updated["status"] = "refining"
     saved = await asyncio.to_thread(
         save_scenario_state_version,
         session_id=session_id,
@@ -880,8 +967,26 @@ async def confirm_change_route(
     )
     await asyncio.to_thread(supersede_current_scenario_report, session_id)
     saved = await asyncio.to_thread(get_scenario_session, session_id)
+    queued_job: dict[str, Any] | None = None
+    if active_job:
+        await asyncio.to_thread(update_scenario_session_status, session_id, status="analyzing")
+        saved = await asyncio.to_thread(get_scenario_session, session_id)
+    elif should_analyze and saved is not None:
+        queued_job, _ = await _queue_analysis(saved, trigger="coalesced_reanalysis")
+        saved = await asyncio.to_thread(get_scenario_session, session_id)
     await asyncio.to_thread(_append_event, session_id, "requirement_change_confirmed", {"state_version": updated["state_version"]})
-    return JSONResponse({"status": "ok", "session": _public_session(saved)})
+    return JSONResponse(
+        {
+            "status": "accepted" if queued_job or active_job else "ok",
+            "session": _public_session(saved),
+            "analysis_job_id": (
+                str(queued_job["job_id"])
+                if queued_job
+                else (str(active_job["job_id"]) if active_job else None)
+            ),
+        },
+        status_code=202 if queued_job or active_job else 200,
+    )
 
 
 @router.post("/api/scenario-sessions/{session_id}/claim")
@@ -933,7 +1038,9 @@ async def events_route(
 
     async def stream():
         current = cursor
-        for _ in range(20):
+        heartbeat_at = time.monotonic()
+        yield "retry: 2000\n\n"
+        while not await request.is_disconnected():
             events = await asyncio.to_thread(
                 list_scenario_events, session_id, after_sequence=current, public_only=True
             )
@@ -942,8 +1049,9 @@ async def events_route(
                     current = int(item["sequence"])
                     payload = json.dumps(item["payload"], ensure_ascii=False)
                     yield f"id: {current}\nevent: {item['event_type']}\ndata: {payload}\n\n"
-            else:
+            elif time.monotonic() - heartbeat_at >= 15:
                 yield ": keep-alive\n\n"
+                heartbeat_at = time.monotonic()
             await asyncio.sleep(1)
 
     return StreamingResponse(

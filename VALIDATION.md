@@ -12,8 +12,8 @@ python3 -m json.tool shared/schemas/feasibility-assessment.schema.json >/dev/nul
 pytest -q tests/test_capability_catalog.py tests/test_capability_match.py tests/test_account_menu.py tests/test_security_migration.py
 ```
 
-The capability-match tests cover schema installation, L0-only hard-gate
-reclassification, additive/idempotent SQLite migration, public persistence,
+The capability-match tests cover schema installation, the building-block versus
+operational-behavior evidence gate, additive/idempotent SQLite migration, public persistence,
 Markdown/PDF exports, admin analytics, CSRF enforcement, and idempotent draft
 stub creation. Run the HTTP tests in a supported project test environment; some
 sandboxed Python 3.14 TestClient builds cannot create the internal stream file
@@ -26,8 +26,8 @@ On the deployed pair, verify in this order:
    bounded customer scenario.
 3. Open the CTA and confirm `SCN-*`/`REQ-*` records and the three workbench
    columns.
-4. Use a scenario with only SDK/driver evidence and confirm the L0 hard gate
-   reports `R&D Gap (Composite Skill Missing)`.
+4. Use a scenario with only building-block SDK/driver evidence and confirm the
+   operational-behavior evidence gate reports `Operational behavior evidence required`.
 5. Download `feasibility_report.md` and `feasibility_report.pdf`.
 6. Sign in as admin and open `/admin/capabilities`. Confirm the file-change panel
    shows the selected robot's added/modified/deleted paths.
@@ -87,7 +87,12 @@ This covers one-question selection, semantic deduplication, the goal/workflow
 minimum gate, anonymous and account resume, optimistic state versions, separate
 Worker queues, immutable/superseded report revisions, the locker reference
 flow, revision-bound Markdown/PDF export, share-link redaction, and safe DOM
-rendering.
+rendering. It also covers stability precedence, canonical status synchronization,
+allowlisted model state patches, evidence-context requests, structured follow-up
+classification, conversational change confirmation, changes during analysis,
+coalesced reanalysis, retained superseded reports, unknown-owner resolution,
+long-lived/reconnecting SSE, safe fact-derived progress summaries, and restart
+recovery.
 
 ## QA conversation/language validation
 

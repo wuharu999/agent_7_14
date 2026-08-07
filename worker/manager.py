@@ -17,8 +17,12 @@ from worker.claude_runner import (
     run_claude,
     run_claude_stream,
 )
-from worker.capability_matcher import analyze_scenario, grill_scenario
-from worker.scenario_clarification import clarify_scenario
+from worker.capability_matcher import (
+    analyze_scenario,
+    grill_scenario,
+    retrieve_relevant_capability_evidence,
+)
+from worker.scenario_clarification import clarify_scenario, classify_followup_intent
 from worker.capability_catalog import (
     inspect_capability_source_changes,
     organize_capability_catalog,
@@ -273,7 +277,7 @@ class WorkerManager:
             )
             return
 
-        if message_type == "grill_scenario":
+        if message_type in {"grill_scenario", "classify_scenario_message"}:
             command_id = str(data.get("id") or "")
             if not command_id or command_id in self.active_clarification_ids:
                 return
@@ -284,7 +288,11 @@ class WorkerManager:
                 self.active_clarification_ids.discard(command_id)
                 await self.emit(
                     {
-                        "type": "grill_scenario_result",
+                        "type": (
+                            "scenario_message_classification_result"
+                            if message_type == "classify_scenario_message"
+                            else "grill_scenario_result"
+                        ),
                         "id": command_id,
                         "status": "failed",
                         "error": "Scenario clarification queue is full; try again shortly",
@@ -605,10 +613,64 @@ class WorkerManager:
             command_id = str(data.get("id") or "")
             try:
                 log.info("Capability match worker %d handling %s", worker_number, command_id)
+                scenario_state = data.get("scenario_state")
+                evidence_context = (
+                    retrieve_relevant_capability_evidence(
+                        scenario_state,
+                        str(data.get("model_id") or ""),
+                    )
+                    if isinstance(scenario_state, dict)
+                    else None
+                )
+                await self.emit(
+                    {
+                        "type": "scenario_analysis_progress",
+                        "id": command_id,
+                        "stage": "evidence_retrieval",
+                        "status": "completed",
+                        "approved_facts": {
+                            "documents_checked": len(evidence_context or [])
+                        },
+                    }
+                )
+                await self.emit(
+                    {
+                        "type": "scenario_analysis_progress",
+                        "id": command_id,
+                        "stage": "requirement_extraction",
+                        "status": "running",
+                        "approved_facts": {},
+                    }
+                )
                 result = await analyze_scenario(
                     str(data.get("scenario_text") or ""),
                     model_id=str(data.get("model_id") or ""),
                     language=str(data.get("language") or "en"),
+                    evidence_context=evidence_context,
+                )
+                requirements = result.get("atomic_requirements", [])
+                assessment = result.get("feasibility_assessment", {})
+                matches = assessment.get("matches", []) if isinstance(assessment, dict) else []
+                gaps = [
+                    gap
+                    for match in matches
+                    if isinstance(match, dict)
+                    for gap in match.get("gaps", [])
+                ]
+                await self.emit(
+                    {
+                        "type": "scenario_analysis_progress",
+                        "id": command_id,
+                        "stage": "gap_evaluation",
+                        "status": "completed",
+                        "approved_facts": {
+                            "requirements_identified": len(requirements)
+                            if isinstance(requirements, list)
+                            else 0,
+                            "matches": len(matches),
+                            "gaps": len(gaps),
+                        },
+                    }
                 )
                 await self.emit(
                     {
@@ -641,13 +703,34 @@ class WorkerManager:
             try:
                 log.info("Scenario clarification worker %d handling %s", worker_number, command_id)
                 scenario_state = data.get("scenario_state")
-                if isinstance(scenario_state, dict):
+                if data.get("type") == "classify_scenario_message" and isinstance(
+                    scenario_state, dict
+                ):
+                    result = await classify_followup_intent(
+                        scenario_state,
+                        model_id=str(data.get("model_id") or ""),
+                        language=str(data.get("language") or "en"),
+                        user_message=str(data.get("user_message") or ""),
+                        report_summary=(
+                            data.get("report_summary")
+                            if isinstance(data.get("report_summary"), dict)
+                            else None
+                        ),
+                    )
+                    result_type = "scenario_message_classification_result"
+                elif isinstance(scenario_state, dict):
+                    evidence_context = retrieve_relevant_capability_evidence(
+                        scenario_state,
+                        str(data.get("model_id") or ""),
+                    )
                     result = await clarify_scenario(
                         scenario_state,
                         model_id=str(data.get("model_id") or ""),
                         language=str(data.get("language") or "en"),
                         user_message=str(data.get("user_message") or ""),
+                        evidence_context=evidence_context,
                     )
+                    result_type = "grill_scenario_result"
                 else:
                     result = await grill_scenario(
                         str(data.get("scenario_text") or ""),
@@ -656,8 +739,9 @@ class WorkerManager:
                         history=data.get("history") if isinstance(data.get("history"), list) else None,
                         accumulated_specs=data.get("accumulated_specs") if isinstance(data.get("accumulated_specs"), dict) else None,
                     )
+                    result_type = "grill_scenario_result"
                 await self.emit(
-                    {"type": "grill_scenario_result", "id": command_id, **result}
+                    {"type": result_type, "id": command_id, **result}
                 )
             except asyncio.CancelledError:
                 raise
@@ -665,7 +749,11 @@ class WorkerManager:
                 log.exception("Scenario clarification command failed for %s", command_id)
                 await self.emit(
                     {
-                        "type": "grill_scenario_result",
+                        "type": (
+                            "scenario_message_classification_result"
+                            if data.get("type") == "classify_scenario_message"
+                            else "grill_scenario_result"
+                        ),
                         "id": command_id,
                         "status": "failed",
                         "error": "Scenario clarification failed; see Worker logs",

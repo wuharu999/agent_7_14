@@ -24,6 +24,25 @@ CONCLUSIONS = {
     "insufficient_evidence",
     "not_a_fit",
 }
+PATCHABLE_OBJECT_ROOTS = {
+    "goal",
+    "workflow",
+    "environment",
+    "operating_profile",
+    "allowed_modifications",
+    "human_intervention",
+}
+PATCHABLE_COLLECTION_ROOTS = {
+    "actors",
+    "objects",
+    "acceptance_criteria",
+    "facts",
+    "assumptions",
+    "requirements",
+    "unresolved_issues",
+    "candidate_solution_paths",
+}
+PATCH_OPERATIONS = {"set", "append", "upsert"}
 
 
 def utc_now() -> str:
@@ -135,6 +154,69 @@ def evaluate_state(state: dict[str, Any]) -> dict[str, Any]:
         result["status"] = "minimum_ready" if minimum_passed else "clarifying"
     result["updated_at"] = utc_now()
     return result
+
+
+def _clean_patch_path(value: Any) -> tuple[str, ...]:
+    path = str(value or "").strip().strip(".")
+    parts = tuple(part for part in path.split(".") if part)
+    if not parts or len(parts) > 4:
+        raise ValueError("State patch path is invalid")
+    if any(not part.replace("_", "").isalnum() for part in parts):
+        raise ValueError("State patch path contains an invalid segment")
+    return parts
+
+
+def apply_state_patch(
+    state: dict[str, Any], patches: Iterable[dict[str, Any]]
+) -> dict[str, Any]:
+    """Apply only bounded semantic updates; runtime/version fields are never patchable."""
+    validate_state(state)
+    result = deepcopy(state)
+    for raw in list(patches)[:32]:
+        if not isinstance(raw, dict):
+            raise ValueError("State patch entries must be objects")
+        operation = str(raw.get("op") or "")
+        if operation not in PATCH_OPERATIONS:
+            raise ValueError("State patch operation is not allowed")
+        parts = _clean_patch_path(raw.get("path"))
+        root = parts[0]
+        value = deepcopy(raw.get("value"))
+        if len(str(value)) > 20_000:
+            raise ValueError("State patch value exceeds the size limit")
+
+        if operation == "set":
+            if root not in PATCHABLE_OBJECT_ROOTS or len(parts) < 2:
+                raise ValueError("State patch set path is not allowed")
+            target = result.setdefault(root, {})
+            if not isinstance(target, dict):
+                raise ValueError("State patch target must be an object")
+            for segment in parts[1:-1]:
+                child = target.setdefault(segment, {})
+                if not isinstance(child, dict):
+                    raise ValueError("State patch nested target must be an object")
+                target = child
+            target[parts[-1]] = value
+            continue
+
+        if root not in PATCHABLE_COLLECTION_ROOTS or len(parts) != 1:
+            raise ValueError("State patch collection path is not allowed")
+        collection = result.setdefault(root, [])
+        if not isinstance(collection, list) or not isinstance(value, dict):
+            raise ValueError("State patch collection value must be an object")
+        if operation == "append":
+            collection.append(value)
+            continue
+        semantic_key = str(value.get("semantic_key") or value.get("requirement_id") or "").strip()
+        if not semantic_key:
+            raise ValueError("Upsert patches require a semantic key or requirement ID")
+        result[root] = [
+            item
+            for item in collection
+            if not isinstance(item, dict)
+            or str(item.get("semantic_key") or item.get("requirement_id") or "") != semantic_key
+        ] + [value]
+    validate_state(result)
+    return evaluate_state(result)
 
 
 def validate_state(state: dict[str, Any], *, session_id: str | None = None) -> None:
@@ -350,6 +432,11 @@ def _upsert_issue(
                 "affected_decision": "feasibility",
                 "can_change_conclusion": True,
                 "next_action": "Customer confirmation",
+                "resolution_options": [
+                    "Provide the missing value",
+                    "Use a conservative assumption",
+                    "Assign verification to the vendor or pilot owner",
+                ],
                 "status": "open",
                 "last_changed_version": state["state_version"] + 1,
             }
@@ -393,7 +480,11 @@ def apply_answer(
     result.setdefault("question_history", []).append(record)
     result["state_version"] = next_version
     result["current_question"] = None
-    _upsert_issue(result, semantic_key, answer=record["answer"], unknown=unknown)
+    is_unknown_resolution = bool(
+        current.get("refines_question_id") and current.get("unknown_resolution")
+    )
+    if not is_unknown_resolution:
+        _upsert_issue(result, semantic_key, answer=record["answer"], unknown=unknown)
 
     if not unknown:
         if semantic_key == "goal.customer_outcome":
@@ -430,6 +521,48 @@ def apply_answer(
             result.setdefault("acceptance_criteria", []).append(
                 {"original_text": clean_answer, "normalized_value": clean_answer}
             )
+        else:
+            result.setdefault("facts", []).append(
+                {
+                    "semantic_key": semantic_key,
+                    "original_text": clean_answer,
+                    "normalized_value": clean_answer,
+                    "knowledge_state": "known",
+                    "owner": "customer",
+                    "evidence_locator": None,
+                    "last_changed_version": next_version,
+                }
+            )
+
+        if is_unknown_resolution:
+            resolution = str(clean_answer).casefold()
+            for issue in result.get("unresolved_issues", []):
+                if not isinstance(issue, dict) or issue.get("semantic_key") != semantic_key:
+                    continue
+                if "assumption" in resolution:
+                    issue["knowledge_state"] = "assumed"
+                    issue["status"] = "resolved"
+                    issue["can_change_conclusion"] = False
+                    result.setdefault("assumptions", []).append(
+                        {
+                            "semantic_key": semantic_key,
+                            "original_text": clean_answer,
+                            "normalized_value": "Conservative assumption pending validation",
+                            "knowledge_state": "assumed",
+                            "owner": "customer",
+                            "evidence_locator": None,
+                            "last_changed_version": next_version,
+                        }
+                    )
+                elif "vendor" in resolution or "pilot" in resolution:
+                    issue["owner"] = "vendor" if "vendor" in resolution else "pilot"
+                    issue["next_action"] = "Validate the missing boundary before deployment"
+                    issue["can_change_conclusion"] = False
+                else:
+                    issue["knowledge_state"] = "known"
+                    issue["normalized_value"] = clean_answer
+                    issue["status"] = "resolved"
+                    issue["can_change_conclusion"] = False
 
     workflow = result["workflow"]
     if workflow.get("trigger") and workflow.get("steps") and workflow.get("end_outcome"):
@@ -452,10 +585,56 @@ def attach_next_question(
     state: dict[str, Any], candidates: Iterable[dict[str, Any]] | None = None, language: str = "en"
 ) -> dict[str, Any]:
     result = evaluate_state(state)
+    suppressed = int(result.get("countdown_suppressed_at_version") or 0) == int(
+        result["state_version"]
+    )
+    if (
+        result["stability"]["stable"]
+        and not suppressed
+        and result.get("status") not in {"analyzing", "report_ready"}
+    ):
+        result["current_question"] = None
+        result["status"] = "stability_countdown"
+        return result
+
+    customer_issues = [
+        item
+        for item in result.get("unresolved_issues", [])
+        if isinstance(item, dict)
+        and item.get("owner") == "customer"
+        and item.get("status", "open") == "open"
+    ]
+    if customer_issues:
+        issue = customer_issues[0]
+        previous = next(
+            (
+                item
+                for item in reversed(result.get("question_history", []))
+                if isinstance(item, dict) and item.get("semantic_key") == issue.get("semantic_key")
+            ),
+            {},
+        )
+        selected = question(
+            str(issue.get("semantic_key") or "unknown.customer_decision"),
+            f"How should we resolve this unknown: {previous.get('question') or issue.get('original_text')}?",
+            "Choose an assumption or validation owner so the scenario does not remain permanently blocked.",
+            [
+                "Use a conservative assumption",
+                "Assign verification to the vendor",
+                "Assign verification to the pilot owner",
+            ],
+            impact=[str(issue.get("affected_decision") or "feasibility")],
+            blocking=True,
+            refines_question_id=str(previous.get("question_id") or "unknown"),
+            previous_answer=str(previous.get("answer") or "I don't know yet"),
+            missing_precision="Unknown value needs an assumption or named validation owner",
+        )
+        selected["unknown_resolution"] = True
+        result["current_question"] = selected
+        return result
+
     selected = select_question(result, candidates or [], language)
     result["current_question"] = selected
-    if selected is None and result["stability"]["stable"] and result.get("status") not in {"analyzing", "report_ready"}:
-        result["status"] = "stability_countdown"
     return result
 
 

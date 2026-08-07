@@ -5,13 +5,23 @@
   "type": "object",
   "required": ["state_patch", "candidate_questions", "candidate_issues", "intent", "model_readiness_opinion"],
   "properties": {
-    "state_patch": {"type": "array", "maxItems": 32},
+    "state_patch": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/state_patch"}},
     "candidate_questions": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/question"}},
     "candidate_issues": {"type": "array", "maxItems": 32, "items": {"type": "object"}},
     "intent": {"enum": ["requirement_answer", "report_question", "requirement_change", "new_scenario", "unclear"]},
     "model_readiness_opinion": {"type": "object", "required": ["stable", "reason"], "properties": {"stable": {"type": "boolean"}, "reason": {"type": "string"}}, "additionalProperties": false}
   },
   "$defs": {
+    "state_patch": {
+      "type": "object",
+      "required": ["op", "path", "value"],
+      "properties": {
+        "op": {"enum": ["set", "append", "upsert"]},
+        "path": {"type": "string", "pattern": "^(goal|workflow|environment|operating_profile|allowed_modifications|human_intervention)(\\.[A-Za-z0-9_]+){1,3}$|^(actors|objects|acceptance_criteria|facts|assumptions|requirements|unresolved_issues|candidate_solution_paths)$"},
+        "value": {}
+      },
+      "additionalProperties": false
+    },
     "question": {
       "type": "object",
       "required": ["question_id", "semantic_key", "question", "reason_for_asking", "decision_impact", "can_change_conclusion", "blocking", "target_owner", "answer_type", "options", "prerequisite_keys"],
