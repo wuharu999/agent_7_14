@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 import hashlib
 import json
+import re
 import sqlite3
 import uuid
 from pathlib import Path
@@ -384,6 +385,22 @@ def test_workbench_uses_safe_dom_and_accessible_report_drawer() -> None:
     assert "Working · analysis in progress" in page
     assert "Complete · report ready" in page
     assert "Auto-select from scenario" in page
+
+
+def test_workbench_registers_every_referenced_element() -> None:
+    page = Path("ecs/app/templates/capability_match.html").read_text(encoding="utf-8")
+    registry_match = re.search(
+        r"const els=Object\.fromEntries\(\[(.*?)\]\.map",
+        page,
+        flags=re.DOTALL,
+    )
+    assert registry_match is not None
+    registered = set(re.findall(r"'([^']+)'", registry_match.group(1)))
+    dot_references = set(re.findall(r"\bels\.([A-Za-z][A-Za-z0-9_-]*)", page))
+    bracket_references = set(re.findall(r"\bels\['([^']+)'\]", page))
+
+    assert dot_references | bracket_references <= registered
+    assert "thread" in registered
 
 
 def test_robot_auto_selection_prefers_customer_choice_name_and_scenario_fit(
