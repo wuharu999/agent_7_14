@@ -399,6 +399,11 @@ def test_workbench_uses_safe_dom_and_accessible_report_drawer() -> None:
     assert "pendingOperation" in page
     assert "Analysis failed · retry available" in page
     assert "!scenario.current_report_revision_id" in page
+    assert 'class="report-spinner"' in page
+    assert 'role="progressbar"' in page
+    assert "Still working ·" in page
+    assert "setInterval(updateActivityClock,1000)" in page
+    assert "progress-shimmer" in page
 
 
 def test_workbench_registers_every_referenced_element() -> None:
