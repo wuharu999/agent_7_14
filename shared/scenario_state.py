@@ -214,7 +214,12 @@ def evaluate_state(state: dict[str, Any]) -> dict[str, Any]:
         "reason": reason,
         "remaining_user_decisions": customer_issues,
     }
-    if result.get("status") not in {"analyzing", "report_ready", "refining"}:
+    if result.get("status") not in {
+        "analyzing",
+        "analysis_failed",
+        "report_ready",
+        "refining",
+    }:
         result["status"] = "minimum_ready" if minimum_passed else "clarifying"
     result["updated_at"] = utc_now()
     return result

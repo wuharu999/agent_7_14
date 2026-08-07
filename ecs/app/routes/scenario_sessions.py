@@ -43,6 +43,7 @@ from ecs.app.database import (
     list_user_scenario_sessions,
     list_scenario_events,
     list_scenario_report_revisions,
+    mark_scenario_analysis_failed,
     mark_scenario_reanalysis_pending,
     revoke_scenario_share_link,
     save_scenario_state_version,
@@ -663,7 +664,11 @@ async def _run_analysis(job: dict[str, Any], state: dict[str, Any], *, partial: 
             await asyncio.to_thread(
                 mark_scenario_reanalysis_pending, session_id, state_version
             )
-        await asyncio.to_thread(update_scenario_session_status, session_id, status="minimum_ready")
+        await asyncio.to_thread(
+            mark_scenario_analysis_failed,
+            session_id,
+            state_version=state_version,
+        )
         try:
             await _emit_progress(session_id, job_id, state_version, "report_generation", "failed")
         except Exception:

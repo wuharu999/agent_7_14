@@ -472,7 +472,7 @@ def initialize_database() -> None:
             fallback_status = (
                 "report_ready"
                 if interrupted["current_report_revision_id"]
-                else "minimum_ready"
+                else "analysis_failed"
             )
             state_row = connection.execute(
                 """
@@ -503,6 +503,64 @@ def initialize_database() -> None:
             connection.execute(
                 "UPDATE scenario_sessions SET status = ?, updated_at = ? WHERE session_id = ?",
                 (fallback_status, utc_now(), interrupted["session_id"]),
+            )
+
+        # Releases before the explicit failure state returned a failed analysis
+        # to minimum_ready, which looked like an idle page. Repair only sessions
+        # whose current snapshot has a failed job and no newer active attempt.
+        silently_failed_sessions = connection.execute(
+            """
+            SELECT session_id, current_state_version
+            FROM scenario_sessions AS session
+            WHERE session.status = 'minimum_ready'
+              AND session.current_report_revision_id IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM scenario_analysis_jobs AS failed
+                  WHERE failed.session_id = session.session_id
+                    AND failed.scenario_state_version = session.current_state_version
+                    AND failed.status = 'failed'
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM scenario_analysis_jobs AS active
+                  WHERE active.session_id = session.session_id
+                    AND active.scenario_state_version = session.current_state_version
+                    AND active.status IN ('queued', 'processing')
+              )
+            """
+        ).fetchall()
+        for failed_session in silently_failed_sessions:
+            state_row = connection.execute(
+                """
+                SELECT state_json FROM scenario_state_versions
+                WHERE session_id = ? AND state_version = ?
+                """,
+                (failed_session["session_id"], failed_session["current_state_version"]),
+            ).fetchone()
+            if state_row is not None:
+                try:
+                    failed_state = json.loads(str(state_row["state_json"]))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    failed_state = None
+                if isinstance(failed_state, dict):
+                    failed_state["status"] = "analysis_failed"
+                    failed_state["updated_at"] = utc_now()
+                    connection.execute(
+                        """
+                        UPDATE scenario_state_versions SET state_json = ?
+                        WHERE session_id = ? AND state_version = ?
+                        """,
+                        (
+                            json.dumps(failed_state, ensure_ascii=False),
+                            failed_session["session_id"],
+                            failed_session["current_state_version"],
+                        ),
+                    )
+            connection.execute(
+                """
+                UPDATE scenario_sessions SET status = 'analysis_failed', updated_at = ?
+                WHERE session_id = ?
+                """,
+                (utc_now(), failed_session["session_id"]),
             )
 
         connection.executescript(
@@ -2421,6 +2479,37 @@ def update_scenario_session_status(
             (status, current_report_revision_id, utc_now(), session_id),
         )
         _sync_current_scenario_state_status(connection, session_id, status)
+
+
+def mark_scenario_analysis_failed(session_id: str, *, state_version: int) -> bool:
+    """Mark only the still-current analysis snapshot as failed."""
+    with _DB_LOCK, _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            """
+            SELECT current_state_version, current_report_revision_id
+            FROM scenario_sessions
+            WHERE session_id = ? AND deleted_at IS NULL
+            """,
+            (session_id,),
+        ).fetchone()
+        if (
+            row is None
+            or int(row["current_state_version"]) != int(state_version)
+            or row["current_report_revision_id"] is not None
+        ):
+            return False
+        now = utc_now()
+        connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET status = 'analysis_failed', updated_at = ?
+            WHERE session_id = ? AND current_state_version = ?
+            """,
+            (now, session_id, int(state_version)),
+        )
+        _sync_current_scenario_state_status(connection, session_id, "analysis_failed")
+        return True
 
 
 def claim_scenario_session(session_id: str, *, user_id: int) -> bool:

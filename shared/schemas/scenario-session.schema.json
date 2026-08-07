@@ -7,7 +7,7 @@
   "properties": {
     "session_id": {"type": "string", "pattern": "^SCNSESSION-[A-Z0-9]+$"},
     "state_version": {"type": "integer", "minimum": 1},
-    "status": {"enum": ["draft", "clarifying", "minimum_ready", "stability_countdown", "analyzing", "report_ready", "refining"]},
+    "status": {"enum": ["draft", "clarifying", "minimum_ready", "stability_countdown", "analyzing", "analysis_failed", "report_ready", "refining"]},
     "initial_intent": {"type": "string", "maxLength": 20000},
     "goal": {"$ref": "#/$defs/confirmed_value"},
     "workflow": {

@@ -21,6 +21,7 @@ from shared.scenario_state import (
     apply_state_patch,
     attach_next_question,
     default_candidate_questions,
+    evaluate_state,
     initial_state,
     select_question,
 )
@@ -97,6 +98,13 @@ def test_one_question_flow_minimum_gate_and_semantic_deduplication() -> None:
     assert state["stability"]["stable"] is True
     assert state["status"] == "stability_countdown"
     assert state["current_question"] is None
+
+
+def test_analysis_failed_status_survives_state_evaluation() -> None:
+    state = _minimum_ready_state("SCNSESSION-FAILED-STATE")
+    state["status"] = "analysis_failed"
+    evaluated = evaluate_state(state)
+    assert evaluated["status"] == "analysis_failed"
 
 
 def test_unknown_gets_explicit_assumption_or_owner_resolution_path() -> None:
@@ -385,6 +393,12 @@ def test_workbench_uses_safe_dom_and_accessible_report_drawer() -> None:
     assert "Working · analysis in progress" in page
     assert "Complete · report ready" in page
     assert "Auto-select from scenario" in page
+    assert "renderConversationHistory" in page
+    assert "dataset.scenarioHistory" in page
+    assert "waiting-pulse" in page
+    assert "pendingOperation" in page
+    assert "Analysis failed · retry available" in page
+    assert "!scenario.current_report_revision_id" in page
 
 
 def test_workbench_registers_every_referenced_element() -> None:
@@ -1415,7 +1429,39 @@ def test_restart_recovers_interrupted_analysis_status_canonically() -> None:
     database.initialize_database()
     loaded = database.get_scenario_session(session_id)
     assert database.get_scenario_analysis_job(job["job_id"])["status"] == "failed"
-    assert loaded["status"] == loaded["current_state"]["status"] == "minimum_ready"
+    assert loaded["status"] == loaded["current_state"]["status"] == "analysis_failed"
+
+
+def test_restart_repairs_legacy_silently_failed_analysis_state() -> None:
+    session_id = "SCNSESSION-LEGACY-SILENT-FAILURE"
+    state = _minimum_ready_state(session_id)
+    state["status"] = "minimum_ready"
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    job, _ = database.create_scenario_analysis_job_record(
+        job_id="JOB-LEGACY-SILENT-FAILURE",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog",
+        evidence_revision="evidence",
+        pipeline_version="v2",
+        language="en",
+        idempotency_key="legacy-silent-failure",
+    )
+    database.update_scenario_analysis_job_record(job["job_id"], status="failed")
+
+    database.initialize_database()
+    database.initialize_database()
+
+    loaded = database.get_scenario_session(session_id)
+    assert loaded["status"] == loaded["current_state"]["status"] == "analysis_failed"
+    assert database.get_scenario_analysis_job(job["job_id"])["status"] == "failed"
 
 
 def _save_newer_scenario_state(
@@ -1443,6 +1489,30 @@ def _save_newer_scenario_state(
         actor_user_id=None,
     )
     return updated
+
+
+def test_stale_analysis_failure_cannot_overwrite_newer_state() -> None:
+    session_id = "SCNSESSION-STALE-FAILURE"
+    state_v1 = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state_v1,
+    )
+    state_v2 = _save_newer_scenario_state(session_id, state_v1, suffix="V2")
+
+    changed = database.mark_scenario_analysis_failed(
+        session_id,
+        state_version=state_v1["state_version"],
+    )
+
+    loaded = database.get_scenario_session(session_id)
+    assert changed is False
+    assert loaded["current_state_version"] == state_v2["state_version"]
+    assert loaded["status"] == loaded["current_state"]["status"] == "analyzing"
 
 
 def test_restart_dispatches_marker_left_after_report_finalization(
