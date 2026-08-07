@@ -201,6 +201,100 @@ def initialize_database() -> None:
                 checked_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS scenario_sessions (
+                session_id TEXT PRIMARY KEY,
+                owner_user_id INTEGER,
+                anonymous_token_hash TEXT,
+                status TEXT NOT NULL,
+                current_state_version INTEGER NOT NULL,
+                current_report_revision_id TEXT,
+                language TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                deleted_at TEXT,
+                FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS scenario_state_versions (
+                session_id TEXT NOT NULL,
+                state_version INTEGER NOT NULL,
+                state_json TEXT NOT NULL,
+                change_source TEXT NOT NULL,
+                actor_user_id INTEGER,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(session_id, state_version),
+                FOREIGN KEY(session_id) REFERENCES scenario_sessions(session_id) ON DELETE CASCADE,
+                FOREIGN KEY(actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS scenario_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL UNIQUE,
+                session_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                public INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES scenario_sessions(session_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS scenario_analysis_jobs (
+                job_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                scenario_state_version INTEGER NOT NULL,
+                catalog_revision TEXT NOT NULL,
+                evidence_revision TEXT NOT NULL,
+                pipeline_version TEXT NOT NULL,
+                language TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                progress_cursor INTEGER NOT NULL DEFAULT 0,
+                superseded INTEGER NOT NULL DEFAULT 0,
+                error_category TEXT,
+                internal_error_correlation_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(session_id, scenario_state_version)
+                    REFERENCES scenario_state_versions(session_id, state_version) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS scenario_report_revisions (
+                report_revision_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                ordinal INTEGER NOT NULL,
+                scenario_state_version INTEGER NOT NULL,
+                analysis_job_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                is_current INTEGER NOT NULL DEFAULT 0,
+                report_json TEXT NOT NULL,
+                diff_summary TEXT NOT NULL DEFAULT '',
+                rendered_markdown TEXT,
+                rendered_pdf_path TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(session_id, ordinal),
+                FOREIGN KEY(session_id) REFERENCES scenario_sessions(session_id) ON DELETE CASCADE,
+                FOREIGN KEY(analysis_job_id) REFERENCES scenario_analysis_jobs(job_id) ON DELETE RESTRICT
+            );
+
+            CREATE TABLE IF NOT EXISTS scenario_share_links (
+                share_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                report_revision_id TEXT,
+                token_hash TEXT NOT NULL UNIQUE,
+                permission TEXT NOT NULL DEFAULT 'view_only',
+                bind_current INTEGER NOT NULL DEFAULT 0,
+                expires_at TEXT,
+                revoked_at TEXT,
+                last_accessed_at TEXT,
+                creator_user_id INTEGER,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES scenario_sessions(session_id) ON DELETE CASCADE,
+                FOREIGN KEY(report_revision_id) REFERENCES scenario_report_revisions(report_revision_id) ON DELETE CASCADE,
+                FOREIGN KEY(creator_user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
             CREATE INDEX IF NOT EXISTS idx_sources_upload ON upload_sources(upload_id);
             CREATE INDEX IF NOT EXISTS idx_security_warnings_upload
@@ -220,6 +314,14 @@ def initialize_database() -> None:
                 ON capability_catalog_jobs(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_capability_catalog_jobs_model_status
                 ON capability_catalog_jobs(model_id, status, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_scenario_sessions_owner
+                ON scenario_sessions(owner_user_id, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_scenario_events_session_sequence
+                ON scenario_events(session_id, sequence);
+            CREATE INDEX IF NOT EXISTS idx_scenario_jobs_session_status
+                ON scenario_analysis_jobs(session_id, status, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_scenario_reports_session_ordinal
+                ON scenario_report_revisions(session_id, ordinal DESC);
             """
         )
         # Migrate databases created by the earlier prototype.
@@ -300,6 +402,16 @@ def initialize_database() -> None:
             SET status = 'failed', stage = 'interrupted',
                 message = 'Catalog organization was interrupted by an ECS restart.',
                 error = 'Catalog organization was interrupted by an ECS restart.',
+                updated_at = ?
+            WHERE status IN ('queued', 'processing')
+            """,
+            (utc_now(),),
+        )
+        connection.execute(
+            """
+            UPDATE scenario_analysis_jobs
+            SET status = 'failed', error_category = 'ecs_restart',
+                internal_error_correlation_id = COALESCE(internal_error_correlation_id, 'restart'),
                 updated_at = ?
             WHERE status IN ('queued', 'processing')
             """,
@@ -2003,3 +2115,510 @@ def get_capability_catalog_source_state(model_id: str) -> dict[str, Any] | None:
             (model_id,),
         ).fetchone()
     return _catalog_source_state_from_row(row) if row is not None else None
+
+
+# ---------------------------------------------------------------------------
+# Persistent scenario clarification and immutable report revisions
+# ---------------------------------------------------------------------------
+
+
+def create_scenario_session(
+    *,
+    session_id: str,
+    owner_user_id: int | None,
+    anonymous_token_hash: str | None,
+    language: str,
+    model_id: str,
+    state: dict[str, Any],
+    change_source: str = "created",
+) -> dict[str, Any]:
+    now = utc_now()
+    state_version = int(state["state_version"])
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO scenario_sessions (
+                session_id, owner_user_id, anonymous_token_hash, status,
+                current_state_version, language, model_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                owner_user_id,
+                anonymous_token_hash,
+                str(state.get("status") or "clarifying"),
+                state_version,
+                language,
+                model_id,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO scenario_state_versions (
+                session_id, state_version, state_json, change_source,
+                actor_user_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                state_version,
+                json.dumps(state, ensure_ascii=False),
+                change_source,
+                owner_user_id,
+                now,
+            ),
+        )
+    session = get_scenario_session(session_id)
+    if session is None:
+        raise RuntimeError("Scenario session was not created")
+    return session
+
+
+def _scenario_session_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["current_state"] = get_scenario_state_version(
+        str(item["session_id"]), int(item["current_state_version"])
+    )
+    return item
+
+
+def get_scenario_session(session_id: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM scenario_sessions WHERE session_id = ? AND deleted_at IS NULL",
+            (session_id,),
+        ).fetchone()
+    return _scenario_session_from_row(row) if row is not None else None
+
+
+def list_user_scenario_sessions(user_id: int, limit: int = 50) -> list[dict[str, Any]]:
+    bounded = max(1, min(int(limit), 100))
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM scenario_sessions
+            WHERE owner_user_id = ? AND deleted_at IS NULL
+            ORDER BY updated_at DESC LIMIT ?
+            """,
+            (user_id, bounded),
+        ).fetchall()
+    return [_scenario_session_from_row(row) for row in rows]
+
+
+def get_scenario_state_version(session_id: str, state_version: int) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT state_json FROM scenario_state_versions
+            WHERE session_id = ? AND state_version = ?
+            """,
+            (session_id, state_version),
+        ).fetchone()
+    if row is None:
+        return None
+    try:
+        value = json.loads(str(row["state_json"]))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def save_scenario_state_version(
+    *,
+    session_id: str,
+    expected_version: int,
+    state: dict[str, Any],
+    change_source: str,
+    actor_user_id: int | None,
+) -> dict[str, Any]:
+    new_version = int(state["state_version"])
+    if new_version != expected_version + 1:
+        raise ValueError("Scenario state version must increment exactly once")
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT current_state_version FROM scenario_sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("Scenario session not found")
+        if int(row["current_state_version"]) != expected_version:
+            raise RuntimeError("Scenario state changed; reload before saving")
+        connection.execute(
+            """
+            INSERT INTO scenario_state_versions (
+                session_id, state_version, state_json, change_source,
+                actor_user_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                new_version,
+                json.dumps(state, ensure_ascii=False),
+                change_source,
+                actor_user_id,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET current_state_version = ?, status = ?, updated_at = ?
+            WHERE session_id = ?
+            """,
+            (new_version, str(state.get("status") or "clarifying"), now, session_id),
+        )
+    session = get_scenario_session(session_id)
+    if session is None:
+        raise RuntimeError("Scenario session disappeared after update")
+    return session
+
+
+def update_scenario_session_status(
+    session_id: str, *, status: str, current_report_revision_id: str | None = None
+) -> None:
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET status = ?,
+                current_report_revision_id = COALESCE(?, current_report_revision_id),
+                updated_at = ?
+            WHERE session_id = ?
+            """,
+            (status, current_report_revision_id, utc_now(), session_id),
+        )
+
+
+def claim_scenario_session(session_id: str, *, user_id: int) -> bool:
+    with _DB_LOCK, _connect() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET owner_user_id = ?, anonymous_token_hash = NULL, updated_at = ?
+            WHERE session_id = ? AND owner_user_id IS NULL AND deleted_at IS NULL
+            """,
+            (user_id, utc_now(), session_id),
+        )
+    return cursor.rowcount == 1
+
+
+def append_scenario_event(
+    *,
+    event_id: str,
+    session_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+    public: bool = False,
+) -> int:
+    with _DB_LOCK, _connect() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO scenario_events (
+                event_id, session_id, event_type, payload_json, public, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                session_id,
+                event_type,
+                json.dumps(payload, ensure_ascii=False),
+                int(public),
+                utc_now(),
+            ),
+        )
+    return int(cursor.lastrowid)
+
+
+def list_scenario_events(
+    session_id: str, *, after_sequence: int = 0, public_only: bool = False, limit: int = 200
+) -> list[dict[str, Any]]:
+    bounded = max(1, min(int(limit), 500))
+    public_clause = "AND public = 1" if public_only else ""
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT * FROM scenario_events
+            WHERE session_id = ? AND sequence > ? {public_clause}
+            ORDER BY sequence ASC LIMIT ?
+            """,
+            (session_id, max(0, int(after_sequence)), bounded),
+        ).fetchall()
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["payload"] = json.loads(str(item.pop("payload_json")))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            item["payload"] = {}
+        item["public"] = bool(item["public"])
+        events.append(item)
+    return events
+
+
+def create_scenario_analysis_job_record(
+    *,
+    job_id: str,
+    session_id: str,
+    state_version: int,
+    catalog_revision: str,
+    evidence_revision: str,
+    pipeline_version: str,
+    language: str,
+    idempotency_key: str,
+) -> tuple[dict[str, Any], bool]:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO scenario_analysis_jobs (
+                job_id, session_id, scenario_state_version, catalog_revision,
+                evidence_revision, pipeline_version, language, idempotency_key,
+                status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+            """,
+            (
+                job_id,
+                session_id,
+                state_version,
+                catalog_revision,
+                evidence_revision,
+                pipeline_version,
+                language,
+                idempotency_key,
+                now,
+                now,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM scenario_analysis_jobs WHERE idempotency_key = ?",
+            (idempotency_key,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Scenario analysis job was not created")
+    return dict(row), cursor.rowcount == 1
+
+
+def update_scenario_analysis_job_record(
+    job_id: str,
+    *,
+    status: str,
+    superseded: bool | None = None,
+    error_category: str | None = None,
+    internal_error_correlation_id: str | None = None,
+) -> None:
+    assignments = ["status = ?", "updated_at = ?"]
+    values: list[Any] = [status, utc_now()]
+    if superseded is not None:
+        assignments.append("superseded = ?")
+        values.append(int(superseded))
+    if error_category is not None:
+        assignments.append("error_category = ?")
+        values.append(error_category)
+    if internal_error_correlation_id is not None:
+        assignments.append("internal_error_correlation_id = ?")
+        values.append(internal_error_correlation_id)
+    values.append(job_id)
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            f"UPDATE scenario_analysis_jobs SET {', '.join(assignments)} WHERE job_id = ?",
+            values,
+        )
+
+
+def get_scenario_analysis_job(job_id: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM scenario_analysis_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def create_scenario_report_revision(
+    *,
+    report_revision_id: str,
+    session_id: str,
+    state_version: int,
+    analysis_job_id: str,
+    status: str,
+    report: dict[str, Any],
+    diff_summary: str = "",
+) -> dict[str, Any]:
+    now = utc_now()
+    make_current = status in {"current", "partial"}
+    with _DB_LOCK, _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        ordinal_row = connection.execute(
+            "SELECT COALESCE(MAX(ordinal), 0) + 1 AS next_ordinal FROM scenario_report_revisions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        ordinal = int(ordinal_row["next_ordinal"])
+        if make_current:
+            connection.execute(
+                """
+                UPDATE scenario_report_revisions
+                SET is_current = 0,
+                    status = CASE WHEN status IN ('current', 'partial') THEN 'superseded' ELSE status END,
+                    updated_at = ?
+                WHERE session_id = ? AND is_current = 1
+                """,
+                (now, session_id),
+            )
+        connection.execute(
+            """
+            INSERT INTO scenario_report_revisions (
+                report_revision_id, session_id, ordinal, scenario_state_version,
+                analysis_job_id, status, is_current, report_json, diff_summary,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                report_revision_id,
+                session_id,
+                ordinal,
+                state_version,
+                analysis_job_id,
+                status,
+                int(make_current),
+                json.dumps(report, ensure_ascii=False),
+                diff_summary,
+                now,
+                now,
+            ),
+        )
+        if make_current:
+            connection.execute(
+                """
+                UPDATE scenario_sessions
+                SET current_report_revision_id = ?, status = 'report_ready', updated_at = ?
+                WHERE session_id = ?
+                """,
+                (report_revision_id, now, session_id),
+            )
+    revision = get_scenario_report_revision(session_id, report_revision_id)
+    if revision is None:
+        raise RuntimeError("Scenario report revision was not created")
+    return revision
+
+
+def _scenario_report_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    try:
+        item["report"] = json.loads(str(item.pop("report_json")))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        item["report"] = {}
+    item["is_current"] = bool(item["is_current"])
+    return item
+
+
+def list_scenario_report_revisions(session_id: str) -> list[dict[str, Any]]:
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM scenario_report_revisions WHERE session_id = ? ORDER BY ordinal DESC",
+            (session_id,),
+        ).fetchall()
+    return [_scenario_report_from_row(row) for row in rows]
+
+
+def get_scenario_report_revision(
+    session_id: str, report_revision_id: str
+) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT * FROM scenario_report_revisions
+            WHERE session_id = ? AND report_revision_id = ?
+            """,
+            (session_id, report_revision_id),
+        ).fetchone()
+    return _scenario_report_from_row(row) if row is not None else None
+
+
+def supersede_current_scenario_report(session_id: str) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            UPDATE scenario_report_revisions
+            SET status = 'superseded', is_current = 0, updated_at = ?
+            WHERE session_id = ? AND is_current = 1
+            """,
+            (now, session_id),
+        )
+        connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET current_report_revision_id = NULL, status = 'refining', updated_at = ?
+            WHERE session_id = ?
+            """,
+            (now, session_id),
+        )
+
+
+def create_scenario_share_link(
+    *,
+    share_id: str,
+    session_id: str,
+    report_revision_id: str | None,
+    token_hash: str,
+    bind_current: bool,
+    expires_at: str | None,
+    creator_user_id: int | None,
+) -> dict[str, Any]:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO scenario_share_links (
+                share_id, session_id, report_revision_id, token_hash, permission,
+                bind_current, expires_at, creator_user_id, created_at
+            ) VALUES (?, ?, ?, ?, 'view_only', ?, ?, ?, ?)
+            """,
+            (
+                share_id,
+                session_id,
+                report_revision_id,
+                token_hash,
+                int(bind_current),
+                expires_at,
+                creator_user_id,
+                now,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM scenario_share_links WHERE share_id = ?", (share_id,)
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Share link was not created")
+    return dict(row)
+
+
+def get_scenario_share_link_by_hash(token_hash: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM scenario_share_links WHERE token_hash = ?", (token_hash,)
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def revoke_scenario_share_link(share_id: str, session_id: str) -> bool:
+    with _DB_LOCK, _connect() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE scenario_share_links SET revoked_at = ?
+            WHERE share_id = ? AND session_id = ? AND revoked_at IS NULL
+            """,
+            (utc_now(), share_id, session_id),
+        )
+    return cursor.rowcount == 1
+
+
+def touch_scenario_share_link(share_id: str) -> None:
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            "UPDATE scenario_share_links SET last_accessed_at = ? WHERE share_id = ?",
+            (utc_now(), share_id),
+        )

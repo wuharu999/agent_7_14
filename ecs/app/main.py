@@ -18,6 +18,7 @@ from ecs.app.routes import (
     capability_match,
     manage,
     pages,
+    scenario_sessions,
     status,
     uploads,
     wecom,
@@ -54,3 +55,4 @@ app.include_router(worker_socket.router)
 app.include_router(wecom.router)
 app.include_router(admin_users.router)
 app.include_router(capability_match.router)
+app.include_router(scenario_sessions.router)

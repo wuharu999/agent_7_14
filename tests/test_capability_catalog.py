@@ -17,10 +17,13 @@ from worker import config as worker_config
 
 def _draft_entry(model: str = "walker_s2") -> dict:
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "capability_id": "CAP-WALK-FORWARD",
         "semantic_key": "walk_forward",
         "name": "walk_forward",
+        "capability_type": "building_block",
+        "verification_profiles": [],
+        "migration_warnings": [],
         "effect": {
             "action": "move",
             "object": "robot base",
@@ -879,7 +882,9 @@ def test_save_and_delete_capability_entry(tmp_path: Path) -> None:
     entry = {
         "capability_id": "CAP-TG-UNITTEST-001",
         "name": "Test Capability",
-        "abstraction_level": "L1_atomic_skill",
+        "capability_type": "building_block",
+        "verification_profiles": [],
+        "migration_warnings": [],
         "effect": {"action": "Test action", "object": "Arm", "observable_result": "Done"},
     }
     saved = save_capability_entry(model_id="tian_gong", entry=entry, base_dir=tmp_path)

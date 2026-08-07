@@ -25,6 +25,9 @@ REQUIRED = {
     "capability_id",
     "semantic_key",
     "name",
+    "capability_type",
+    "verification_profiles",
+    "migration_warnings",
     "effect",
     "scope",
     "trigger",
@@ -78,8 +81,15 @@ def validate_entry(data: Any) -> list[str]:
     if errors:
         return errors
 
-    if data["schema_version"] != "1.0":
-        errors.append("$.schema_version: expected '1.0'")
+    if data["schema_version"] != "2.0":
+        errors.append("$.schema_version: expected '2.0'")
+
+    if data["capability_type"] not in {"building_block", "operational_behavior"}:
+        errors.append("$.capability_type: expected building_block or operational_behavior")
+    if not isinstance(data["verification_profiles"], list):
+        errors.append("$.verification_profiles: expected array")
+    if not isinstance(data["migration_warnings"], list):
+        errors.append("$.migration_warnings: expected array")
 
     capability_id = data["capability_id"]
     if not _nonempty_string(capability_id) or not CAPABILITY_ID.fullmatch(capability_id):

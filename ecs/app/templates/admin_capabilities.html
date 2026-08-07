@@ -118,12 +118,10 @@
           <input type="text" id="form-cap-name" placeholder="e.g. Arm Joint Position Control" required style="width:100%; height:38px; padding:0 12px; border:1px solid #cbd5e1; border-radius:8px;" />
         </div>
         <div>
-          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Abstraction Level (L0-L3)</label>
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:4px;">Capability type</label>
           <select id="form-abstraction" style="width:100%; height:38px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px;">
-            <option value="L0_primitive_driver">L0 Driver (Primitive Driver)</option>
-            <option value="L1_atomic_skill">L1 Skill (Atomic Skill)</option>
-            <option value="L2_composite_skill">L2 Composite (Composite Skill)</option>
-            <option value="L3_scenario_module">L3 Scenario (Scenario Module)</option>
+            <option value="building_block">Building block</option>
+            <option value="operational_behavior">Operational behavior</option>
           </select>
         </div>
       </div>
@@ -205,19 +203,17 @@ let editingCapId=null;
 let pollTimer=null;
 const translations={
   en:{title:'Atomic Capability Administration',subtitle:'Organize repository Wiki evidence into a validated draft capability catalog across all robot models.',admin:'Admin',language:'Language',workbench:'Workbench',organizerTitle:'Atomic capability organizer',organizerHelp:"Every extraction batch receives the complete atomic-capability skill contract for the whole repository. Resume reuses matching checkpoints; Force full re-extraction ignores checkpoints and analyzes every eligible Wiki text file again.",start:'Organize changes',resumeFull:'Resume full scan',forceFull:'Force full re-extraction',refreshChanges:'Refresh file changes',sharedProgress:'Shared organization progress',noRun:'No organization run has been recorded.',recentRuns:'Recent runs',changesTitle:'Raw file changes since the last successful organization',noBaseline:'No successful full-scan baseline exists. The next normal run will automatically scan the whole Wiki.',added:'Added',modified:'Modified',deleted:'Deleted',addedFiles:'Added files',modifiedFiles:'Modified files',deletedFiles:'Deleted files',catalogTitle:'Organized atomic capabilities',catalogHelp:'Draft entries published from generated Wiki evidence across all robot models.',capabilityId:'Capability ID',capabilityName:'Name',abstractionLevel:'Abstraction Level',effect:'Observable effect',evidence:'Evidence',noCapabilities:'No organized capability entries yet.',noCoverage:'No scan coverage has been recorded.',coverageSummary:'{mode}: all {total} Wiki files accounted for — {processed} processed, {excluded} excluded, {blocked} blocked; {entries} atomic entries.',batchSummary:' Deterministic extraction used {batches} batches ({cached} restored from checkpoints) and produced {candidates} candidates.',modeFull:'Full scan (resume)',modeFresh:'Forced full re-extraction',modeIncremental:'Incremental scan',progressSummary:'{done}/{total} batches complete; {cached} restored, {candidates} candidates, {blocked} blocked evidence units, {excluded} excluded evidence units.',blockedFiles:'Blocked evidence files',excludedReasons:'Exclusion reasons',reasonCount:'{count} files — {reason}',gapsTitle:'Aggregated R&D gaps',gapName:'Model / requested capability',occurrences:'Occurrences',domains:'Domains',effort:'Average effort',action:'Action',stubsTitle:'Capability draft stubs',draftId:'Draft ID',model:'Model',requirement:'Requirement',status:'Status',created:'Created',createStub:'Create Capability Draft Stub',noGaps:'No capability gaps have been recorded.',noStubs:'No draft stubs yet.',none:'None',loading:'Loading…',loadingChanges:'Checking Worker source and Wiki state…',changesMeta:'{current} raw files ({baseline} at baseline); {wikiCurrent} Wiki evidence files ({wikiBaseline} at baseline).',stale:'Showing the last saved snapshot because the Worker could not be reached.',confirm:'Organize new Wiki changes for the whole repository? The first run automatically becomes a full scan. All admins will see the same progress.',confirmFull:'Resume a full Wiki scan for the whole repository? Matching checkpoints will be reused.',confirmFresh:'Force a complete re-extraction for the whole repository? Every batch will call the LLM and existing checkpoints will be ignored.',queued:'Organization queued.',failedStart:'Unable to start organization',loaded:'Loaded {count} aggregated gaps.',personWeeks:'person-weeks',jobQueued:'Queued',jobProcessing:'In progress',jobCompleted:'Completed',jobPartial:'Completed with warnings',jobFailed:'Failed',stageQueued:'Waiting for the Worker',stageDispatching:'Sending scan request to Worker',stageBatchPreparing:'Python is reading every selected Wiki evidence file',stageBatchExtracting:'Running deterministic LLM extraction batches',stageBatchReducing:'Merging and deduplicating extracted candidates',stageInventorying:'Reading and classifying generated Wiki evidence',stageRetrying:'Retrying a simpler JSON response',stageValidating:'Validating capability entries',stagePublishing:'Publishing validated drafts',stageCompleted:'Organization completed',stagePartial:'Completed with blocked or unprocessed evidence; baseline not advanced',stageFailed:'Organization failed',jobMeta:'{mode} · {job} · updated {time}',noRecent:'No recent runs recorded.',draftCreating:'Creating an evidence-acquisition draft…',draftReady:'Draft {id} is ready for evidence acquisition.',searchPlaceholder:'🔍 Search capabilities by ID, name, effect, or abstraction...',allStatuses:'All Statuses',noMatchingCapabilities:'No capabilities match your search query.',countSummary:'Showing {shown} of {total} capabilities'},
-  'zh-CN':{title:'原子能力管理',subtitle:'将全量仓库 Wiki 证据整理为经过验证的原子能力草稿目录。',admin:'管理员',language:'界面语言',workbench:'场景可行性工作台',organizerTitle:'原子能力整理器',organizerHelp:'每个提取批次都会针对整个仓库使用完整的原子能力技能契约。“恢复全量扫描”会复用匹配的检查点；“强制全量重新提取”会忽略检查点，重新分析每个符合条件的 Wiki 文本文件。',start:'整理新增变更',resumeFull:'恢复全量扫描',forceFull:'强制全量重新提取',refreshChanges:'刷新文件变更',sharedProgress:'共享整理进度',noRun:'尚无整理记录。',recentRuns:'最近的整理任务',changesTitle:'自上次成功整理以来的原始文件变更',noBaseline:'尚无成功的全量扫描基线；下次普通整理会自动扫描整个 Wiki。',added:'新增',modified:'修改',deleted:'删除',addedFiles:'新增文件',modifiedFiles:'修改文件',deletedFiles:'删除文件',catalogTitle:'已整理的原子能力',catalogHelp:'从整个仓库所有机器人模型的 Wiki 证据中发布的原子能力草稿。',capabilityId:'能力编号',capabilityName:'名称',abstractionLevel:'抽象层级 (L0-L3)',effect:'可观察效果',evidence:'证据数量',noCapabilities:'尚无已整理的原子能力条目。',noCoverage:'尚无扫描覆盖记录。',coverageSummary:'{mode}：共核对 {total} 个 Wiki 文件，其中处理 {processed} 个、排除 {excluded} 个、阻塞 {blocked} 个；原子能力条目 {entries} 个。',batchSummary:' 确定性提取共使用 {batches} 个批次（{cached} 个从检查点恢复），生成 {candidates} 个候选。',modeFull:'全量扫描（恢复）',modeFresh:'强制全量重新提取',modeIncremental:'增量扫描',progressSummary:'已完成 {done}/{total} 个批次；恢复 {cached} 个，候选 {candidates} 个，阻塞证据单元 {blocked} 个，排除证据单元 {excluded} 个。',blockedFiles:'被阻塞的证据文件',excludedReasons:'排除原因',reasonCount:'{count} 个文件 — {reason}',gapsTitle:'汇总的研发能力缺口',gapName:'机器人型号 / 所需能力',occurrences:'出现次数',domains:'领域',effort:'平均投入',action:'操作',stubsTitle:'能力草稿存根',draftId:'草稿编号',model:'型号',requirement:'需求',status:'状态',created:'创建时间',createStub:'创建能力草稿存根',noGaps:'尚未记录能力缺口。',noStubs:'尚无草稿存根。',none:'无',loading:'正在加载…',loadingChanges:'正在 Worker 上检查源文件和 Wiki 状态…',changesMeta:'当前有 {current} 个原始文件（基线 {baseline} 个）；有 {wikiCurrent} 个 Wiki 证据文件（基线 {wikiBaseline} 个）。',stale:'Worker 暂时无法连接，当前显示上次保存的快照。',confirm:'确定整理整个仓库的新增 Wiki 变更吗？首次运行会自动执行全量扫描，所有管理员都会看到同一进度。',confirmFull:'确定恢复整个仓库的全量 Wiki 扫描吗？系统会复用匹配的检查点。',confirmFresh:'确定强制重新提取整个仓库的 Wiki 吗？每个批次都会调用 LLM，并忽略现有检查点。',queued:'整理任务已进入队列。',failedStart:'无法开始整理',loaded:'已加载 {count} 个汇总能力缺口。',personWeeks:'人周',jobQueued:'排队中',jobProcessing:'整理中',jobCompleted:'已完成',jobPartial:'完成但有警告',jobFailed:'失败',stageQueued:'正在等待 Worker',stageDispatching:'发送扫描请求至 Worker',stageBatchPreparing:'Python 正在读取选定的 Wiki 文件',stageBatchExtracting:'运行 LLM 提取批次',stageBatchReducing:'合并提取的候选能力',stageInventorying:'分类生成的 Wiki 证据',stageRetrying:'重试 JSON 响应',stageValidating:'验证能力条目',stagePublishing:'发布已验证的草稿',stageCompleted:'原子能力整理完成',stagePartial:'部分证据未处理',stageFailed:'整理失败',jobMeta:'{mode} · {job} · 更新于 {time}',noRecent:'尚无最近任务。',draftCreating:'创建证据采集草稿…',draftReady:'草稿 {id} 已准备就绪。',searchPlaceholder:'🔍 按编号、名称、效果或抽象层级搜索...',allStatuses:'所有状态',noMatchingCapabilities:'未找到匹配搜索条件的原子能力。',countSummary:'显示 {shown} / 共 {total} 项'}
+  'zh-CN':{title:'原子能力管理',subtitle:'将全量仓库 Wiki 证据整理为经过验证的原子能力草稿目录。',admin:'管理员',language:'界面语言',workbench:'场景可行性工作台',organizerTitle:'原子能力整理器',organizerHelp:'每个提取批次都会针对整个仓库使用完整的原子能力技能契约。“恢复全量扫描”会复用匹配的检查点；“强制全量重新提取”会忽略检查点，重新分析每个符合条件的 Wiki 文本文件。',start:'整理新增变更',resumeFull:'恢复全量扫描',forceFull:'强制全量重新提取',refreshChanges:'刷新文件变更',sharedProgress:'共享整理进度',noRun:'尚无整理记录。',recentRuns:'最近的整理任务',changesTitle:'自上次成功整理以来的原始文件变更',noBaseline:'尚无成功的全量扫描基线；下次普通整理会自动扫描整个 Wiki。',added:'新增',modified:'修改',deleted:'删除',addedFiles:'新增文件',modifiedFiles:'修改文件',deletedFiles:'删除',catalogTitle:'已整理的原子能力',catalogHelp:'从整个仓库所有机器人模型的 Wiki 证据中发布的原子能力草稿。',capabilityId:'能力编号',capabilityName:'名称',abstractionLevel:'能力类型',effect:'可观察效果',evidence:'证据数量',noCapabilities:'尚无已整理的原子能力条目。',noCoverage:'尚无扫描覆盖记录。',coverageSummary:'{mode}：共核对 {total} 个 Wiki 文件，其中处理 {processed} 个、排除 {excluded} 个、阻塞 {blocked} 个；原子能力条目 {entries} 个。',batchSummary:' 确定性提取共使用 {batches} 个批次（{cached} 个从检查点恢复），生成 {candidates} 个候选。',modeFull:'全量扫描（恢复）',modeFresh:'强制全量重新提取',modeIncremental:'增量扫描',progressSummary:'已完成 {done}/{total} 个批次；恢复 {cached} 个，候选 {candidates} 个，阻塞证据单元 {blocked} 个，排除证据单元 {excluded} 个。',blockedFiles:'被阻塞的证据文件',excludedReasons:'排除原因',reasonCount:'{count} 个文件 — {reason}',gapsTitle:'汇总的研发能力缺口',gapName:'机器人型号 / 所需能力',occurrences:'出现次数',domains:'领域',effort:'平均投入',action:'操作',stubsTitle:'能力草稿存根',draftId:'草稿编号',model:'型号',requirement:'需求',status:'状态',created:'创建时间',createStub:'创建能力草稿存根',noGaps:'尚未记录能力缺口。',noStubs:'尚无草稿存根。',none:'无',loading:'正在加载…',loadingChanges:'正在 Worker 上检查源文件和 Wiki 状态…',changesMeta:'当前有 {current} 个原始文件（基线 {baseline} 个）；有 {wikiCurrent} 个 Wiki 证据文件（基线 {wikiBaseline} 个）。',stale:'Worker 暂时无法连接，当前显示上次保存的快照。',confirm:'确定整理整个仓库的新增 Wiki 变更吗？首次运行会自动执行全量扫描，所有管理员都会看到同一进度。',confirmFull:'确定恢复整个仓库的全量 Wiki 扫描吗？系统会复用匹配的检查点。',confirmFresh:'确定强制重新提取整个仓库的 Wiki 吗？每个批次都会调用 LLM，并忽略现有检查点。',queued:'整理任务已进入队列。',failedStart:'无法开始整理',loaded:'已加载 {count} 个汇总能力缺口。',personWeeks:'人周',jobQueued:'排队中',jobProcessing:'整理中',jobCompleted:'已完成',jobPartial:'完成但有警告',jobFailed:'失败',stageQueued:'正在等待 Worker',stageDispatching:'发送扫描请求至 Worker',stageBatchPreparing:'Python 正在读取选定的 Wiki 文件',stageBatchExtracting:'运行 LLM 提取批次',stageBatchReducing:'合并提取的候选能力',stageInventorying:'分类生成的 Wiki 证据',stageRetrying:'重试 JSON 响应',stageValidating:'验证能力条目',stagePublishing:'发布已验证的草稿',stageCompleted:'原子能力整理完成',stagePartial:'部分证据未处理',stageFailed:'整理失败',jobMeta:'{mode} · {job} · 更新于 {time}',noRecent:'尚无最近任务。',draftCreating:'创建证据采集草稿…',draftReady:'草稿 {id} 已准备就绪。',searchPlaceholder:'🔍 按编号、名称、效果或能力类型搜索...',allStatuses:'所有状态',noMatchingCapabilities:'未找到匹配搜索条件的原子能力。',countSummary:'显示 {shown} / 共 {total} 项'}
 };
 function tr(key,vars={}){let value=(translations[uiLanguage.value]||translations.en)[key]||translations.en[key]||key;Object.entries(vars).forEach(([name,replacement])=>{value=value.replace(`{${name}}`,String(replacement))});return value}
 function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node}
 function cell(text){return el('td','',text)}
 function renderAbstractionBadge(level){
-  const lvl=String(level||'L0_primitive_driver');
+  const lvl=String(level||'unclassified');
   const span=el('span','badge');
   span.style.fontWeight='800';
-  if(lvl.startsWith('L0')){span.style.background='#e0f2fe';span.style.color='#0369a1';span.textContent='L0 Driver'}
-  else if(lvl.startsWith('L1')){span.style.background='#dcfce7';span.style.color='#15803d';span.textContent='L1 Skill'}
-  else if(lvl.startsWith('L2')){span.style.background='#fef3c7';span.style.color='#b45309';span.textContent='L2 Composite'}
-  else if(lvl.startsWith('L3')){span.style.background='#f3e8ff';span.style.color='#6b21a8';span.textContent='L3 Scenario'}
+  if(lvl==='building_block'){span.style.background='#e0f2fe';span.style.color='#0369a1';span.textContent='Building block'}
+  else if(lvl==='operational_behavior'){span.style.background='#dcfce7';span.style.color='#15803d';span.textContent='Operational behavior'}
   else{span.style.background='#f1f5f9';span.style.color='#475569';span.textContent=lvl}
   return span;
 }
@@ -250,7 +246,7 @@ function openCapabilityModal(entry=null){
     document.getElementById('form-cap-id').value=entry.capability_id||'';
     document.getElementById('form-cap-id').readOnly=true;
     document.getElementById('form-cap-name').value=entry.name||'';
-    document.getElementById('form-abstraction').value=entry.abstraction_level||'L0_primitive_driver';
+    document.getElementById('form-abstraction').value=entry.capability_type||'building_block';
     document.getElementById('form-status').value=entry.lifecycle_status||entry.lifecycle?.status||'draft';
     document.getElementById('form-vendor').value=entry.scope?.vendor||'UBTECH';
     
@@ -319,7 +315,9 @@ async function handleSaveCapability(event){
     capability_id: capId,
     name: name,
     semantic_key: name.toLowerCase().replace(/[^a-z0-9]+/g,'_'),
-    abstraction_level: abstraction,
+    capability_type: abstraction,
+    verification_profiles: [],
+    migration_warnings: [],
     lifecycle: { status: status, updated_at: new Date().toISOString() },
     scope: { model_id: modelId, vendor: vendor, environment: 'all', resolution_status: 'resolved' },
     effect: { action: action, object: object, observable_result: result },
@@ -385,7 +383,7 @@ function filterAndRenderCatalog(){
     const id=(entry.capability_id||'').toLowerCase();
     const name=(entry.name||entry.semantic_key||'').toLowerCase();
     const effect=(typeof entry.effect==='object'?((entry.effect.action||'')+' '+(entry.effect.object||'')+' '+(entry.effect.observable_result||'')):String(entry.effect||'')).toLowerCase();
-    const abs=(entry.abstraction_level||'').toLowerCase();
+    const abs=(entry.capability_type||'').toLowerCase();
     return id.includes(query)||name.includes(query)||effect.includes(query)||abs.includes(query);
   });
 
@@ -437,7 +435,7 @@ function filterAndRenderCatalog(){
     statusTd.append(select);
     
     const absTd=el('td');
-    absTd.append(renderAbstractionBadge(entry.abstraction_level));
+    absTd.append(renderAbstractionBadge(entry.capability_type));
     
     const actionsTd=el('td');
     actionsTd.style.textAlign='right';
@@ -480,30 +478,33 @@ function filterAndRenderCatalog(){
       drawerTd.style.borderBottom='2px solid #e2e8f0';
       
       const drawerContent=el('div');
-      drawerContent.innerHTML=`
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-          <div>
-            <h4 style="margin:0 0 8px 0; font-size:14px; color:#1e293b;">📌 Scope & Hardware Context</h4>
-            <ul style="margin:0; padding-left:18px; font-size:13px; color:#475569; line-height:1.6;">
-              <li><strong>Model ID:</strong> ${entry.scope?.model_id || entry.model_id || 'tian_gong'}</li>
-              <li><strong>Vendor:</strong> ${entry.scope?.vendor || 'UBTECH'}</li>
-              <li><strong>Environment:</strong> ${entry.scope?.environment || 'all'}</li>
-              <li><strong>Resolution:</strong> ${entry.scope?.resolution_status || 'resolved'}</li>
-            </ul>
-            <h4 style="margin:12px 0 8px 0; font-size:14px; color:#1e293b;">⚡ Trigger & Control Interfaces</h4>
-            <ul style="margin:0; padding-left:18px; font-size:13px; color:#475569; line-height:1.6;">
-              <li><strong>Trigger:</strong> ${entry.trigger || 'ROS2 message receipt'}</li>
-              <li><strong>Interfaces:</strong> ${JSON.stringify(entry.interfaces || [{type:'ros2_topic', reference:'/cmd_vel'}])}</li>
-            </ul>
-          </div>
-          <div>
-            <h4 style="margin:0 0 8px 0; font-size:14px; color:#1e293b;">📚 Evidence Ledger Citations</h4>
-            <div style="font-size:12px; color:#475569;">
-              ${(entry.evidence || []).map(ev=>`<div style="background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:8px; margin-bottom:6px;"><strong>[${ev.evidence_level||'E2'}] ${ev.source_id||'wiki'} (${ev.locator||'L1'}):</strong> ${ev.claim||ev.excerpt||'Cited evidence'}</div>`).join('') || '<div class="muted">No explicit evidence citations recorded.</div>'}
-            </div>
-          </div>
-        </div>
-      `;
+      const grid=el('div');
+      grid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:20px';
+      const context=el('div'), evidenceColumn=el('div');
+      const heading=(text,top='0')=>{const node=el('h4','',text);node.style.cssText=`margin:${top} 0 8px 0;font-size:14px;color:#1e293b`;return node};
+      const detailList=(items)=>{const list=el('ul');list.style.cssText='margin:0;padding-left:18px;font-size:13px;color:#475569;line-height:1.6';for(const [label,value] of items){const li=el('li');const strong=el('strong','',`${label}: `);li.append(strong,document.createTextNode(String(value)));list.append(li)}return list};
+      context.append(
+        heading('📌 Scope & Hardware Context'),
+        detailList([
+          ['Model ID',entry.scope?.model_id||entry.model_id||'tian_gong'],
+          ['Vendor',entry.scope?.vendor||'UBTECH'],
+          ['Environment',entry.scope?.environment||'all'],
+          ['Resolution',entry.scope?.resolution_status||'resolved']
+        ]),
+        heading('⚡ Trigger & Control Interfaces','12px'),
+        detailList([
+          ['Trigger',entry.trigger||'ROS2 message receipt'],
+          ['Interfaces',JSON.stringify(entry.interfaces||[{type:'ros2_topic',reference:'/cmd_vel'}])]
+        ])
+      );
+      evidenceColumn.append(heading('📚 Evidence Ledger Citations'));
+      const evidenceHost=el('div');
+      evidenceHost.style.cssText='font-size:12px;color:#475569';
+      for(const record of entry.evidence||[]){const card=el('div');card.style.cssText='background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px;margin-bottom:6px';card.textContent=`[${record.evidence_level||'E2'}] ${record.source_id||'wiki'} (${record.locator||'locator'}): ${record.claim||record.excerpt||'Cited evidence'}`;evidenceHost.append(card)}
+      if(!evidenceHost.children.length)evidenceHost.append(el('div','muted','No explicit evidence citations recorded.'));
+      evidenceColumn.append(evidenceHost);
+      grid.append(context,evidenceColumn);
+      drawerContent.append(grid);
       drawerTd.append(drawerContent);
       drawerRow.append(drawerTd);
       host.append(drawerRow);

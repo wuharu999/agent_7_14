@@ -8,6 +8,9 @@
     "capability_id",
     "semantic_key",
     "name",
+    "capability_type",
+    "verification_profiles",
+    "migration_warnings",
     "effect",
     "scope",
     "trigger",
@@ -28,13 +31,31 @@
     "lifecycle"
   ],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "const": "2.0" },
     "capability_id": { "type": "string", "pattern": "^CAP-[A-Z0-9-]+$" },
     "semantic_key": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
     },
     "name": { "type": "string", "minLength": 3 },
+    "capability_type": { "enum": ["building_block", "operational_behavior"] },
+    "legacy_abstraction_level": { "type": ["string", "null"] },
+    "verification_profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["workspace_type", "lighting", "terrain_weather", "workspace_dynamics", "object_payload_boundary", "duty_cycle", "versions", "test_level", "sample_size", "passed_count", "measured_values", "evidence_locator", "support_state", "limitations", "unknowns"],
+        "properties": {
+          "workspace_type": {"type": "string"}, "lighting": {"type": "string"}, "terrain_weather": {"type": "string"}, "workspace_dynamics": {"type": "string"},
+          "object_payload_boundary": {"type": "string"}, "duty_cycle": {"type": "string"}, "versions": {"type": "object"},
+          "test_level": {"enum": ["simulation", "bench", "pilot", "field"]}, "sample_size": {"type": "integer", "minimum": 0}, "passed_count": {"type": "integer", "minimum": 0},
+          "measured_values": {"type": "array", "items": {"type": "object"}}, "evidence_locator": {"type": "string"},
+          "support_state": {"enum": ["supported", "conditional", "unproven", "not_supported"]}, "limitations": {"type": "array", "items": {"type": "string"}}, "unknowns": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "migration_warnings": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "effect": {
       "type": "object",
       "required": ["action", "object", "observable_result"],

@@ -66,3 +66,7 @@ Rank viable options from least invasive:
 9. replace the platform or reject the scenario
 
 Every option must state evidence basis, prerequisites, covered and residual constraints, effort band, safety risk, reversible next experiment, and exit criterion.
+
+## Capability-type evidence gate
+
+A `building_block` may satisfy a callable engineering interface requirement. It cannot by itself prove an end-to-end customer behavior. An `operational_behavior` satisfies a deployment requirement only inside an evidenced, matching operating envelope. When building blocks exist but operational evidence does not, use `prototype_required` or `currently_unproven`; do not invent a fixed person-week estimate.

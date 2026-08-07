@@ -266,6 +266,8 @@ one bounded analysis worker and eight queued analyses:
 ```env
 CAPABILITY_MATCH_WORKERS=1
 CAPABILITY_MATCH_QUEUE_MAX=8
+CLARIFICATION_WORKERS=1
+CLARIFICATION_QUEUE_MAX=16
 ```
 
 Deterministic capability extraction uses these bounded defaults. The ECS command

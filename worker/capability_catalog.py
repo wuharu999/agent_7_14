@@ -34,6 +34,7 @@ from worker.capability_batch import (
     save_checkpoint,
     _sanitize_after_entry,
 )
+from shared.capability_types import migrate_legacy_capability
 from worker.claude_process import run_claude_process
 from worker.config import (
     CAPABILITY_CATALOG_BATCH_BYTES,
@@ -281,12 +282,12 @@ def _catalog_entries(target: Path) -> list[dict[str, Any]]:
             entry.get("lifecycle") if isinstance(entry.get("lifecycle"), dict) else {}
         )
         evidence = entry.get("evidence") if isinstance(entry.get("evidence"), list) else []
-        item = dict(entry)
+        item = migrate_legacy_capability(entry)
         item.update({
             "capability_id": str(entry.get("capability_id") or path.stem),
             "name": str(entry.get("name") or ""),
             "semantic_key": str(entry.get("semantic_key") or ""),
-            "abstraction_level": str(entry.get("abstraction_level") or entry.get("abstraction") or "L0_primitive_driver"),
+            "capability_type": str(item.get("capability_type") or "unclassified"),
             "effect": " ".join(
                 str(effect.get(key) or "").strip()
                 for key in ("action", "object", "observable_result")

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/analysis-progress-event.schema.json",
+  "title": "Approved Scenario Analysis Progress Event",
+  "type": "object",
+  "required": ["event_id", "session_id", "analysis_job_id", "scenario_state_version", "type", "stage", "status", "message", "approved_facts", "created_at"],
+  "properties": {
+    "event_id": {"type": "string", "pattern": "^EVT-[A-Z0-9]+$"},
+    "session_id": {"type": "string", "pattern": "^SCNSESSION-[A-Z0-9]+$"},
+    "analysis_job_id": {"type": "string", "pattern": "^JOB-[A-Z0-9]+$"},
+    "scenario_state_version": {"type": "integer", "minimum": 1},
+    "type": {"const": "stage_summary"},
+    "stage": {"enum": ["workflow_understanding", "requirement_extraction", "evidence_retrieval", "envelope_comparison", "gap_evaluation", "recommendation_building", "report_generation"]},
+    "status": {"enum": ["queued", "running", "completed", "failed"]},
+    "message": {"type": "string", "maxLength": 240},
+    "approved_facts": {"type": "object", "additionalProperties": {"type": ["string", "integer"]}},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

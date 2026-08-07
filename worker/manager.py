@@ -18,6 +18,7 @@ from worker.claude_runner import (
     run_claude_stream,
 )
 from worker.capability_matcher import analyze_scenario, grill_scenario
+from worker.scenario_clarification import clarify_scenario
 from worker.capability_catalog import (
     inspect_capability_source_changes,
     organize_capability_catalog,
@@ -34,6 +35,8 @@ from worker.config import (
     AUTHORING_WORKERS,
     CAPABILITY_MATCH_QUEUE_MAX,
     CAPABILITY_MATCH_WORKERS,
+    CLARIFICATION_QUEUE_MAX,
+    CLARIFICATION_WORKERS,
     CAPABILITY_CATALOG_QUEUE_MAX,
     CAPABILITY_CATALOG_WORKERS,
     DOWNLOAD_WORKERS,
@@ -87,6 +90,9 @@ class WorkerManager:
         self.capability_match_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
             maxsize=CAPABILITY_MATCH_QUEUE_MAX
         )
+        self.clarification_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+            maxsize=CLARIFICATION_QUEUE_MAX
+        )
         self.capability_catalog_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
             maxsize=CAPABILITY_CATALOG_QUEUE_MAX
         )
@@ -100,6 +106,7 @@ class WorkerManager:
         self.active_command_ids: set[str] = set()
         self.active_authoring_ids: set[str] = set()
         self.active_capability_match_ids: set[str] = set()
+        self.active_clarification_ids: set[str] = set()
         self.active_capability_catalog_ids: set[str] = set()
         self.monitor_tasks: set[asyncio.Task[None]] = set()
         self.wiki_snapshot_refresh = asyncio.Event()
@@ -148,6 +155,13 @@ class WorkerManager:
                 name=f"capability-match-{index + 1}",
             )
             for index in range(CAPABILITY_MATCH_WORKERS)
+        )
+        tasks.extend(
+            asyncio.create_task(
+                self.clarification_worker(index + 1),
+                name=f"scenario-clarification-{index + 1}",
+            )
+            for index in range(CLARIFICATION_WORKERS)
         )
         tasks.extend(
             asyncio.create_task(
@@ -257,6 +271,25 @@ class WorkerManager:
                 conversation_id,
                 lane + 1,
             )
+            return
+
+        if message_type == "grill_scenario":
+            command_id = str(data.get("id") or "")
+            if not command_id or command_id in self.active_clarification_ids:
+                return
+            self.active_clarification_ids.add(command_id)
+            try:
+                self.clarification_queue.put_nowait(data)
+            except asyncio.QueueFull:
+                self.active_clarification_ids.discard(command_id)
+                await self.emit(
+                    {
+                        "type": "grill_scenario_result",
+                        "id": command_id,
+                        "status": "failed",
+                        "error": "Scenario clarification queue is full; try again shortly",
+                    }
+                )
             return
 
         if message_type == "analyze_scenario":
@@ -570,46 +603,28 @@ class WorkerManager:
         while True:
             data = await self.capability_match_queue.get()
             command_id = str(data.get("id") or "")
-            msg_type = str(data.get("type") or "analyze_scenario")
             try:
-                log.info("Capability match worker %d handling %s (%s)", worker_number, command_id, msg_type)
-                if msg_type == "grill_scenario":
-                    result = await grill_scenario(
-                        str(data.get("scenario_text") or ""),
-                        model_id=str(data.get("model_id") or ""),
-                        language=str(data.get("language") or "en"),
-                        history=data.get("history") if isinstance(data.get("history"), list) else None,
-                        accumulated_specs=data.get("accumulated_specs") if isinstance(data.get("accumulated_specs"), dict) else None,
-                    )
-                    await self.emit(
-                        {
-                            "type": "grill_scenario_result",
-                            "id": command_id,
-                            **result,
-                        }
-                    )
-                else:
-                    result = await analyze_scenario(
-                        str(data.get("scenario_text") or ""),
-                        model_id=str(data.get("model_id") or ""),
-                        language=str(data.get("language") or "en"),
-                    )
-                    await self.emit(
-                        {
-                            "type": "capability_match_result",
-                            "id": command_id,
-                            "status": "ok",
-                            "result": result,
-                        }
-                    )
+                log.info("Capability match worker %d handling %s", worker_number, command_id)
+                result = await analyze_scenario(
+                    str(data.get("scenario_text") or ""),
+                    model_id=str(data.get("model_id") or ""),
+                    language=str(data.get("language") or "en"),
+                )
+                await self.emit(
+                    {
+                        "type": "capability_match_result",
+                        "id": command_id,
+                        "status": "ok",
+                        "result": result,
+                    }
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("Scenario analysis command failed for %s", command_id)
-                res_type = "grill_scenario_result" if msg_type == "grill_scenario" else "capability_match_result"
                 await self.emit(
                     {
-                        "type": res_type,
+                        "type": "capability_match_result",
                         "id": command_id,
                         "status": "failed",
                         "error": "Scenario analysis operation failed; see Worker logs",
@@ -618,6 +633,47 @@ class WorkerManager:
             finally:
                 self.active_capability_match_ids.discard(command_id)
                 self.capability_match_queue.task_done()
+
+    async def clarification_worker(self, worker_number: int) -> None:
+        while True:
+            data = await self.clarification_queue.get()
+            command_id = str(data.get("id") or "")
+            try:
+                log.info("Scenario clarification worker %d handling %s", worker_number, command_id)
+                scenario_state = data.get("scenario_state")
+                if isinstance(scenario_state, dict):
+                    result = await clarify_scenario(
+                        scenario_state,
+                        model_id=str(data.get("model_id") or ""),
+                        language=str(data.get("language") or "en"),
+                        user_message=str(data.get("user_message") or ""),
+                    )
+                else:
+                    result = await grill_scenario(
+                        str(data.get("scenario_text") or ""),
+                        model_id=str(data.get("model_id") or ""),
+                        language=str(data.get("language") or "en"),
+                        history=data.get("history") if isinstance(data.get("history"), list) else None,
+                        accumulated_specs=data.get("accumulated_specs") if isinstance(data.get("accumulated_specs"), dict) else None,
+                    )
+                await self.emit(
+                    {"type": "grill_scenario_result", "id": command_id, **result}
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("Scenario clarification command failed for %s", command_id)
+                await self.emit(
+                    {
+                        "type": "grill_scenario_result",
+                        "id": command_id,
+                        "status": "failed",
+                        "error": "Scenario clarification failed; see Worker logs",
+                    }
+                )
+            finally:
+                self.active_clarification_ids.discard(command_id)
+                self.clarification_queue.task_done()
 
     async def capability_catalog_worker(self, worker_number: int) -> None:
         while True:

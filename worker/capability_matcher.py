@@ -7,18 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from shared.team_names import normalize_team_name
+from shared.capability_types import (
+    CAPABILITY_TYPES,
+    migrate_legacy_capability,
+    required_capability_type,
+)
 from worker.config import get_team_config
 from worker.claude_process import run_claude_process
 
 log = logging.getLogger("worker.capability_matcher")
 
-ABSTRACTION_LEVELS = (
-    "L0_primitive_driver",
-    "L1_atomic_skill",
-    "L2_composite_skill",
-    "L3_scenario_module",
-)
-R_AND_D_CLASSIFICATION = "R&D Gap (Composite Skill Missing)"
+R_AND_D_CLASSIFICATION = "Operational behavior evidence required"
 
 _STRING_ARRAY = {"type": "array", "items": {"type": "string"}}
 _GATE_SCHEMA = {
@@ -87,7 +86,7 @@ _COMPACT_RESPONSE_SCHEMA: dict[str, Any] = {
                 "required": [
                     "requirement_id",
                     "name",
-                    "required_abstraction_level",
+                    "required_capability_type",
                     "effect",
                     "acceptance_criteria",
                     "constraints",
@@ -96,9 +95,7 @@ _COMPACT_RESPONSE_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "requirement_id": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
                     "name": {"type": "string"},
-                    "required_abstraction_level": {
-                        "enum": list(ABSTRACTION_LEVELS[1:])
-                    },
+                    "required_capability_type": {"enum": sorted(CAPABILITY_TYPES)},
                     "effect": {"type": "string"},
                     "acceptance_criteria": _STRING_ARRAY,
                     "constraints": _STRING_ARRAY,
@@ -117,20 +114,24 @@ _COMPACT_RESPONSE_SCHEMA: dict[str, Any] = {
                 "required": [
                     "capability_id",
                     "name",
-                    "abstraction_level",
+                    "capability_type",
                     "effect",
                     "status",
                     "evidence_level",
                     "evidence_refs",
+                    "verification_profiles",
+                    "migration_warnings",
                 ],
                 "properties": {
                     "capability_id": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"},
                     "name": {"type": "string"},
-                    "abstraction_level": {"enum": list(ABSTRACTION_LEVELS)},
+                    "capability_type": {"enum": sorted(CAPABILITY_TYPES)},
                     "effect": {"type": "string"},
                     "status": {"enum": ["draft", "reviewed", "verified", "deprecated"]},
                     "evidence_level": {"enum": ["E1", "E2", "E3", "E4", "E5"]},
                     "evidence_refs": _STRING_ARRAY,
+                    "verification_profiles": {"type": "array", "items": {"type": "object"}},
+                    "migration_warnings": _STRING_ARRAY,
                 },
                 "additionalProperties": False,
             },
@@ -359,14 +360,22 @@ def _nonnegative_number(value: Any) -> float:
         return 0.0
 
 
-def enforce_abstraction_hard_gate(payload: dict[str, Any]) -> dict[str, Any]:
-    """Apply the non-negotiable L0 gate after the model-generated assessment."""
+def enforce_evidence_contract_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    """Require end-to-end behavior evidence without inventing fixed R&D effort."""
     result = deepcopy(payload)
     requirements = {
         str(item.get("requirement_id") or ""): item
         for item in result.get("atomic_requirements", [])
         if isinstance(item, dict)
     }
+    migrated_capabilities = [
+        migrate_legacy_capability(item)
+        for item in result.get("capabilities", [])
+        if isinstance(item, dict)
+    ]
+    result["capabilities"] = [
+        item for item in migrated_capabilities if item.get("record_type") != "solution_artifact"
+    ]
     capabilities = {
         str(item.get("capability_id") or ""): item
         for item in result.get("capabilities", [])
@@ -379,27 +388,43 @@ def enforce_abstraction_hard_gate(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(match, dict):
             continue
         requirement = requirements.get(str(match.get("requirement_id") or ""), {})
-        required_level = str(requirement.get("required_abstraction_level") or "L1_atomic_skill")
+        required_type = required_capability_type(requirement)
+        requirement["required_capability_type"] = required_type
+        legacy_required = requirement.pop("required_abstraction_level", None)
+        if legacy_required:
+            requirement["legacy_required_abstraction_level"] = legacy_required
         selected = [
             capabilities[capability_id]
             for capability_id in match.get("capability_ids", [])
             if capability_id in capabilities
         ]
-        only_l0 = bool(selected) and all(
-            item.get("abstraction_level") == "L0_primitive_driver" for item in selected
+        only_building_blocks = bool(selected) and all(
+            item.get("capability_type") == "building_block" for item in selected
         )
-        if required_level == "L0_primitive_driver" or not only_l0:
+        operational_profiles = [
+            profile
+            for item in selected
+            if item.get("capability_type") == "operational_behavior"
+            for profile in item.get("verification_profiles", [])
+            if isinstance(profile, dict)
+            and profile.get("support_state") in {"supported", "conditional"}
+        ]
+        missing_operational_evidence = (
+            required_type == "operational_behavior"
+            and (only_building_blocks or not operational_profiles)
+        )
+        if not missing_operational_evidence:
             continue
 
         has_hard_gap = True
         gate = {
-            "name": "Abstraction layering hard gate",
-            "category": "composition",
-            "status": "fail",
+            "name": "Operational evidence and contract gate",
+            "category": "evidence",
+            "status": "unknown",
             "hard": True,
-            "requirement_value": required_level,
+            "requirement_value": required_type,
             "capability_value": [
-                str(item.get("abstraction_level") or "unknown") for item in selected
+                str(item.get("capability_type") or "unclassified") for item in selected
             ],
             "margin": None,
             "evidence_refs": [
@@ -413,25 +438,19 @@ def enforce_abstraction_hard_gate(payload: dict[str, Any]) -> dict[str, Any]:
             existing
             for existing in match.setdefault("gates", [])
             if not isinstance(existing, dict)
-            or existing.get("name") != "Abstraction layering hard gate"
+            or existing.get("name") != "Operational evidence and contract gate"
         ]
         gates.append(gate)
         match["gates"] = gates
-        match["match_state"] = "not_satisfied"
-        match["confidence"] = min(_nonnegative_number(match.get("confidence")), 0.25)
+        match["match_state"] = "unproven"
+        match["confidence"] = min(_nonnegative_number(match.get("confidence")), 0.4)
         gap_text = R_AND_D_CLASSIFICATION
         gaps = [str(value) for value in match.setdefault("gaps", [])]
         if gap_text not in gaps:
             gaps.append(gap_text)
         match["gaps"] = gaps
-        match["next_action"] = "Engineer and validate an L1/L2 composite skill before deployment."
-        if not isinstance(match.get("rd_gap"), dict):
-            match["rd_gap"] = {
-                "classification": R_AND_D_CLASSIFICATION,
-                "domains": ["Composite Skill Engineering"],
-                "person_weeks": 2.0,
-                "risk_factors": ["No evidence-backed composite skill currently exists"],
-            }
+        match["next_action"] = "Build or identify an operational behavior and validate it inside the required operating envelope."
+        match["rd_gap"] = None
 
     rd_gaps = [
         match["rd_gap"]
@@ -463,6 +482,11 @@ def enforce_abstraction_hard_gate(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def enforce_abstraction_hard_gate(payload: dict[str, Any]) -> dict[str, Any]:
+    """Backward-compatible name for callers during rolling upgrades."""
+    return enforce_evidence_contract_gate(payload)
+
+
 def load_model_capability_catalog(model_id: str) -> list[dict[str, Any]]:
     tc = get_team_config(model_id)
     base_target = tc.base_dir / "wiki" / "capabilities"
@@ -481,7 +505,9 @@ def load_model_capability_catalog(model_id: str) -> list[dict[str, Any]]:
                         cap_id = str(data.get("capability_id") or path.stem)
                         if cap_id not in seen_ids:
                             seen_ids.add(cap_id)
-                            entries.append(data)
+                            migrated = migrate_legacy_capability(data)
+                            if migrated.get("record_type") != "solution_artifact":
+                                entries.append(migrated)
                 except Exception:
                     continue
     return entries
@@ -512,10 +538,11 @@ async def analyze_scenario(
         "use filesystem tools (Read/Grep/Glob) to search deep wiki evidence files ('wiki/') for uncataloged "
         "evidence. If verified in raw wiki files, cite the evidence; if missing after checking both catalog and wiki, "
         "classify as 'R&D Gap (Composite Skill Missing)'.\n\n"
-        "Respect pre-assigned abstraction levels L0-L3. L0 driver/API primitives NEVER satisfy L1/L2/L3 requirements. "
-        "If only L0 support exists, classify as 'R&D Gap (Composite Skill Missing)'. "
-        "For each R&D gap, estimate person-weeks using technical domains such as Vision AI, "
-        "Precision Force Control, and Bi-manual Coordination, and state concrete risks. Return only "
+        "Use exactly two capability types: building_block for a callable engineering primitive and "
+        "operational_behavior for an independently testable end-to-end behavior. A building block may satisfy "
+        "an interface requirement but cannot prove a customer behavior. Operational behavior support is scoped "
+        "to an evidenced operating envelope. Missing operational evidence means prototype_required or "
+        "currently_unproven; never invent a fixed effort estimate. Return only "
         "structured output in the requested schema.\n\n"
         "ENGINEER SCENARIO REQUIREMENTS SKILL:\n"
         f"{_skill_text('engineer-scenario-requirements')}\n\n"
@@ -538,7 +565,7 @@ async def analyze_scenario(
         timeout=450,
     )
     payload = _structured_payload(raw)
-    return enforce_abstraction_hard_gate(payload)
+    return enforce_evidence_contract_gate(payload)
 
 
 _MULTI_TURN_GRILL_SCHEMA: dict[str, Any] = {
@@ -574,6 +601,55 @@ async def grill_scenario(
     accumulated_specs: dict[str, str] | None = None,
     base_dir: Path | str | None = None,
 ) -> dict[str, Any]:
+    # Rolling-upgrade adapter for an older ECS that still sends the legacy
+    # command. New ECS sessions include a validated ScenarioState and are
+    # handled directly by WorkerManager. Keep the old prompt below as dormant
+    # rollback code until the real split ECS/Worker pair is validated.
+    from shared.scenario_state import initial_state
+    from worker.scenario_clarification import clarify_scenario
+
+    temporary_id = "SCNSESSION-LEGACYADAPTER"
+    temporary_state = initial_state(temporary_id, scenario_text)
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        semantic_key = str(item.get("semantic_key") or item.get("id") or "").strip()
+        if not semantic_key:
+            continue
+        temporary_state["question_history"].append(
+            {
+                "question_id": str(item.get("question_id") or item.get("id") or semantic_key),
+                "semantic_key": semantic_key,
+                "question": str(item.get("question") or ""),
+                "answer": str(item.get("answer") or item.get("value") or ""),
+                "answer_mode": "custom",
+                "resolution": "resolved",
+                "state_version": 1,
+            }
+        )
+    result = await clarify_scenario(
+        temporary_state,
+        model_id=model_id,
+        language=language,
+        user_message=json.dumps(accumulated_specs or {}, ensure_ascii=False),
+    )
+    questions = [
+        {
+            "id": str(item.get("semantic_key") or item.get("question_id") or ""),
+            "question": str(item.get("question") or ""),
+            "options": [str(value) for value in item.get("options", [])][:3],
+        }
+        for item in result.get("candidate_questions", [])
+        if isinstance(item, dict)
+    ]
+    return {
+        "status": result.get("status", "ok"),
+        "questions": questions,
+        "is_complete": not questions,
+        "summary_if_complete": scenario_text if not questions else "",
+    }
+
+    # Dormant pre-V2 implementation retained only for a short rollback window.
     lang_instruction = (
         "Output all questions, options, and summaries in Simplified Chinese (zh-CN)."
         if language in ("zh-CN", "zh", "cn")

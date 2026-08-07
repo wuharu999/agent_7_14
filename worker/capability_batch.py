@@ -418,6 +418,16 @@ def _sanitize_after_entry(entry: dict[str, Any], target_model_id: str | None = N
     if not isinstance(entry, dict):
         return
 
+    entry["schema_version"] = "2.0"
+    if entry.get("capability_type") not in {"building_block", "operational_behavior"}:
+        # Do not silently infer a type for newly generated entries. The hard
+        # validator will reject this record and require explicit model output.
+        entry["capability_type"] = "review_required"
+    if not isinstance(entry.get("verification_profiles"), list):
+        entry["verification_profiles"] = []
+    if not isinstance(entry.get("migration_warnings"), list):
+        entry["migration_warnings"] = []
+
     # 1. Sanitize scope
     scope = entry.get("scope")
     if not isinstance(scope, dict):

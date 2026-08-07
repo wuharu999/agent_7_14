@@ -34,7 +34,12 @@ from worker import capability_matcher
 from worker.manager import WorkerManager
 
 
-def _worker_payload(*, capability_level: str = "L0_primitive_driver") -> dict:
+def _worker_payload(
+    *,
+    capability_level: str = "L0_primitive_driver",
+    capability_type: str | None = None,
+    verified_operational_profile: bool = False,
+) -> dict:
     return {
         "scenario_spec": {
             "scenario_id": "SCN-POPCORN",
@@ -51,7 +56,7 @@ def _worker_payload(*, capability_level: str = "L0_primitive_driver") -> dict:
             {
                 "requirement_id": "REQ-FILL",
                 "name": "Fill popcorn cup",
-                "required_abstraction_level": "L2_composite_skill",
+                "required_capability_type": "operational_behavior",
                 "effect": "Fill one cup to a bounded amount",
                 "acceptance_criteria": ["Target mass tolerance is met"],
                 "constraints": ["Food-safe contact surfaces"],
@@ -62,11 +67,29 @@ def _worker_payload(*, capability_level: str = "L0_primitive_driver") -> dict:
             {
                 "capability_id": "CAP-JOINT",
                 "name": "Set joint angle",
-                "abstraction_level": capability_level,
+                **({"capability_type": capability_type} if capability_type else {"abstraction_level": capability_level}),
                 "effect": "Command one joint",
                 "status": "draft",
                 "evidence_level": "E2",
                 "evidence_refs": ["wiki/sources/sdk.md#joint-command"],
+                "verification_profiles": ([{
+                    "workspace_type": "indoor controlled",
+                    "lighting": "normal",
+                    "terrain_weather": "level and dry",
+                    "workspace_dynamics": "low",
+                    "object_payload_boundary": "bounded",
+                    "duty_cycle": "bench run",
+                    "versions": {},
+                    "test_level": "bench",
+                    "sample_size": 10,
+                    "passed_count": 10,
+                    "measured_values": [],
+                    "evidence_locator": "wiki/test.md",
+                    "support_state": "supported",
+                    "limitations": [],
+                    "unknowns": [],
+                }] if verified_operational_profile else []),
+                "migration_warnings": [],
             }
         ],
         "feasibility_assessment": {
@@ -153,22 +176,25 @@ def _admin_request() -> tuple[Request, str]:
     return _request(token=token), csrf
 
 
-def test_l0_only_match_is_deterministically_blocked() -> None:
+def test_legacy_l0_only_match_is_deterministically_unproven() -> None:
     result = enforce_abstraction_hard_gate(_worker_payload())
     assessment = result["feasibility_assessment"]
     match = assessment["matches"][0]
 
-    assert match["match_state"] == "not_satisfied"
+    assert match["match_state"] == "unproven"
     assert R_AND_D_CLASSIFICATION in match["gaps"]
-    assert match["rd_gap"]["classification"] == R_AND_D_CLASSIFICATION
-    assert any(gate["name"] == "Abstraction layering hard gate" for gate in match["gates"])
+    assert match["rd_gap"] is None
+    assert any(gate["name"] == "Operational evidence and contract gate" for gate in match["gates"])
     assert assessment["technical_conclusion"] == "prototype_required"
     assert assessment["deployment_conclusion"] == "business_case_incomplete"
-    assert assessment["rd_effort"]["total_person_weeks"] == 2.0
+    assert assessment["rd_effort"]["total_person_weeks"] == 0.0
+    assert result["capabilities"][0]["capability_type"] == "building_block"
 
 
-def test_l1_or_higher_match_is_not_reclassified_by_l0_gate() -> None:
-    payload = _worker_payload(capability_level="L1_atomic_skill")
+def test_supported_operational_behavior_is_not_reclassified_by_evidence_gate() -> None:
+    payload = _worker_payload(
+        capability_type="operational_behavior", verified_operational_profile=True
+    )
     result = enforce_abstraction_hard_gate(payload)
     match = result["feasibility_assessment"]["matches"][0]
 
@@ -200,7 +226,7 @@ def test_worker_analysis_embeds_skills_and_reapplies_hard_gate(
     assert "ENGINEER SCENARIO REQUIREMENTS SKILL" in captured["system_prompt"]
     assert "ASSESS SCENARIO FEASIBILITY SKILL" in captured["system_prompt"]
     assert captured["json_schema"] is capability_matcher.MATCHER_RESPONSE_SCHEMA
-    assert result["feasibility_assessment"]["matches"][0]["match_state"] == "not_satisfied"
+    assert result["feasibility_assessment"]["matches"][0]["match_state"] == "unproven"
 
 
 def test_worker_unwraps_nested_structured_result_and_rejects_incomplete_envelope() -> None:
@@ -246,22 +272,28 @@ def test_worker_capability_analysis_queue_is_bounded() -> None:
     assert rejected["status"] == "failed"
 
 
-def test_schema_bundle_contains_eight_schemas_and_explicit_layers() -> None:
+def test_schema_bundle_contains_scenario_v2_contracts_and_capability_contract() -> None:
     schema_root = Path(__file__).resolve().parents[1] / "shared" / "schemas"
     schemas = sorted(schema_root.glob("*.schema.json"))
-    assert len(schemas) == 8
+    assert len(schemas) == 12
+    assert {
+        "scenario-session.schema.json",
+        "clarification-turn.schema.json",
+        "analysis-progress-event.schema.json",
+        "report-revision.schema.json",
+    } <= {path.name for path in schemas}
     capability_schema = json.loads((schema_root / "atomic-capability.schema.json").read_text())
     requirement_schema = json.loads((schema_root / "atomic-requirement.schema.json").read_text())
-    assert "abstraction_level" in capability_schema["required"]
-    assert capability_schema["properties"]["abstraction_level"]["enum"][0] == "L0_primitive_driver"
-    assert "required_abstraction_level" in requirement_schema["required"]
+    assert "capability_type" in capability_schema["required"]
+    assert capability_schema["properties"]["capability_type"]["enum"] == ["building_block", "operational_behavior"]
+    assert "required_capability_type" in requirement_schema["required"]
     runtime = capability_matcher.MATCHER_RESPONSE_SCHEMA
     scenario_record = runtime["$defs"]["scenario_record"]
     requirement_record = runtime["$defs"]["requirement_record"]
     assert {"boundary", "environment_profile", "operations_profile"} <= set(
         scenario_record["required"]
     )
-    assert {"acceptance_criteria", "constraints", "required_abstraction_level"} <= set(
+    assert {"acceptance_criteria", "constraints", "required_capability_type"} <= set(
         requirement_record["required"]
     )
 
@@ -401,13 +433,13 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
     workbench = asyncio.run(capability_match_page(assessment_id))
     assert workbench.status_code == 200
     workbench_html = workbench.body.decode()
-    assert "Atomic Skill Matchup Matrix" in workbench_html
+    assert "Scenario clarification and evidence-backed analysis" in workbench_html
     assert '<option value="zh-CN">简体中文</option>' in workbench_html
-    assert "机器人场景可行性与能力匹配工作台" in workbench_html
-    assert "language:uiLanguage.value" in workbench_html
-    assert 'id="analysisProgress"' in workbench_html
-    assert "monitorAssessment(data.assessment_id)" in workbench_html
-    assert "可以安全刷新或离开此页面" in workbench_html
+    assert "I want something else" in workbench_html
+    assert "I don't know yet" in workbench_html
+    assert 'id="drawer"' in workbench_html
+    assert "textContent" in workbench_html
+    assert "innerHTML" not in workbench_html
 
     ask_html = (
         Path(__file__).resolve().parents[1] / "ecs" / "app" / "templates" / "ask.html"
@@ -426,7 +458,7 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
     markdown_text = markdown.body.decode()
     assert "# 机器人场景可行性报告" in markdown_text
     assert "## 原子需求匹配矩阵" in markdown_text
-    assert "R&D Gap (Composite Skill Missing)" in markdown_text
+    assert "Operational behavior evidence required" in markdown_text
     assert markdown.headers["content-disposition"].endswith('"feasibility_report.md"')
 
     pdf = asyncio.run(

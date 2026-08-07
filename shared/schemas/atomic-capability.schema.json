@@ -7,7 +7,9 @@
     "capability_id",
     "semantic_key",
     "name",
-    "abstraction_level",
+    "capability_type",
+    "verification_profiles",
+    "migration_warnings",
     "effect",
     "scope",
     "inputs",
@@ -36,15 +38,16 @@
       "description": "与厂商和机型无关的语义归一键，用于需求匹配和跨实现去重"
     },
     "name": { "type": "string", "minLength": 3 },
-    "abstraction_level": {
-      "enum": [
-        "L0_primitive_driver",
-        "L1_atomic_skill",
-        "L2_composite_skill",
-        "L3_scenario_module"
-      ],
-      "description": "Explicit layer used by the deterministic scenario-matching hard gate"
+    "capability_type": {
+      "enum": ["building_block", "operational_behavior"],
+      "description": "A callable engineering primitive or an independently testable end-to-end behavior"
     },
+    "legacy_abstraction_level": {"type": ["string", "null"]},
+    "verification_profiles": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/verification_profile"}
+    },
+    "migration_warnings": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "effect": { "type": "string", "minLength": 5 },
     "scope": {
       "type": "object",
@@ -146,6 +149,18 @@
     "status": { "enum": ["draft", "reviewed", "verified", "deprecated"] }
   },
   "$defs": {
+    "verification_profile": {
+      "type": "object",
+      "required": ["workspace_type", "lighting", "terrain_weather", "workspace_dynamics", "object_payload_boundary", "duty_cycle", "versions", "test_level", "sample_size", "passed_count", "measured_values", "evidence_locator", "support_state", "limitations", "unknowns"],
+      "properties": {
+        "workspace_type": {"type": "string"}, "lighting": {"type": "string"}, "terrain_weather": {"type": "string"}, "workspace_dynamics": {"type": "string"},
+        "object_payload_boundary": {"type": "string"}, "duty_cycle": {"type": "string"}, "versions": {"type": "object"},
+        "test_level": {"enum": ["simulation", "bench", "pilot", "field"]}, "sample_size": {"type": "integer", "minimum": 0}, "passed_count": {"type": "integer", "minimum": 0},
+        "measured_values": {"type": "array", "items": {"type": "object"}}, "evidence_locator": {"type": "string"},
+        "support_state": {"enum": ["supported", "conditional", "unproven", "not_supported"]}, "limitations": {"type": "array", "items": {"type": "string"}}, "unknowns": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
     "port": {
       "type": "object",
       "required": ["name", "data_type"],

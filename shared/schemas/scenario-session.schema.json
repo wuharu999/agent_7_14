@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/scenario-session.schema.json",
+  "title": "Persistent Scenario Session State",
+  "type": "object",
+  "required": ["session_id", "state_version", "status", "initial_intent", "goal", "workflow", "facts", "assumptions", "requirements", "unresolved_issues", "question_history", "minimum_gate", "stability"],
+  "properties": {
+    "session_id": {"type": "string", "pattern": "^SCNSESSION-[A-Z0-9]+$"},
+    "state_version": {"type": "integer", "minimum": 1},
+    "status": {"enum": ["draft", "clarifying", "minimum_ready", "stability_countdown", "analyzing", "report_ready", "refining"]},
+    "initial_intent": {"type": "string", "maxLength": 20000},
+    "goal": {"$ref": "#/$defs/confirmed_value"},
+    "workflow": {
+      "type": "object",
+      "required": ["trigger", "steps", "end_outcome", "confirmation"],
+      "properties": {
+        "trigger": {"type": "string"},
+        "steps": {"type": "array", "items": {"type": "string"}},
+        "end_outcome": {"type": "string"},
+        "confirmation": {"enum": ["unknown", "proposed", "confirmed", "conflicted"]}
+      },
+      "additionalProperties": false
+    },
+    "facts": {"type": "array", "items": {"$ref": "#/$defs/evidence_record"}},
+    "assumptions": {"type": "array", "items": {"$ref": "#/$defs/evidence_record"}},
+    "requirements": {"type": "array", "items": {"$ref": "#/$defs/evidence_record"}},
+    "unresolved_issues": {"type": "array", "items": {"$ref": "#/$defs/evidence_record"}},
+    "question_history": {"type": "array", "items": {"type": "object"}},
+    "minimum_gate": {
+      "type": "object",
+      "required": ["passed", "missing"],
+      "properties": {"passed": {"type": "boolean"}, "missing": {"type": "array", "items": {"enum": ["goal", "workflow"]}}},
+      "additionalProperties": false
+    },
+    "stability": {
+      "type": "object",
+      "required": ["stable", "reason", "remaining_user_decisions"],
+      "properties": {"stable": {"type": "boolean"}, "reason": {"type": "string"}, "remaining_user_decisions": {"type": "array", "items": {"type": "string"}}},
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "confirmed_value": {
+      "type": "object",
+      "required": ["original_text", "normalized_value", "confirmation"],
+      "properties": {"original_text": {"type": "string"}, "normalized_value": {"type": "string"}, "confirmation": {"enum": ["unknown", "proposed", "confirmed", "conflicted"]}},
+      "additionalProperties": false
+    },
+    "evidence_record": {
+      "type": "object",
+      "properties": {
+        "original_text": {"type": "string"},
+        "normalized_value": {},
+        "knowledge_state": {"enum": ["known", "assumed", "unknown", "conflicted"]},
+        "owner": {"enum": ["customer", "wiki", "vendor", "calculation", "simulation", "bench", "pilot", "field"]},
+        "evidence_locator": {"type": ["string", "null"]},
+        "affected_decision": {"type": ["string", "null"]},
+        "can_change_conclusion": {"type": "boolean"},
+        "last_changed_version": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

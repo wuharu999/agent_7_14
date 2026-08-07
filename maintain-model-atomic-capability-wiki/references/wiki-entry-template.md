@@ -13,10 +13,13 @@ Use the normalized capability name:
 ## Machine record
 
 ```yaml
-schema_version: "1.0"
+schema_version: "2.0"
 capability_id: CAP-TG-JOINT-POSITION-CMD
 semantic_key: joint.position.control
 name: 控制_关节至目标位置
+capability_type: building_block
+verification_profiles: []
+migration_warnings: []
 effect:
   action: 设置
   object: 指定关节的位置控制目标

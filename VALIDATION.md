@@ -73,6 +73,22 @@ External integrations still require live validation on the deployment machines:
 - real WeCom callback credentials;
 - Alibaba security group and future HTTPS proxy.
 
+## Scenario clarification V2 validation
+
+```bash
+PYTHONPATH=. .venv-ecs/bin/python -m pytest -q \
+  tests/test_scenario_sessions.py \
+  tests/test_capability_match.py \
+  tests/test_capability_catalog.py \
+  tests/test_security_migration.py
+```
+
+This covers one-question selection, semantic deduplication, the goal/workflow
+minimum gate, anonymous and account resume, optimistic state versions, separate
+Worker queues, immutable/superseded report revisions, the locker reference
+flow, revision-bound Markdown/PDF export, share-link redaction, and safe DOM
+rendering.
+
 ## QA conversation/language validation
 
 Validated after the conversation update:

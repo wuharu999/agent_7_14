@@ -36,14 +36,15 @@ A record is atomic only when:
 
 Split records containing independently useful effects. Do not split parameters, algorithms, hardware resources, middleware, or internal control steps into capabilities unless they expose an independently triggerable and testable effect.
 
-## Three levels
+## Two capability types
 
-- Atomic capability: reusable leaf contract.
-- Composite skill: a reusable graph of atomic capabilities.
-- Scenario task: a customer-specific orchestration with acceptance criteria.
+- `building_block`: a directly callable interface or primitive with one bounded observable effect.
+- `operational_behavior`: a reusable end-to-end behavior with one independently testable outcome.
 
-Do not flatten these levels into one capability list.
+Keep scenario tasks, compositions, and solution artifacts outside the capability catalog. Atomicity is a contract-quality property. Never default a missing type to a building block.
 
 ## Measurement rule
 
 Do not store a performance number without its operating boundary. A measured result must retain test level, environment, object/load, speed or duty cycle where relevant, sample size, passed count, value, unit, and raw evidence locator. A maximum observed value is not a generally verified limit.
+
+An operational behavior is supported only within a matching verification profile. An SDK interface can support an engineering interface requirement but never proves the end-to-end deployment behavior by itself.

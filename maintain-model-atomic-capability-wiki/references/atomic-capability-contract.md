@@ -18,13 +18,13 @@ Accept a candidate only when all conditions hold:
 
 Split independently useful effects. Do not split parameters, algorithms, hardware resources, middleware, or internal control steps into capabilities unless they expose an independently triggerable and testable effect.
 
-## Three knowledge levels
+## Two capability types and scenario artifacts
 
-- Atomic capability: one reusable leaf contract.
-- Composite skill: a reusable graph of atomic capabilities.
-- Scenario task: a customer-specific orchestration with acceptance criteria.
+- `building_block`: a directly callable interface or engineering primitive with one bounded observable effect.
+- `operational_behavior`: a reusable end-to-end robot behavior with one independently testable outcome.
+- Scenario tasks, compositions, and solution artifacts remain outside the capability catalog.
 
-Never flatten these levels into one capability list.
+Atomicity is a contract-quality property, not a hierarchy level. Never infer a missing capability type. Legacy L1 entries require explicit review.
 
 ## Required meaning
 
@@ -44,6 +44,7 @@ Every entry must record:
 - precise evidence locators and evidence levels;
 - extraction confidence and its basis;
 - unknowns and lifecycle state.
+- capability type, condition-scoped verification profiles, and any migration warnings.
 
 ## Interpretation rules
 

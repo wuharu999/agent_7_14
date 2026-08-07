@@ -388,7 +388,7 @@ _REPORT_LABELS: dict[str, dict[str, str]] = {
         "payload": "Payload / facts",
         "throughput": "Throughput / operations",
         "matrix": "Atomic Requirement Match Matrix",
-        "required_layer": "Required layer",
+        "required_layer": "Required capability type",
         "match_state": "Match state",
         "confidence": "Confidence",
         "capabilities": "Matched capabilities",
@@ -421,7 +421,7 @@ _REPORT_LABELS: dict[str, dict[str, str]] = {
         "payload": "负载 / 已知事实",
         "throughput": "吞吐量 / 作业情况",
         "matrix": "原子需求匹配矩阵",
-        "required_layer": "所需能力层级",
+        "required_layer": "所需能力类型",
         "match_state": "匹配状态",
         "confidence": "置信度",
         "capabilities": "已匹配能力",
@@ -490,7 +490,8 @@ def _markdown_report(assessment: dict[str, Any], *, language: str = "en") -> str
             [
                 f"### {requirement_id}: {requirement.get('name', '')}",
                 "",
-                f"- {labels['required_layer']}: `{requirement.get('required_abstraction_level', '')}`",
+                f"- {labels['required_layer']}: `"
+                f"{requirement.get('required_capability_type') or requirement.get('required_abstraction_level', '')}`",
                 f"- {labels['match_state']}: `{match.get('match_state', '')}`",
                 f"- {labels['confidence']}: {match.get('confidence', 0)}",
             ]
@@ -502,7 +503,7 @@ def _markdown_report(assessment: dict[str, Any], *, language: str = "en") -> str
                 capability = capabilities.get(capability_id, {})
                 lines.append(
                     f"  - `{capability_id}` {capability.get('name', '')} "
-                    f"({capability.get('abstraction_level', '')}, "
+                    f"({capability.get('capability_type') or capability.get('abstraction_level', '')}, "
                     f"{capability.get('status', '')}, {capability.get('evidence_level', '')})"
                 )
                 evidence_items = capability.get("evidence_refs", capability.get("evidence", []))
@@ -663,8 +664,10 @@ def _pdf_bytes(report: str) -> bytes:
 @router.get("/capability-match", response_class=HTMLResponse)
 async def capability_match_page(assessment_id: str = Query(default="")) -> HTMLResponse:
     page = _template("capability_match.html")
-    page = page.replace("__ROBOTS__", json.dumps(get_robot_options(), ensure_ascii=False))
-    page = page.replace("__ASSESSMENT_ID__", json.dumps(assessment_id))
+    robots_json = json.dumps(get_robot_options(), ensure_ascii=False).replace("<", "\\u003c")
+    assessment_json = json.dumps(assessment_id).replace("<", "\\u003c")
+    page = page.replace("__ROBOTS__", robots_json)
+    page = page.replace("__ASSESSMENT_ID__", assessment_json)
     return HTMLResponse(page)
 
 
@@ -718,35 +721,14 @@ async def grill_scenario_route(
     payload: GrillScenarioRequest,
     request: Request,
 ) -> JSONResponse:
-    if not payload.scenario_text.strip():
-        return JSONResponse({"error": "Scenario text cannot be empty"}, status_code=400)
-    if not gateway.online:
-        return JSONResponse({"error": "Worker is offline"}, status_code=503)
-
-    command_id = f"GRILL-{uuid.uuid4().hex[:12].upper()}"
-    try:
-        worker_result = await gateway.command(
-            "grill_scenario",
-            scenario_text=payload.scenario_text,
-            model_id=payload.model_id,
-            language=payload.language,
-            history=payload.history,
-            accumulated_specs=payload.accumulated_specs,
-            timeout=45,
-        )
-        if worker_result.get("status") != "ok":
-            return JSONResponse(
-                {"error": str(worker_result.get("error") or "Failed to generate Grill Me questions")},
-                status_code=500,
-            )
-        return JSONResponse({
-            "status": "ok",
-            "questions": worker_result.get("questions", []),
-            "is_complete": bool(worker_result.get("is_complete", False)),
-            "summary_if_complete": str(worker_result.get("summary_if_complete") or ""),
-        })
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    del payload, request
+    return JSONResponse(
+        {
+            "error": "The browser-local Grill Me API is deprecated",
+            "replacement": "/api/scenario-sessions",
+        },
+        status_code=410,
+    )
 
 
 @router.get("/api/capability-match/assessments/{assessment_id}")
@@ -948,7 +930,10 @@ async def create_gap_stub(
         "capability_id": stub_id,
         "name": str(requirement.get("name") or payload.requirement_id),
         "model_id": str(assessment["model_id"]),
-        "required_abstraction_level": requirement.get("required_abstraction_level"),
+        "required_capability_type": (
+            requirement.get("required_capability_type")
+            or requirement.get("required_abstraction_level")
+        ),
         "effect": requirement.get("effect"),
         "acceptance_criteria": requirement.get("acceptance_criteria", []),
         "constraints": requirement.get("constraints", []),

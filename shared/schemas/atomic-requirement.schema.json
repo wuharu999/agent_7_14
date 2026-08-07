@@ -6,7 +6,7 @@
   "required": [
     "requirement_id",
     "name",
-    "required_abstraction_level",
+    "required_capability_type",
     "source_statements",
     "subject",
     "trigger",
@@ -30,9 +30,8 @@
   "properties": {
     "requirement_id": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
     "name": {"type": "string", "minLength": 3},
-    "required_abstraction_level": {
-      "enum": ["L1_atomic_skill", "L2_composite_skill", "L3_scenario_module"]
-    },
+    "required_capability_type": {"enum": ["building_block", "operational_behavior"]},
+    "legacy_required_abstraction_level": {"type": ["string", "null"]},
     "source_statements": {
       "type": "array",
       "minItems": 1,
