@@ -433,6 +433,18 @@ def _analysis_result() -> dict:
     }
 
 
+def _register_parked_analysis_attempt(job: dict) -> bool:
+    async def parked() -> None:
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(parked())
+    routes._analysis_tasks[str(job["job_id"])] = routes._AnalysisTaskRegistration(
+        task=task,
+        attempt_count=int(job.get("attempt_count") or 1),
+    )
+    return True
+
+
 def test_locker_analysis_creates_immutable_report_export_and_private_share(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -460,7 +472,9 @@ def test_locker_analysis_creates_immutable_report_export_and_private_share(
     async def exercise():
         job, created = await routes._queue_analysis(scenario, trigger="user_requested_early")
         assert created
-        await asyncio.gather(*list(routes._analysis_tasks.values()))
+        await asyncio.gather(
+            *(registration.task for registration in routes._analysis_tasks.values())
+        )
         reports = database.list_scenario_report_revisions(session_id)
         revision = reports[0]
         exported_md = await routes.report_export_route(
@@ -849,6 +863,7 @@ def test_report_finalization_closes_state_change_race_and_queues_latest_version(
             idempotency_key="finalize-race-v2",
         )
         database.update_scenario_session_status(session_id, status="analyzing")
+        _register_parked_analysis_attempt(queued_job)
         return queued_job, True
 
     monkeypatch.setattr(routes, "finalize_scenario_analysis_report", finalize_after_state_change)
@@ -1374,13 +1389,11 @@ def test_restart_dispatches_marker_left_after_report_finalization(
     assert database.get_pending_scenario_reanalysis_version(session_id) == state_v2["state_version"]
 
     launched: list[tuple[str, int]] = []
-    monkeypatch.setattr(
-        routes,
-        "_launch_analysis_task",
-        lambda job, state, *, trigger: launched.append(
-            (str(job["job_id"]), int(state["state_version"]))
-        ),
-    )
+    def fake_launch(job: dict, state: dict, *, trigger: str) -> bool:
+        launched.append((str(job["job_id"]), int(state["state_version"])))
+        return _register_parked_analysis_attempt(job)
+
+    monkeypatch.setattr(routes, "_launch_analysis_task", fake_launch)
     gateway.websocket = object()
     stats = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
     active = database.get_active_scenario_analysis_job(session_id)
@@ -1408,11 +1421,11 @@ def test_restart_retries_job_created_around_marker_clear(
     )
     database.mark_scenario_reanalysis_pending(session_id, state["state_version"])
     launches: list[str] = []
-    monkeypatch.setattr(
-        routes,
-        "_launch_analysis_task",
-        lambda job, _state, *, trigger: launches.append(str(job["job_id"])),
-    )
+    def fake_launch(job: dict, _state: dict, *, trigger: str) -> bool:
+        launches.append(str(job["job_id"]))
+        return _register_parked_analysis_attempt(job)
+
+    monkeypatch.setattr(routes, "_launch_analysis_task", fake_launch)
     gateway.websocket = object()
     queued, started = asyncio.run(
         routes._queue_analysis(scenario, trigger="coalesced_reanalysis")
@@ -1462,11 +1475,11 @@ def test_offline_marker_waits_for_worker_reconnect(
     assert database.get_pending_scenario_reanalysis_version(session_id) == state["state_version"]
 
     launched: list[str] = []
-    monkeypatch.setattr(
-        routes,
-        "_launch_analysis_task",
-        lambda job, _state, *, trigger: launched.append(str(job["job_id"])),
-    )
+    def fake_launch(job: dict, _state: dict, *, trigger: str) -> bool:
+        launched.append(str(job["job_id"]))
+        return _register_parked_analysis_attempt(job)
+
+    monkeypatch.setattr(routes, "_launch_analysis_task", fake_launch)
     gateway.websocket = object()
     connected = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
     assert connected["reconciled"] == 1
@@ -1531,6 +1544,89 @@ def test_failed_logical_analysis_reopens_one_operational_attempt() -> None:
     assert retried["attempt_count"] == duplicate["attempt_count"] == 2
 
 
+def test_retry_launches_new_attempt_before_old_task_finally_and_keeps_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-LIVE-RETRY-RACE"
+    state = _minimum_ready_state(session_id)
+    scenario = database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    old_failure_paused = asyncio.Event()
+    allow_old_finally = asyncio.Event()
+    retry_started = asyncio.Event()
+    allow_retry_finish = asyncio.Event()
+    command_calls = 0
+
+    async def fake_progress(
+        _session_id: str,
+        _job_id: str,
+        _state_version: int,
+        _stage: str,
+        status: str,
+        _approved_facts=None,
+    ) -> None:
+        if status == "failed":
+            old_failure_paused.set()
+            await allow_old_finally.wait()
+
+    async def fake_command(message_type: str, **_payload):
+        nonlocal command_calls
+        assert message_type == "analyze_scenario"
+        command_calls += 1
+        if command_calls == 1:
+            raise RuntimeError("attempt one failed")
+        retry_started.set()
+        await allow_retry_finish.wait()
+        return {"status": "ok", "result": _analysis_result()}
+
+    monkeypatch.setattr(routes, "_emit_progress", fake_progress)
+    monkeypatch.setattr(gateway, "command", fake_command)
+    gateway.websocket = object()
+
+    async def exercise() -> None:
+        job, started = await routes._queue_analysis(
+            scenario, trigger="coalesced_reanalysis"
+        )
+        assert started is True
+        first_registration = routes._analysis_tasks[job["job_id"]]
+        assert first_registration.attempt_count == 1
+        await asyncio.wait_for(old_failure_paused.wait(), timeout=2)
+        assert database.get_scenario_analysis_job(job["job_id"])["status"] == "failed"
+        assert database.get_pending_scenario_reanalysis_version(session_id) == state["state_version"]
+
+        recovery = await routes.reconcile_pending_scenario_reanalyses()
+        retried = database.get_scenario_analysis_job(job["job_id"])
+        second_registration = routes._analysis_tasks[job["job_id"]]
+        assert recovery["reconciled"] == 1
+        assert retried["attempt_count"] == second_registration.attempt_count == 2
+        assert second_registration.task is not first_registration.task
+        assert routes._analysis_attempt_is_running(retried) is True
+        assert database.get_pending_scenario_reanalysis_version(session_id) is None
+        await asyncio.wait_for(retry_started.wait(), timeout=2)
+
+        allow_old_finally.set()
+        await asyncio.wait_for(first_registration.task, timeout=2)
+        assert routes._analysis_tasks[job["job_id"]] is second_registration
+        assert second_registration.task.done() is False
+        assert command_calls == 2
+
+        no_duplicate = await routes.reconcile_pending_scenario_reanalyses()
+        assert no_duplicate["pending"] == 0
+        assert command_calls == 2
+        allow_retry_finish.set()
+        await asyncio.wait_for(second_registration.task, timeout=2)
+        assert job["job_id"] not in routes._analysis_tasks
+        assert database.get_scenario_analysis_job(job["job_id"])["status"] == "completed"
+
+    asyncio.run(exercise())
+
+
 def test_pending_changes_coalesce_to_only_latest_state_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1548,13 +1644,11 @@ def test_pending_changes_coalesce_to_only_latest_state_version(
     state_v2 = _save_newer_scenario_state(session_id, state_v1, suffix="V2")
     state_v3 = _save_newer_scenario_state(session_id, state_v2, suffix="V3")
     launched_versions: list[int] = []
-    monkeypatch.setattr(
-        routes,
-        "_launch_analysis_task",
-        lambda _job, state, *, trigger: launched_versions.append(
-            int(state["state_version"])
-        ),
-    )
+    def fake_launch(job: dict, state: dict, *, trigger: str) -> bool:
+        launched_versions.append(int(state["state_version"]))
+        return _register_parked_analysis_attempt(job)
+
+    monkeypatch.setattr(routes, "_launch_analysis_task", fake_launch)
     gateway.websocket = object()
     stats = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
     active = database.get_active_scenario_analysis_job(session_id)

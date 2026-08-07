@@ -95,7 +95,9 @@ long-lived/reconnecting SSE, safe fact-derived progress summaries, and restart
 recovery. Recovery coverage includes a crash before reanalysis job creation, a
 crash between job creation and marker clearing, offline startup followed by
 Worker reconnect, reopening an existing failed logical job, and coalescing
-multiple pending state changes to the newest version.
+multiple pending state changes to the newest version. A deterministic live-retry
+test pauses attempt 1 after marker restoration, starts attempt 2, then verifies
+attempt 1 cannot suppress or remove attempt 2's task registration.
 
 ## QA conversation/language validation
 

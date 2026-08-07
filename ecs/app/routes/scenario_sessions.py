@@ -10,6 +10,7 @@ import time
 import uuid
 from collections import defaultdict
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -68,7 +69,15 @@ from worker.analysis_progress import progress_event
 router = APIRouter()
 log = logging.getLogger("ecs.scenario_sessions")
 PIPELINE_VERSION = "scenario-v2.0"
-_analysis_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+@dataclass(frozen=True)
+class _AnalysisTaskRegistration:
+    task: asyncio.Task[None]
+    attempt_count: int
+
+
+_analysis_tasks: dict[str, _AnalysisTaskRegistration] = {}
 _reanalysis_dispatch_lock = asyncio.Lock()
 
 
@@ -571,16 +580,27 @@ async def _run_analysis(job: dict[str, Any], state: dict[str, Any], *, partial: 
         except Exception:
             log.exception("Could not persist failed progress event")
     finally:
-        _analysis_tasks.pop(job_id, None)
+        current_task = asyncio.current_task()
+        registration = _analysis_tasks.get(job_id)
+        if (
+            registration is not None
+            and registration.task is current_task
+            and registration.attempt_count == int(job.get("attempt_count") or 1)
+        ):
+            _analysis_tasks.pop(job_id, None)
 
 
 def _launch_analysis_task(
     job: dict[str, Any], state: dict[str, Any], *, trigger: str
-) -> asyncio.Task[None]:
+) -> bool:
     job_id = str(job["job_id"])
-    existing = _analysis_tasks.get(job_id)
-    if existing is not None and not existing.done():
-        return existing
+    attempt_count = int(job.get("attempt_count") or 1)
+    registration = _analysis_tasks.get(job_id)
+    if registration is not None and not registration.task.done():
+        if registration.attempt_count == attempt_count:
+            return True
+        if registration.attempt_count > attempt_count:
+            return False
     task = asyncio.create_task(
         _run_analysis(
             job,
@@ -596,8 +616,20 @@ def _launch_analysis_task(
         ),
         name=f"scenario-analysis-{job_id}",
     )
-    _analysis_tasks[job_id] = task
-    return task
+    _analysis_tasks[job_id] = _AnalysisTaskRegistration(
+        task=task,
+        attempt_count=attempt_count,
+    )
+    return True
+
+
+def _analysis_attempt_is_running(job: dict[str, Any]) -> bool:
+    registration = _analysis_tasks.get(str(job["job_id"]))
+    return bool(
+        registration is not None
+        and registration.attempt_count == int(job.get("attempt_count") or 1)
+        and not registration.task.done()
+    )
 
 
 async def _queue_analysis(
@@ -666,14 +698,26 @@ async def _queue_pending_reanalysis(
         if int(active["scenario_state_version"]) != current_version:
             return None
         if active["status"] == "queued":
-            _launch_analysis_task(
+            launched = _launch_analysis_task(
                 active,
                 scenario["current_state"],
                 trigger=str(active.get("trigger") or "coalesced_reanalysis"),
             )
+            if not launched:
+                return active, False
         await asyncio.to_thread(
             update_scenario_session_status, session_id, status="analyzing"
         )
+        confirmed = await asyncio.to_thread(
+            get_scenario_analysis_job, str(active["job_id"])
+        )
+        if (
+            confirmed is None
+            or int(confirmed["scenario_state_version"]) != current_version
+            or confirmed["status"] not in {"queued", "processing"}
+            or not _analysis_attempt_is_running(confirmed)
+        ):
+            return active, False
         await asyncio.to_thread(
             clear_pending_scenario_reanalysis,
             session_id,
@@ -686,6 +730,7 @@ async def _queue_pending_reanalysis(
         confirmed is None
         or int(confirmed["scenario_state_version"]) != current_version
         or confirmed["status"] not in {"queued", "processing"}
+        or not _analysis_attempt_is_running(confirmed)
     ):
         return job, created
     await asyncio.to_thread(
@@ -1500,5 +1545,3 @@ async def shared_report_page(share_token: str) -> HTMLResponse:
         "for(const item of (items||[])){const li=document.createElement('li');li.textContent=typeof item==='string'?item:JSON.stringify(item);ul.append(li)}r.append(ul)}"
         "</script></body></html>"
     )
-    finalize_scenario_analysis_report,
-    get_pending_scenario_reanalysis_version,

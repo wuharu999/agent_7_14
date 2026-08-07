@@ -51,6 +51,9 @@ assessment API and stored assessments during rollout.
   idempotency record with an incremented operational `attempt_count`; concurrent
   reconciliation cannot create a second logical analysis. The marker is cleared
   only for an exact-version current report or a confirmed queued/processing job.
+  In-memory task registrations also carry `attempt_count`: a newer database
+  attempt launches even while the prior task is finishing, and the prior task
+  cannot remove the newer registration from the registry.
 - The most recent report pointer remains visible while refinement or reanalysis
   is running. The composer also remains available during analysis.
 - SSE progress stays open until disconnect and resumes from `Last-Event-ID` or
