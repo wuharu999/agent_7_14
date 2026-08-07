@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 
 from ecs.app.auth import current_session, require_user, verify_csrf
+from ecs.app.config import SCENARIO_REANALYSIS_POLL_SECONDS
 from ecs.app.database import (
     append_scenario_event,
     clear_pending_scenario_reanalysis,
@@ -29,13 +30,17 @@ from ecs.app.database import (
     get_allowed_teams,
     get_active_scenario_analysis_job,
     get_pending_scenario_reanalysis_version,
+    get_scenario_analysis_job,
     get_scenario_report_revision,
     get_scenario_session,
     get_scenario_share_link_by_hash,
     get_scenario_state_version,
+    has_current_scenario_report_for_version,
+    list_pending_scenario_reanalyses,
     list_user_scenario_sessions,
     list_scenario_events,
     list_scenario_report_revisions,
+    mark_scenario_reanalysis_pending,
     revoke_scenario_share_link,
     save_scenario_state_version,
     supersede_current_scenario_report,
@@ -64,6 +69,7 @@ router = APIRouter()
 log = logging.getLogger("ecs.scenario_sessions")
 PIPELINE_VERSION = "scenario-v2.0"
 _analysis_tasks: dict[str, asyncio.Task[None]] = {}
+_reanalysis_dispatch_lock = asyncio.Lock()
 
 
 class _ScenarioMutationLimiter:
@@ -555,6 +561,10 @@ async def _run_analysis(job: dict[str, Any], state: dict[str, Any], *, partial: 
             error_category="analysis_failed",
             internal_error_correlation_id=correlation_id,
         )
+        if job.get("trigger") == "coalesced_reanalysis":
+            await asyncio.to_thread(
+                mark_scenario_reanalysis_pending, session_id, state_version
+            )
         await asyncio.to_thread(update_scenario_session_status, session_id, status="minimum_ready")
         try:
             await _emit_progress(session_id, job_id, state_version, "report_generation", "failed")
@@ -562,6 +572,32 @@ async def _run_analysis(job: dict[str, Any], state: dict[str, Any], *, partial: 
             log.exception("Could not persist failed progress event")
     finally:
         _analysis_tasks.pop(job_id, None)
+
+
+def _launch_analysis_task(
+    job: dict[str, Any], state: dict[str, Any], *, trigger: str
+) -> asyncio.Task[None]:
+    job_id = str(job["job_id"])
+    existing = _analysis_tasks.get(job_id)
+    if existing is not None and not existing.done():
+        return existing
+    task = asyncio.create_task(
+        _run_analysis(
+            job,
+            state,
+            partial=(
+                trigger == "user_requested_early"
+                and (
+                    bool(state["unresolved_issues"])
+                    or state.get("current_question") is not None
+                    or not bool(state.get("stability", {}).get("stable"))
+                )
+            ),
+        ),
+        name=f"scenario-analysis-{job_id}",
+    )
+    _analysis_tasks[job_id] = task
+    return task
 
 
 async def _queue_analysis(
@@ -585,32 +621,26 @@ async def _queue_analysis(
         pipeline_version=PIPELINE_VERSION,
         language=language,
         idempotency_key=idempotency_key,
+        trigger=trigger,
     )
     if created:
         await asyncio.to_thread(update_scenario_session_status, str(scenario["session_id"]), status="analyzing")
-        await _emit_progress(str(scenario["session_id"]), str(job["job_id"]), state_version, "workflow_understanding", "queued")
-        task = asyncio.create_task(
-            _run_analysis(
-                job,
-                state,
-                partial=(
-                    trigger == "user_requested_early"
-                    and (
-                        bool(state["unresolved_issues"])
-                        or state.get("current_question") is not None
-                        or not bool(state.get("stability", {}).get("stable"))
-                    )
-                ),
-            ),
-            name=f"scenario-analysis-{job['job_id']}",
-        )
-        _analysis_tasks[str(job["job_id"])] = task
+        try:
+            await _emit_progress(str(scenario["session_id"]), str(job["job_id"]), state_version, "workflow_understanding", "queued")
+        except Exception:
+            log.exception(
+                "Scenario job %s queued but its initial progress event could not be persisted",
+                job["job_id"],
+            )
+        _launch_analysis_task(job, state, trigger=trigger)
     return job, created
 
 
 async def _queue_pending_reanalysis(
     session_id: str,
 ) -> tuple[dict[str, Any], bool] | None:
+    if not gateway.online:
+        return None
     pending_version = await asyncio.to_thread(
         get_pending_scenario_reanalysis_version, session_id
     )
@@ -622,13 +652,93 @@ async def _queue_pending_reanalysis(
     current_version = int(scenario["current_state_version"])
     if current_version < pending_version:
         raise RuntimeError("Pending reanalysis version is newer than the current scenario")
+    if await asyncio.to_thread(
+        has_current_scenario_report_for_version, session_id, current_version
+    ):
+        await asyncio.to_thread(
+            clear_pending_scenario_reanalysis,
+            session_id,
+            through_state_version=current_version,
+        )
+        return None
+    active = await asyncio.to_thread(get_active_scenario_analysis_job, session_id)
+    if active is not None:
+        if int(active["scenario_state_version"]) != current_version:
+            return None
+        if active["status"] == "queued":
+            _launch_analysis_task(
+                active,
+                scenario["current_state"],
+                trigger=str(active.get("trigger") or "coalesced_reanalysis"),
+            )
+        await asyncio.to_thread(
+            update_scenario_session_status, session_id, status="analyzing"
+        )
+        await asyncio.to_thread(
+            clear_pending_scenario_reanalysis,
+            session_id,
+            through_state_version=current_version,
+        )
+        return active, False
     job, created = await _queue_analysis(scenario, trigger="coalesced_reanalysis")
+    confirmed = await asyncio.to_thread(get_scenario_analysis_job, str(job["job_id"]))
+    if (
+        confirmed is None
+        or int(confirmed["scenario_state_version"]) != current_version
+        or confirmed["status"] not in {"queued", "processing"}
+    ):
+        return job, created
     await asyncio.to_thread(
         clear_pending_scenario_reanalysis,
         session_id,
         through_state_version=current_version,
     )
     return job, created
+
+
+async def reconcile_pending_scenario_reanalyses() -> dict[str, int]:
+    stats = {"pending": 0, "reconciled": 0, "deferred": 0, "failed": 0}
+    async with _reanalysis_dispatch_lock:
+        pending = await asyncio.to_thread(list_pending_scenario_reanalyses)
+        stats["pending"] = len(pending)
+        if not gateway.online:
+            stats["deferred"] = len(pending)
+            return stats
+        for item in pending:
+            if not gateway.online:
+                stats["deferred"] += 1
+                continue
+            session_id = str(item["session_id"])
+            try:
+                before = await asyncio.to_thread(
+                    get_pending_scenario_reanalysis_version, session_id
+                )
+                await _queue_pending_reanalysis(session_id)
+                after = await asyncio.to_thread(
+                    get_pending_scenario_reanalysis_version, session_id
+                )
+                if before is not None and after is None:
+                    stats["reconciled"] += 1
+                else:
+                    stats["deferred"] += 1
+            except Exception:
+                stats["failed"] += 1
+                log.exception(
+                    "Pending scenario reanalysis reconciliation failed for %s",
+                    session_id,
+                )
+    return stats
+
+
+async def scenario_reanalysis_dispatcher() -> None:
+    while True:
+        try:
+            await reconcile_pending_scenario_reanalyses()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Scenario reanalysis dispatcher iteration failed")
+        await asyncio.sleep(SCENARIO_REANALYSIS_POLL_SECONDS)
 
 
 @router.post("/api/scenario-sessions")

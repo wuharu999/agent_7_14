@@ -45,6 +45,12 @@ assessment API and stored assessments during rollout.
   After commit, that durable marker queues one idempotent analysis of the latest
   version. The confirmation route also rechecks the active job after saving so
   the inverse commit ordering cannot miss reanalysis.
+- ECS scans durable reanalysis markers on a configurable interval and reconciles
+  them immediately after the Worker WebSocket attaches. Markers remain while the
+  Worker is offline. A failed or restart-interrupted logical job reopens the same
+  idempotency record with an incremented operational `attempt_count`; concurrent
+  reconciliation cannot create a second logical analysis. The marker is cleared
+  only for an exact-version current report or a confirmed queued/processing job.
 - The most recent report pointer remains visible while refinement or reanalysis
   is running. The composer also remains available during analysis.
 - SSE progress stays open until disconnect and resumes from `Last-Event-ID` or
@@ -83,6 +89,8 @@ ECS startup creates these tables idempotently:
 
 `scenario_sessions.pending_reanalysis_state_version` is an additive nullable
 column used as the durable coalescing marker for analysis races.
+`scenario_analysis_jobs.attempt_count` and `trigger` preserve retry history and
+allow startup to restore a marker for an interrupted coalesced job.
 
 Existing `scenario_assessments`, users, uploads, and other application tables
 are not rewritten. Jobs interrupted by an ECS restart are marked failed with a
@@ -105,6 +113,7 @@ CLARIFICATION_WORKERS=1
 CLARIFICATION_QUEUE_MAX=16
 CAPABILITY_MATCH_WORKERS=1
 CAPABILITY_MATCH_QUEUE_MAX=8
+SCENARIO_REANALYSIS_POLL_SECONDS=5
 ```
 
 ## Capability migration

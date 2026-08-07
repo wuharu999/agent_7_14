@@ -18,6 +18,9 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 WORKER_SHARED_SECRET = os.environ.get("WORKER_SHARED_SECRET", "")
 WORKER_TIMEOUT = int(os.environ.get("WORKER_TIMEOUT", "240"))
 FILE_COMMAND_TIMEOUT = int(os.environ.get("FILE_COMMAND_TIMEOUT", "60"))
+SCENARIO_REANALYSIS_POLL_SECONDS = max(
+    1, int(os.environ.get("SCENARIO_REANALYSIS_POLL_SECONDS", "5"))
+)
 AUTHORING_COMMAND_TIMEOUT = int(
     os.environ.get("AUTHORING_COMMAND_TIMEOUT", str(WORKER_TIMEOUT + 30))
 )

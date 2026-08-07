@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -237,6 +239,10 @@ def test_state_version_write_is_optimistic_and_migration_is_additive() -> None:
         session_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(scenario_sessions)")
         }
+        job_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(scenario_analysis_jobs)")
+        }
     assert {
         "scenario_sessions",
         "scenario_state_versions",
@@ -246,6 +252,7 @@ def test_state_version_write_is_optimistic_and_migration_is_additive() -> None:
         "scenario_share_links",
     } <= tables
     assert "pending_reanalysis_state_version" in session_columns
+    assert {"attempt_count", "trigger"} <= job_columns
 
 
 def test_claim_requires_token_then_disables_anonymous_resume() -> None:
@@ -595,6 +602,15 @@ def test_allowlisted_state_patch_updates_dynamic_spec_and_rejects_runtime_fields
     )
     assert patched["environment"]["lighting"] == "300-500 lux"
     assert patched["facts"][0]["semantic_key"] == "locker.opening.width"
+    actor_patched = apply_state_patch(
+        state,
+        [{"op": "upsert", "path": "actors", "value": {"actor_id": "operator", "name": "Operator"}}],
+    )
+    actor_patched = apply_state_patch(
+        actor_patched,
+        [{"op": "upsert", "path": "actors", "value": {"actor_id": "operator", "name": "Supervisor"}}],
+    )
+    assert actor_patched["actors"] == [{"actor_id": "operator", "name": "Supervisor"}]
     state["current_question"] = {
         "question_id": "Q-DYNAMIC",
         "semantic_key": "locker.internal.depth",
@@ -1290,3 +1306,260 @@ def test_restart_recovers_interrupted_analysis_status_canonically() -> None:
     loaded = database.get_scenario_session(session_id)
     assert database.get_scenario_analysis_job(job["job_id"])["status"] == "failed"
     assert loaded["status"] == loaded["current_state"]["status"] == "minimum_ready"
+
+
+def _save_newer_scenario_state(
+    session_id: str, previous: dict, *, suffix: str
+) -> dict:
+    updated = deepcopy(previous)
+    updated["state_version"] = int(previous["state_version"]) + 1
+    updated["status"] = "analyzing"
+    updated["requirements"].append(
+        {
+            "requirement_id": f"REQ-{suffix}",
+            "semantic_key": f"recovery.{suffix.casefold()}",
+            "original_text": f"Recovery change {suffix}",
+            "normalized_value": f"Recovery change {suffix}",
+            "knowledge_state": "known",
+            "owner": "customer",
+            "last_changed_version": updated["state_version"],
+        }
+    )
+    database.save_scenario_state_version(
+        session_id=session_id,
+        expected_version=int(previous["state_version"]),
+        state=updated,
+        change_source="recovery_test",
+        actor_user_id=None,
+    )
+    return updated
+
+
+def test_restart_dispatches_marker_left_after_report_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-RECOVER-FINALIZED"
+    state_v1 = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state_v1,
+    )
+    old_job, _ = database.create_scenario_analysis_job_record(
+        job_id="JOB-RECOVER-FINALIZED-V1",
+        session_id=session_id,
+        state_version=state_v1["state_version"],
+        catalog_revision="catalog-current",
+        evidence_revision="wiki-current",
+        pipeline_version=routes.PIPELINE_VERSION,
+        language="en",
+        idempotency_key="recover-finalized-v1",
+    )
+    state_v2 = _save_newer_scenario_state(session_id, state_v1, suffix="V2")
+    database.finalize_scenario_analysis_report(
+        report_revision_id="REPORT-RECOVER-FINALIZED-V1",
+        session_id=session_id,
+        state_version=state_v1["state_version"],
+        analysis_job_id=old_job["job_id"],
+        partial=False,
+        report={"conclusion": "fit_with_conditions"},
+    )
+    assert database.get_pending_scenario_reanalysis_version(session_id) == state_v2["state_version"]
+
+    database.initialize_database()
+    assert database.get_active_scenario_analysis_job(session_id) is None
+    assert database.get_pending_scenario_reanalysis_version(session_id) == state_v2["state_version"]
+
+    launched: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        routes,
+        "_launch_analysis_task",
+        lambda job, state, *, trigger: launched.append(
+            (str(job["job_id"]), int(state["state_version"]))
+        ),
+    )
+    gateway.websocket = object()
+    stats = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
+    active = database.get_active_scenario_analysis_job(session_id)
+    assert stats["reconciled"] == 1
+    assert active["scenario_state_version"] == state_v2["state_version"]
+    assert active["trigger"] == "coalesced_reanalysis"
+    assert launched == [(active["job_id"], state_v2["state_version"])]
+    assert database.get_pending_scenario_reanalysis_version(session_id) is None
+
+
+@pytest.mark.parametrize("clear_before_restart", [False, True])
+def test_restart_retries_job_created_around_marker_clear(
+    monkeypatch: pytest.MonkeyPatch,
+    clear_before_restart: bool,
+) -> None:
+    session_id = "SCNSESSION-RECOVER-QUEUED"
+    state = _minimum_ready_state(session_id)
+    scenario = database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    database.mark_scenario_reanalysis_pending(session_id, state["state_version"])
+    launches: list[str] = []
+    monkeypatch.setattr(
+        routes,
+        "_launch_analysis_task",
+        lambda job, _state, *, trigger: launches.append(str(job["job_id"])),
+    )
+    gateway.websocket = object()
+    queued, started = asyncio.run(
+        routes._queue_analysis(scenario, trigger="coalesced_reanalysis")
+    )
+    assert started is True
+    assert database.get_pending_scenario_reanalysis_version(session_id) == state["state_version"]
+    if clear_before_restart:
+        database.clear_pending_scenario_reanalysis(
+            session_id, through_state_version=state["state_version"]
+        )
+        assert database.get_pending_scenario_reanalysis_version(session_id) is None
+
+    database.initialize_database()
+    interrupted = database.get_scenario_analysis_job(queued["job_id"])
+    assert interrupted["status"] == "failed"
+    assert interrupted["attempt_count"] == 1
+    assert database.get_pending_scenario_reanalysis_version(session_id) == state["state_version"]
+    launches.clear()
+    stats = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
+    retried = database.get_scenario_analysis_job(queued["job_id"])
+    assert stats["reconciled"] == 1
+    assert retried["status"] == "queued"
+    assert retried["attempt_count"] == 2
+    assert launches == [queued["job_id"]]
+    assert database.get_pending_scenario_reanalysis_version(session_id) is None
+
+
+def test_offline_marker_waits_for_worker_reconnect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-RECOVER-RECONNECT"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    database.mark_scenario_reanalysis_pending(session_id, state["state_version"])
+    gateway.websocket = None
+    offline = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
+    assert offline["reconciled"] == 0
+    assert offline["pending"] == offline["deferred"] == 1
+    assert database.get_active_scenario_analysis_job(session_id) is None
+    assert database.get_pending_scenario_reanalysis_version(session_id) == state["state_version"]
+
+    launched: list[str] = []
+    monkeypatch.setattr(
+        routes,
+        "_launch_analysis_task",
+        lambda job, _state, *, trigger: launched.append(str(job["job_id"])),
+    )
+    gateway.websocket = object()
+    connected = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
+    assert connected["reconciled"] == 1
+    assert launched
+    assert database.get_pending_scenario_reanalysis_version(session_id) is None
+    assert "scenario_reanalysis_dispatcher" in Path("ecs/app/main.py").read_text(encoding="utf-8")
+    assert "reconcile_pending_scenario_reanalyses" in Path(
+        "ecs/app/routes/worker_socket.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_failed_logical_analysis_reopens_one_operational_attempt() -> None:
+    session_id = "SCNSESSION-FAILED-ATTEMPT"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    logical_key = hashlib.sha256(b"failed-logical-analysis").hexdigest()
+    original, created = database.create_scenario_analysis_job_record(
+        job_id="JOB-FAILED-ATTEMPT-1",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog-current",
+        evidence_revision="wiki-current",
+        pipeline_version=routes.PIPELINE_VERSION,
+        language="en",
+        idempotency_key=logical_key,
+        trigger="coalesced_reanalysis",
+    )
+    assert created is True
+    database.update_scenario_analysis_job_record(original["job_id"], status="failed")
+    retried, should_start = database.create_scenario_analysis_job_record(
+        job_id="JOB-FAILED-ATTEMPT-2",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog-current",
+        evidence_revision="wiki-current",
+        pipeline_version=routes.PIPELINE_VERSION,
+        language="en",
+        idempotency_key=logical_key,
+        trigger="coalesced_reanalysis",
+    )
+    duplicate, duplicate_start = database.create_scenario_analysis_job_record(
+        job_id="JOB-FAILED-ATTEMPT-3",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog-current",
+        evidence_revision="wiki-current",
+        pipeline_version=routes.PIPELINE_VERSION,
+        language="en",
+        idempotency_key=logical_key,
+        trigger="coalesced_reanalysis",
+    )
+    assert retried["job_id"] == duplicate["job_id"] == original["job_id"]
+    assert should_start is True
+    assert duplicate_start is False
+    assert retried["attempt_count"] == duplicate["attempt_count"] == 2
+
+
+def test_pending_changes_coalesce_to_only_latest_state_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-RECOVER-COALESCE"
+    state_v1 = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state_v1,
+    )
+    database.mark_scenario_reanalysis_pending(session_id, state_v1["state_version"])
+    state_v2 = _save_newer_scenario_state(session_id, state_v1, suffix="V2")
+    state_v3 = _save_newer_scenario_state(session_id, state_v2, suffix="V3")
+    launched_versions: list[int] = []
+    monkeypatch.setattr(
+        routes,
+        "_launch_analysis_task",
+        lambda _job, state, *, trigger: launched_versions.append(
+            int(state["state_version"])
+        ),
+    )
+    gateway.websocket = object()
+    stats = asyncio.run(routes.reconcile_pending_scenario_reanalyses())
+    active = database.get_active_scenario_analysis_job(session_id)
+    assert stats["pending"] == stats["reconciled"] == 1
+    assert launched_versions == [state_v3["state_version"]]
+    assert active["scenario_state_version"] == state_v3["state_version"]
+    assert active["attempt_count"] == 1
+    assert database.get_pending_scenario_reanalysis_version(session_id) is None

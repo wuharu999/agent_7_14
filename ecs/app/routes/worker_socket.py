@@ -17,6 +17,7 @@ from ecs.app.database import (
     update_capability_catalog_job,
 )
 from ecs.app.gateway import gateway
+from ecs.app.routes.scenario_sessions import reconcile_pending_scenario_reanalyses
 from ecs.app.routes.uploads import dispatch_upload
 from ecs.app.security_warnings import validated_security_warnings
 
@@ -45,8 +46,11 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
 
     await ws.accept()
     await gateway.attach(ws)
-    await _dispatch_waiting_uploads()
     try:
+        recovery = await reconcile_pending_scenario_reanalyses()
+        if recovery["reconciled"] or recovery["failed"]:
+            log.info("Scenario reanalysis reconciliation after Worker attach: %s", recovery)
+        await _dispatch_waiting_uploads()
         while True:
             data = await ws.receive_json()
             message_type = data.get("type")

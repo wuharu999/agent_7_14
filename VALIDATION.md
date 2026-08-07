@@ -92,7 +92,10 @@ allowlisted model state patches, evidence-context requests, structured follow-up
 classification, conversational change confirmation, changes during analysis,
 coalesced reanalysis, retained superseded reports, unknown-owner resolution,
 long-lived/reconnecting SSE, safe fact-derived progress summaries, and restart
-recovery.
+recovery. Recovery coverage includes a crash before reanalysis job creation, a
+crash between job creation and marker clearing, offline startup followed by
+Worker reconnect, reopening an existing failed logical job, and coalescing
+multiple pending state changes to the newest version.
 
 ## QA conversation/language validation
 

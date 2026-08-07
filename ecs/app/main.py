@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -33,7 +34,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     ensure_directories()
     initialize_database()
     delete_expired_sessions()
-    yield
+    reanalysis_task = asyncio.create_task(
+        scenario_sessions.scenario_reanalysis_dispatcher(),
+        name="scenario-reanalysis-dispatcher",
+    )
+    try:
+        yield
+    finally:
+        reanalysis_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await reanalysis_task
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)

@@ -249,7 +249,9 @@ def initialize_database() -> None:
                 pipeline_version TEXT NOT NULL,
                 language TEXT NOT NULL,
                 idempotency_key TEXT NOT NULL UNIQUE,
+                trigger TEXT NOT NULL DEFAULT 'manual',
                 status TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 1,
                 progress_cursor INTEGER NOT NULL DEFAULT 0,
                 superseded INTEGER NOT NULL DEFAULT 0,
                 error_category TEXT,
@@ -386,6 +388,23 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE scenario_sessions ADD COLUMN pending_reanalysis_state_version INTEGER"
             )
+        if "attempt_count" not in _columns(connection, "scenario_analysis_jobs"):
+            connection.execute(
+                "ALTER TABLE scenario_analysis_jobs ADD COLUMN attempt_count "
+                "INTEGER NOT NULL DEFAULT 1"
+            )
+        if "trigger" not in _columns(connection, "scenario_analysis_jobs"):
+            connection.execute(
+                "ALTER TABLE scenario_analysis_jobs ADD COLUMN trigger "
+                "TEXT NOT NULL DEFAULT 'manual'"
+            )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_scenario_sessions_pending_reanalysis
+            ON scenario_sessions(pending_reanalysis_state_version, updated_at)
+            WHERE pending_reanalysis_state_version IS NOT NULL
+            """
+        )
         if "updated_at" not in scenario_columns:
             connection.execute(
                 "ALTER TABLE scenario_assessments ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
@@ -411,6 +430,25 @@ def initialize_database() -> None:
                 error = 'Catalog organization was interrupted by an ECS restart.',
                 updated_at = ?
             WHERE status IN ('queued', 'processing')
+            """,
+            (utc_now(),),
+        )
+        connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET pending_reanalysis_state_version = CASE
+                    WHEN pending_reanalysis_state_version IS NULL
+                      OR pending_reanalysis_state_version < current_state_version
+                    THEN current_state_version
+                    ELSE pending_reanalysis_state_version
+                END,
+                updated_at = ?
+            WHERE EXISTS (
+                SELECT 1 FROM scenario_analysis_jobs AS job
+                WHERE job.session_id = scenario_sessions.session_id
+                  AND job.status IN ('queued', 'processing')
+                  AND job.trigger = 'coalesced_reanalysis'
+            )
             """,
             (utc_now(),),
         )
@@ -2458,16 +2496,19 @@ def create_scenario_analysis_job_record(
     pipeline_version: str,
     language: str,
     idempotency_key: str,
+    trigger: str = "manual",
 ) -> tuple[dict[str, Any], bool]:
+    """Create a logical job or atomically reopen its failed operational attempt."""
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
             """
             INSERT OR IGNORE INTO scenario_analysis_jobs (
                 job_id, session_id, scenario_state_version, catalog_revision,
                 evidence_revision, pipeline_version, language, idempotency_key,
-                status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+                trigger, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
             """,
             (
                 job_id,
@@ -2478,6 +2519,7 @@ def create_scenario_analysis_job_record(
                 pipeline_version,
                 language,
                 idempotency_key,
+                trigger,
                 now,
                 now,
             ),
@@ -2486,9 +2528,26 @@ def create_scenario_analysis_job_record(
             "SELECT * FROM scenario_analysis_jobs WHERE idempotency_key = ?",
             (idempotency_key,),
         ).fetchone()
+        should_start = cursor.rowcount == 1
+        if row is not None and not should_start and row["status"] == "failed":
+            retry_cursor = connection.execute(
+                """
+                UPDATE scenario_analysis_jobs
+                SET status = 'queued', attempt_count = attempt_count + 1,
+                    superseded = 0, error_category = NULL,
+                    internal_error_correlation_id = NULL, trigger = ?, updated_at = ?
+                WHERE job_id = ? AND status = 'failed'
+                """,
+                (trigger, now, row["job_id"]),
+            )
+            should_start = retry_cursor.rowcount == 1
+            row = connection.execute(
+                "SELECT * FROM scenario_analysis_jobs WHERE job_id = ?",
+                (row["job_id"],),
+            ).fetchone()
     if row is None:
         raise RuntimeError("Scenario analysis job was not created")
-    return dict(row), cursor.rowcount == 1
+    return dict(row), should_start
 
 
 def update_scenario_analysis_job_record(
@@ -2537,6 +2596,59 @@ def get_active_scenario_analysis_job(session_id: str) -> dict[str, Any] | None:
             (session_id,),
         ).fetchone()
     return dict(row) if row is not None else None
+
+
+def list_pending_scenario_reanalyses(*, limit: int = 200) -> list[dict[str, Any]]:
+    bounded = max(1, min(int(limit), 1000))
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT session_id, current_state_version,
+                   pending_reanalysis_state_version, status, updated_at
+            FROM scenario_sessions
+            WHERE pending_reanalysis_state_version IS NOT NULL
+              AND deleted_at IS NULL
+            ORDER BY updated_at ASC
+            LIMIT ?
+            """,
+            (bounded,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def has_current_scenario_report_for_version(
+    session_id: str, state_version: int
+) -> bool:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM scenario_report_revisions
+            WHERE session_id = ? AND scenario_state_version = ?
+              AND is_current = 1 AND status IN ('current', 'partial')
+            LIMIT 1
+            """,
+            (session_id, state_version),
+        ).fetchone()
+    return row is not None
+
+
+def mark_scenario_reanalysis_pending(session_id: str, state_version: int) -> None:
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET pending_reanalysis_state_version = CASE
+                    WHEN pending_reanalysis_state_version IS NULL
+                      OR pending_reanalysis_state_version < ? THEN ?
+                    ELSE pending_reanalysis_state_version
+                END,
+                updated_at = ?
+            WHERE session_id = ? AND deleted_at IS NULL
+            """,
+            (state_version, state_version, now, session_id),
+        )
 
 
 def create_scenario_report_revision(

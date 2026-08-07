@@ -98,6 +98,15 @@ _COLLECTION_PATCH_FIELDS = {
         "resolution_options",
     },
 }
+_COLLECTION_IDENTITY_FIELDS = {
+    "actors": ("semantic_key", "actor_id"),
+    "objects": ("semantic_key", "object_id"),
+    "acceptance_criteria": ("semantic_key", "criterion_id"),
+    "facts": ("semantic_key",),
+    "assumptions": ("semantic_key",),
+    "requirements": ("semantic_key", "requirement_id"),
+    "unresolved_issues": ("semantic_key", "issue_id"),
+}
 
 
 def utc_now() -> str:
@@ -291,16 +300,10 @@ def _validated_collection_value(root: str, value: Any) -> dict[str, Any]:
     if unexpected:
         raise ValueError(f"{root} patch contains unsupported fields")
     normalized = deepcopy(value)
-    identity = str(
-        normalized.get("semantic_key")
-        or normalized.get("requirement_id")
-        or normalized.get("issue_id")
-        or normalized.get("actor_id")
-        or normalized.get("object_id")
-        or normalized.get("criterion_id")
-        or ""
-    ).strip()
-    if not identity:
+    if not any(
+        str(normalized.get(field) or "").strip()
+        for field in _COLLECTION_IDENTITY_FIELDS[root]
+    ):
         raise ValueError(f"{root} patch requires a stable semantic identifier")
     for key in (
         "semantic_key", "requirement_id", "issue_id", "actor_id", "object_id",
@@ -342,6 +345,14 @@ def _validated_collection_value(root: str, value: Any) -> dict[str, Any]:
             for item in options
         ]
     return normalized
+
+
+def _collection_identity(root: str, value: dict[str, Any]) -> tuple[str, str]:
+    for field in _COLLECTION_IDENTITY_FIELDS[root]:
+        identity = str(value.get(field) or "").strip()
+        if identity:
+            return field, identity
+    raise ValueError(f"{root} patch requires a stable semantic identifier")
 
 
 def apply_state_patch(
@@ -403,14 +414,12 @@ def apply_state_patch(
         if operation == "append":
             collection.append(value)
             continue
-        semantic_key = str(value.get("semantic_key") or value.get("requirement_id") or "").strip()
-        if not semantic_key:
-            raise ValueError("Upsert patches require a semantic key or requirement ID")
+        identity_field, identity = _collection_identity(root, value)
         result[root] = [
             item
             for item in collection
             if not isinstance(item, dict)
-            or str(item.get("semantic_key") or item.get("requirement_id") or "") != semantic_key
+            or str(item.get(identity_field) or "").strip() != identity
         ] + [value]
     validate_state(result)
     return evaluate_state(result)
