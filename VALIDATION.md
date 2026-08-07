@@ -22,18 +22,22 @@ descriptor and may hang before sending an ASGI request.
 On the deployed pair, verify in this order:
 
 1. `/health` reports `worker_online: true`.
-2. Open `/capability-match`, select a robot, create a persistent scenario, and
-   answer the one-question clarification flow through the minimum gate.
-3. Confirm stable scenarios enter the countdown, analysis progress reconnects,
-   and the versioned report drawer opens without leaving the scenario page.
-4. Use a scenario with only building-block SDK/driver evidence and confirm the
+2. On `/`, confirm **Assess robot fit** opens `/capability-match` and that normal
+   chat contains no scenario-analysis switch or background scenario job.
+3. Choose a robot or leave **Auto-select from scenario** selected, create a
+   persistent scenario, confirm the selected robot is shown, and answer the
+   one-question clarification flow through the minimum gate.
+4. Confirm the status pill distinguishes working, waiting for customer input,
+   reconnecting, paused when the Worker is offline, and report completion. Confirm
+   stable scenarios enter the countdown and the versioned report drawer opens.
+5. Use a scenario with only building-block SDK/driver evidence and confirm the
    operational-behavior evidence gate reports `Operational behavior evidence required`.
-5. Download `feasibility_report.md` and `feasibility_report.pdf`.
-6. Sign in as admin and open `/admin/capabilities`. Confirm the file-change panel
+6. Download `feasibility_report.md` and `feasibility_report.pdf`.
+7. Sign in as admin and open `/admin/capabilities`. Confirm the file-change panel
    shows the selected robot's added/modified/deleted paths.
-7. Start organization with no prior organization manifest. Confirm it reports a
+8. Start organization with no prior organization manifest. Confirm it reports a
    full Wiki scan, and a second admin session plus a refreshed page see the same state.
-8. Add or modify a generated Wiki page and confirm **Organize changes** uses an
+9. Add or modify a generated Wiki page and confirm **Organize changes** uses an
    incremental scan. Then use **Resume full scan** and confirm matching checkpoints
    are restored. Use **Force full re-extraction** and confirm all generated Wiki
    evidence is inventoried without checkpoint reads while `wiki/capabilities/` and
@@ -47,11 +51,11 @@ On the deployed pair, verify in this order:
    grouped exclusion reasons.
    Confirm deployed timeout floors are 1800 seconds per extraction batch, 3600
    seconds for reduction, and 86400 seconds for the complete ECS command.
-9. Confirm validated drafts appear in both the UI and
+10. Confirm validated drafts appear in both the UI and
    `wiki/capabilities/<model>/`, the source change list resets only after complete
    coverage, and a backup is retained for an existing catalog. A partial run must
    keep the previous successful baseline.
-10. Create one draft stub. Confirm it appears once after repeating the same request and the audit
+11. Create one draft stub. Confirm it appears once after repeating the same request and the audit
    log contains `create_capability_draft_stub`.
 
 The final package was checked with:

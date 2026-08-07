@@ -109,7 +109,10 @@ Open `/capability-match` to create a persistent scenario for one robot. The
 server saves each clarification answer as a version, asks one conclusion-changing
 customer question at a time, starts analysis when the scenario is stable, and
 keeps the latest report visible during later refinement. The QA page's **Scenario
-Feasibility** shortcut can prefill this workflow from recent customer-side turns.
+Feasibility** button opens this dedicated workflow and can carry the current draft,
+language, and selected robot. The main chat does not run scenario analysis itself.
+When no robot is selected or named, the scenario service selects one from the
+scenario and available robot metadata and shows the selected model to the customer.
 
 The deterministic matcher enforces four explicit capability layers:
 `L0_primitive_driver`, `L1_atomic_skill`, `L2_composite_skill`, and
@@ -117,7 +120,8 @@ The deterministic matcher enforces four explicit capability layers:
 match backed only by L0 primitives is always rewritten to
 `R&D Gap (Composite Skill Missing)`, even if the LLM proposed a passing match.
 
-The scenario page shows reconnecting progress, versioned reports, conditions,
+The scenario page explicitly distinguishes working, waiting, reconnecting, paused
+(Worker offline), and completed states. It also shows versioned reports, conditions,
 evidence, unresolved boundaries, next actions, and Markdown/PDF exports. Assessments are
 stored additively in `agent_jobs.db`; anonymous public assessments have no user
 owner. At `/admin/capabilities`, administrators can review aggregate requested

@@ -1734,16 +1734,19 @@ def get_allowed_teams() -> list[str]:
     return names
 
 
-def get_robot_options() -> list[dict[str, str]]:
+def get_robot_options(*, include_description: bool = False) -> list[dict[str, str]]:
     """Return stable Worker folder keys with browser display names."""
-    return [
-        {
+    options: list[dict[str, str]] = []
+    for robot in get_all_robots():
+        option = {
             "name": str(robot["name"]),
             "english_name": str(robot.get("display_name_en") or robot["name"]),
             "chinese_name": str(robot.get("display_name_zh") or robot["name"]),
         }
-        for robot in get_all_robots()
-    ]
+        if include_description:
+            option["description"] = str(robot.get("description") or "")
+        options.append(option)
+    return options
 
 
 # ---------------------------------------------------------------------------

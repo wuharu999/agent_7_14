@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 import uuid
@@ -19,7 +20,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 
 from ecs.app.auth import current_session, require_user, verify_csrf
-from ecs.app.config import SCENARIO_REANALYSIS_POLL_SECONDS
+from ecs.app.config import ALLOWED_TEAMS, SCENARIO_REANALYSIS_POLL_SECONDS
 from ecs.app.database import (
     append_scenario_event,
     clear_pending_scenario_reanalysis,
@@ -29,6 +30,7 @@ from ecs.app.database import (
     create_scenario_share_link,
     finalize_scenario_analysis_report,
     get_allowed_teams,
+    get_robot_options,
     get_active_scenario_analysis_job,
     get_pending_scenario_reanalysis_version,
     get_scenario_analysis_job,
@@ -111,7 +113,7 @@ def _rate_limited(request: Request, action: str) -> JSONResponse | None:
 
 class CreateSessionRequest(BaseModel):
     initial_intent: str = Field(min_length=3, max_length=20_000)
-    model_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    model_id: str = Field(default="auto", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     language: str = Field(default=DEFAULT_LANGUAGE, max_length=16)
 
 
@@ -142,6 +144,93 @@ class ShareRequest(BaseModel):
     report_revision_id: str | None = Field(default=None, max_length=100)
     bind_current: bool = False
     expires_in_hours: int | None = Field(default=168, ge=1, le=24 * 365)
+
+
+def _model_aliases(robot: dict[str, str]) -> set[str]:
+    aliases: set[str] = set()
+    for field in ("name", "english_name", "chinese_name"):
+        value = str(robot.get(field) or "").strip().casefold()
+        if not value:
+            continue
+        aliases.add(value)
+        aliases.add(value.replace("_", " ").replace("-", " "))
+    return {alias for alias in aliases if len(alias) >= 2}
+
+
+def _contains_alias(text: str, alias: str) -> bool:
+    if re.fullmatch(r"[a-z0-9 _-]+", alias):
+        pattern = r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])"
+        return re.search(pattern, text) is not None
+    return alias in text
+
+
+def _selection_terms(text: str) -> set[str]:
+    normalized = text.casefold()
+    terms = set(re.findall(r"[a-z0-9]{3,}", normalized))
+    for sequence in re.findall(r"[\u3400-\u9fff]+", normalized):
+        for width in (2, 3, 4):
+            terms.update(
+                sequence[index : index + width]
+                for index in range(max(0, len(sequence) - width + 1))
+            )
+    return terms
+
+
+def _select_scenario_model(initial_intent: str, requested_model: str) -> dict[str, str]:
+    allowed = get_allowed_teams()
+    if not allowed:
+        raise ValueError("No robot models are available")
+    if requested_model != "auto":
+        if requested_model not in allowed:
+            raise ValueError("Unknown robot model")
+        return {
+            "model_id": requested_model,
+            "mode": "customer_selected",
+            "reason": "The customer selected this robot.",
+        }
+
+    options = [
+        robot
+        for robot in get_robot_options(include_description=True)
+        if robot.get("name") in allowed
+    ]
+    by_name = {str(robot["name"]): robot for robot in options}
+    text = initial_intent.casefold()
+    explicit_matches: list[tuple[int, str]] = []
+    for model_id in allowed:
+        robot = by_name.get(model_id, {"name": model_id})
+        matching = [alias for alias in _model_aliases(robot) if _contains_alias(text, alias)]
+        if matching:
+            explicit_matches.append((max(len(alias) for alias in matching), model_id))
+    if explicit_matches:
+        explicit_matches.sort(key=lambda item: (-item[0], allowed.index(item[1])))
+        return {
+            "model_id": explicit_matches[0][1],
+            "mode": "named_in_scenario",
+            "reason": "The scenario explicitly names this robot.",
+        }
+
+    scenario_terms = _selection_terms(text)
+    scores: list[tuple[int, int, str]] = []
+    for position, model_id in enumerate(allowed):
+        robot = by_name.get(model_id, {"name": model_id, "description": ""})
+        description_terms = _selection_terms(str(robot.get("description") or ""))
+        score = len(scenario_terms & description_terms)
+        scores.append((score, -position, model_id))
+    best = max(scores)
+    if best[0] > 0:
+        return {
+            "model_id": best[2],
+            "mode": "scenario_fit",
+            "reason": "The robot was selected from the scenario and available robot metadata.",
+        }
+
+    configured_default = next((model for model in ALLOWED_TEAMS if model in allowed), allowed[0])
+    return {
+        "model_id": configured_default,
+        "mode": "configured_default",
+        "reason": "No robot was named, so the configured default robot was selected.",
+    }
 
 
 @router.get("/api/scenario-sessions")
@@ -795,8 +884,10 @@ async def create_session_route(
     limited = _rate_limited(request, "create")
     if limited is not None:
         return limited
-    if payload.model_id not in get_allowed_teams():
-        return JSONResponse({"error": "Unknown robot model"}, status_code=400)
+    try:
+        model_selection = _select_scenario_model(payload.initial_intent, payload.model_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     if payload.language not in SUPPORTED_LANGUAGES:
         return JSONResponse({"error": "Unsupported language"}, status_code=400)
     account = current_session(request)
@@ -811,16 +902,24 @@ async def create_session_route(
         owner_user_id=int(account["user_id"]) if account else None,
         anonymous_token_hash=_token_hash(raw_resume_token) if raw_resume_token else None,
         language=payload.language,
-        model_id=payload.model_id,
+        model_id=model_selection["model_id"],
         state=state,
     )
     await asyncio.to_thread(
         _append_event,
         session_id,
         "session_created",
-        {"state_version": state["state_version"]},
+        {
+            "state_version": state["state_version"],
+            "model_id": model_selection["model_id"],
+            "model_selection_mode": model_selection["mode"],
+        },
     )
-    response = {"status": "ok", "session": _public_session(scenario)}
+    response = {
+        "status": "ok",
+        "session": _public_session(scenario),
+        "model_selection": model_selection,
+    }
     if raw_resume_token:
         response["resume_token"] = raw_resume_token
     return JSONResponse(response, status_code=201)

@@ -379,6 +379,84 @@ def test_workbench_uses_safe_dom_and_accessible_report_drawer() -> None:
     assert "confirm(" not in page
     assert "confirmation-card" in page
     assert "eventReconnectTimer=setTimeout(connectEvents,2000)" in page
+    assert 'id="process-indicator"' in page
+    assert "Paused · Worker offline" in page
+    assert "Working · analysis in progress" in page
+    assert "Complete · report ready" in page
+    assert "Auto-select from scenario" in page
+
+
+def test_robot_auto_selection_prefers_customer_choice_name_and_scenario_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        routes,
+        "get_allowed_teams",
+        lambda: ["tian_gong", "walker_s2", "walker_c1"],
+    )
+    monkeypatch.setattr(
+        routes,
+        "get_robot_options",
+        lambda **_kwargs: [
+            {"name": "tian_gong", "english_name": "Tiangong", "chinese_name": "天工", "description": "Outdoor locomotion"},
+            {"name": "walker_s2", "english_name": "Walker S2", "chinese_name": "优必选 S2", "description": "Customer service"},
+            {"name": "walker_c1", "english_name": "Walker C1", "chinese_name": "优必选 C1", "description": "Factory warehouse logistics sorting 仓库物流分拣"},
+        ],
+    )
+    monkeypatch.setattr(routes, "ALLOWED_TEAMS", ["tian_gong", "walker_s2", "walker_c1"])
+
+    selected = routes._select_scenario_model("Use a robot in warehouse sorting", "auto")
+    assert selected["model_id"] == "walker_c1"
+    assert selected["mode"] == "scenario_fit"
+
+    selected_zh = routes._select_scenario_model("在仓库里完成物流分拣", "auto")
+    assert selected_zh["model_id"] == "walker_c1"
+    assert selected_zh["mode"] == "scenario_fit"
+
+    named = routes._select_scenario_model("Use Walker S2 for warehouse sorting", "auto")
+    assert named["model_id"] == "walker_s2"
+    assert named["mode"] == "named_in_scenario"
+
+    customer = routes._select_scenario_model("Reception task", "walker_c1")
+    assert customer["model_id"] == "walker_c1"
+    assert customer["mode"] == "customer_selected"
+
+    fallback = routes._select_scenario_model("Do a new task", "auto")
+    assert fallback["model_id"] == "tian_gong"
+    assert fallback["mode"] == "configured_default"
+
+
+def test_create_session_returns_the_automatically_selected_robot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(routes, "get_allowed_teams", lambda: ["walker_s2", "walker_c1"])
+    monkeypatch.setattr(
+        routes,
+        "get_robot_options",
+        lambda **_kwargs: [
+            {"name": "walker_s2", "english_name": "Walker S2", "chinese_name": "S2", "description": "Customer service"},
+            {"name": "walker_c1", "english_name": "Walker C1", "chinese_name": "C1", "description": "Factory warehouse logistics sorting"},
+        ],
+    )
+
+    response = asyncio.run(
+        routes.create_session_route(
+            routes.CreateSessionRequest(
+                initial_intent="Automate warehouse sorting",
+                language="en",
+            ),
+            _request(),
+        )
+    )
+    data = json.loads(response.body)
+
+    assert response.status_code == 201
+    assert data["model_selection"]["model_id"] == "walker_c1"
+    assert data["model_selection"]["mode"] == "scenario_fit"
+    assert data["session"]["model_id"] == "walker_c1"
+    saved = database.get_scenario_session(data["session"]["session_id"])
+    assert saved is not None
+    assert saved["model_id"] == "walker_c1"
 
 
 def _minimum_ready_state(session_id: str) -> dict:

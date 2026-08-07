@@ -502,8 +502,11 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
     ask_html = (
         Path(__file__).resolve().parents[1] / "ecs" / "app" / "templates" / "ask.html"
     ).read_text(encoding="utf-8")
-    assert "monitorDemandAnalysis(latest.assessment_id)" in ask_html
-    assert "Analysis continues in the background" in ask_html
+    assert 'id="scenarioAssessment"' in ask_html
+    assert 'href="/capability-match"' in ask_html
+    assert "monitorDemandAnalysis" not in ask_html
+    assert "/api/capability-match/analyze" not in ask_html
+    assert "demandMode" not in ask_html
 
     markdown = asyncio.run(
         export_capability_match(
