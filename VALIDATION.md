@@ -22,10 +22,10 @@ descriptor and may hang before sending an ASGI request.
 On the deployed pair, verify in this order:
 
 1. `/health` reports `worker_online: true`.
-2. Select a specific robot on `/`, enable Analyze Demand Mode, and submit a
-   bounded customer scenario.
-3. Open the CTA and confirm `SCN-*`/`REQ-*` records and the three workbench
-   columns.
+2. Open `/capability-match`, select a robot, create a persistent scenario, and
+   answer the one-question clarification flow through the minimum gate.
+3. Confirm stable scenarios enter the countdown, analysis progress reconnects,
+   and the versioned report drawer opens without leaving the scenario page.
 4. Use a scenario with only building-block SDK/driver evidence and confirm the
    operational-behavior evidence gate reports `Operational behavior evidence required`.
 5. Download `feasibility_report.md` and `feasibility_report.pdf`.

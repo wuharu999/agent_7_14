@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import math
 from typing import Any, Iterable
 import uuid
 
 
 KNOWLEDGE_STATES = {"known", "assumed", "unknown", "conflicted"}
+CONFIRMATION_STATES = {"unknown", "proposed", "confirmed", "conflicted"}
 SOURCE_OWNERS = {
     "customer",
     "wiki",
@@ -40,9 +42,62 @@ PATCHABLE_COLLECTION_ROOTS = {
     "assumptions",
     "requirements",
     "unresolved_issues",
-    "candidate_solution_paths",
 }
 PATCH_OPERATIONS = {"set", "append", "upsert"}
+_TEXT_PATCH_PATHS = {
+    ("goal", "original_text"),
+    ("goal", "normalized_value"),
+    ("workflow", "trigger"),
+    ("workflow", "end_outcome"),
+}
+_CONFIRMATION_PATCH_PATHS = {
+    ("goal", "confirmation"),
+    ("workflow", "confirmation"),
+    ("allowed_modifications", "confirmation"),
+    ("human_intervention", "confirmation"),
+}
+_DYNAMIC_PATCH_ROOTS = {
+    "environment",
+    "operating_profile",
+    "allowed_modifications",
+    "human_intervention",
+}
+_COLLECTION_PATCH_FIELDS = {
+    "actors": {
+        "semantic_key", "actor_id", "name", "role", "original_text",
+        "normalized_value", "knowledge_state", "owner", "evidence_locator",
+        "last_changed_version",
+    },
+    "objects": {
+        "semantic_key", "object_id", "name", "original_text", "normalized_value",
+        "knowledge_state", "owner", "evidence_locator", "last_changed_version",
+    },
+    "acceptance_criteria": {
+        "semantic_key", "criterion_id", "name", "original_text", "normalized_value",
+        "knowledge_state", "owner", "evidence_locator", "last_changed_version",
+    },
+    "facts": {
+        "semantic_key", "original_text", "normalized_value", "knowledge_state",
+        "owner", "evidence_locator", "affected_decision", "can_change_conclusion",
+        "last_changed_version",
+    },
+    "assumptions": {
+        "semantic_key", "original_text", "normalized_value", "knowledge_state",
+        "owner", "evidence_locator", "affected_decision", "can_change_conclusion",
+        "last_changed_version",
+    },
+    "requirements": {
+        "semantic_key", "requirement_id", "original_text", "normalized_value",
+        "knowledge_state", "owner", "evidence_locator", "affected_decision",
+        "can_change_conclusion", "last_changed_version",
+    },
+    "unresolved_issues": {
+        "semantic_key", "issue_id", "original_text", "normalized_value",
+        "knowledge_state", "owner", "evidence_locator", "affected_decision",
+        "can_change_conclusion", "next_action", "status", "last_changed_version",
+        "resolution_options",
+    },
+}
 
 
 def utc_now() -> str:
@@ -166,6 +221,129 @@ def _clean_patch_path(value: Any) -> tuple[str, ...]:
     return parts
 
 
+def _bounded_text(value: Any, *, field: str, maximum: int = 5000) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} patch value must be text")
+    clean = value.strip()
+    if not clean or len(clean) > maximum:
+        raise ValueError(f"{field} patch text is empty or too long")
+    return clean
+
+
+def _finite_number(value: Any, *, field: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} patch value must be a finite number")
+    if not math.isfinite(float(value)):
+        raise ValueError(f"{field} patch number must be finite")
+    return value
+
+
+def _validated_dynamic_value(path: tuple[str, ...], value: Any) -> Any:
+    field = ".".join(path)
+    if isinstance(value, str):
+        return _bounded_text(value, field=field)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return _finite_number(value, field=field)
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} patch value has an unsupported type")
+    allowed = {"value", "min", "max", "unit"}
+    if not value or set(value) - allowed:
+        raise ValueError(f"{field} patch envelope has unsupported fields")
+    unit = _bounded_text(value.get("unit"), field=f"{field}.unit", maximum=40)
+    normalized: dict[str, Any] = {"unit": unit}
+    for key in ("value", "min", "max"):
+        if key in value:
+            normalized[key] = _finite_number(value[key], field=f"{field}.{key}")
+    if not any(key in normalized for key in ("value", "min", "max")):
+        raise ValueError(f"{field} patch envelope needs value, min, or max")
+    if "min" in normalized and "max" in normalized and normalized["min"] > normalized["max"]:
+        raise ValueError(f"{field} patch envelope min exceeds max")
+    return normalized
+
+
+def _validated_record_value(root: str, value: Any) -> Any:
+    field = f"{root}.normalized_value"
+    if isinstance(value, str):
+        if len(value) > 5000:
+            raise ValueError(f"{field} patch text is too long")
+        return value.strip()
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return _finite_number(value, field=field)
+    if isinstance(value, dict):
+        return _validated_dynamic_value((root, "normalized_value"), value)
+    if isinstance(value, list) and len(value) <= 64:
+        return [
+            _bounded_text(item, field=field, maximum=500)
+            for item in value
+        ]
+    raise ValueError(f"{field} patch value has an unsupported type")
+
+
+def _validated_collection_value(root: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{root} patch value must be an object")
+    allowed = _COLLECTION_PATCH_FIELDS[root]
+    unexpected = set(value) - allowed
+    if unexpected:
+        raise ValueError(f"{root} patch contains unsupported fields")
+    normalized = deepcopy(value)
+    identity = str(
+        normalized.get("semantic_key")
+        or normalized.get("requirement_id")
+        or normalized.get("issue_id")
+        or normalized.get("actor_id")
+        or normalized.get("object_id")
+        or normalized.get("criterion_id")
+        or ""
+    ).strip()
+    if not identity:
+        raise ValueError(f"{root} patch requires a stable semantic identifier")
+    for key in (
+        "semantic_key", "requirement_id", "issue_id", "actor_id", "object_id",
+        "criterion_id", "name", "role", "original_text", "affected_decision",
+        "next_action", "status",
+    ):
+        if key in normalized:
+            normalized[key] = _bounded_text(normalized[key], field=f"{root}.{key}")
+    if "knowledge_state" in normalized and normalized["knowledge_state"] not in KNOWLEDGE_STATES:
+        raise ValueError(f"{root} patch has an invalid knowledge state")
+    if "owner" in normalized and normalized["owner"] not in SOURCE_OWNERS:
+        raise ValueError(f"{root} patch has an invalid owner")
+    if "normalized_value" in normalized:
+        normalized["normalized_value"] = _validated_record_value(
+            root, normalized["normalized_value"]
+        )
+    if "evidence_locator" in normalized:
+        locator = normalized["evidence_locator"]
+        if locator is not None:
+            normalized["evidence_locator"] = _bounded_text(
+                locator, field=f"{root}.evidence_locator", maximum=1000
+            )
+    if "can_change_conclusion" in normalized and not isinstance(
+        normalized["can_change_conclusion"], bool
+    ):
+        raise ValueError(f"{root} patch conclusion flag must be boolean")
+    if "last_changed_version" in normalized and (
+        isinstance(normalized["last_changed_version"], bool)
+        or not isinstance(normalized["last_changed_version"], int)
+        or normalized["last_changed_version"] < 1
+    ):
+        raise ValueError(f"{root} patch version must be a positive integer")
+    if "resolution_options" in normalized:
+        options = normalized["resolution_options"]
+        if not isinstance(options, list) or len(options) > 8:
+            raise ValueError(f"{root} patch resolution options must be a bounded list")
+        normalized["resolution_options"] = [
+            _bounded_text(item, field=f"{root}.resolution_options", maximum=500)
+            for item in options
+        ]
+    return normalized
+
+
 def apply_state_patch(
     state: dict[str, Any], patches: Iterable[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -187,6 +365,22 @@ def apply_state_patch(
         if operation == "set":
             if root not in PATCHABLE_OBJECT_ROOTS or len(parts) < 2:
                 raise ValueError("State patch set path is not allowed")
+            if parts == ("workflow", "steps"):
+                if not isinstance(value, list) or not 1 <= len(value) <= 64:
+                    raise ValueError("workflow.steps patch value must be a bounded list")
+                value = [
+                    _bounded_text(item, field="workflow.steps", maximum=500)
+                    for item in value
+                ]
+            elif parts in _CONFIRMATION_PATCH_PATHS:
+                if value not in CONFIRMATION_STATES:
+                    raise ValueError("Confirmation patch value is invalid")
+            elif parts in _TEXT_PATCH_PATHS:
+                value = _bounded_text(value, field=".".join(parts))
+            elif root in _DYNAMIC_PATCH_ROOTS and len(parts) == 2:
+                value = _validated_dynamic_value(parts, value)
+            else:
+                raise ValueError("State patch set path has no value contract")
             target = result.setdefault(root, {})
             if not isinstance(target, dict):
                 raise ValueError("State patch target must be an object")
@@ -201,8 +395,11 @@ def apply_state_patch(
         if root not in PATCHABLE_COLLECTION_ROOTS or len(parts) != 1:
             raise ValueError("State patch collection path is not allowed")
         collection = result.setdefault(root, [])
-        if not isinstance(collection, list) or not isinstance(value, dict):
-            raise ValueError("State patch collection value must be an object")
+        if not isinstance(collection, list):
+            raise ValueError("State patch collection target must be an array")
+        if len(collection) >= 1000:
+            raise ValueError("State patch collection exceeds the record limit")
+        value = _validated_collection_value(root, value)
         if operation == "append":
             collection.append(value)
             continue

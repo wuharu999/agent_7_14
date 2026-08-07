@@ -22,7 +22,11 @@ from worker.capability_matcher import (
     grill_scenario,
     retrieve_relevant_capability_evidence,
 )
-from worker.scenario_clarification import clarify_scenario, classify_followup_intent
+from worker.scenario_clarification import (
+    answer_report_question,
+    clarify_scenario,
+    classify_followup_intent,
+)
 from worker.capability_catalog import (
     inspect_capability_source_changes,
     organize_capability_catalog,
@@ -277,7 +281,11 @@ class WorkerManager:
             )
             return
 
-        if message_type in {"grill_scenario", "classify_scenario_message"}:
+        if message_type in {
+            "grill_scenario",
+            "classify_scenario_message",
+            "answer_scenario_report_question",
+        }:
             command_id = str(data.get("id") or "")
             if not command_id or command_id in self.active_clarification_ids:
                 return
@@ -291,7 +299,11 @@ class WorkerManager:
                         "type": (
                             "scenario_message_classification_result"
                             if message_type == "classify_scenario_message"
-                            else "grill_scenario_result"
+                            else (
+                                "scenario_report_answer_result"
+                                if message_type == "answer_scenario_report_question"
+                                else "grill_scenario_result"
+                            )
                         ),
                         "id": command_id,
                         "status": "failed",
@@ -703,7 +715,19 @@ class WorkerManager:
             try:
                 log.info("Scenario clarification worker %d handling %s", worker_number, command_id)
                 scenario_state = data.get("scenario_state")
-                if data.get("type") == "classify_scenario_message" and isinstance(
+                if data.get("type") == "answer_scenario_report_question":
+                    result = await answer_report_question(
+                        model_id=str(data.get("model_id") or ""),
+                        language=str(data.get("language") or "en"),
+                        user_question=str(data.get("user_question") or ""),
+                        approved_report=(
+                            data.get("approved_report")
+                            if isinstance(data.get("approved_report"), dict)
+                            else {}
+                        ),
+                    )
+                    result_type = "scenario_report_answer_result"
+                elif data.get("type") == "classify_scenario_message" and isinstance(
                     scenario_state, dict
                 ):
                     result = await classify_followup_intent(
@@ -752,7 +776,11 @@ class WorkerManager:
                         "type": (
                             "scenario_message_classification_result"
                             if data.get("type") == "classify_scenario_message"
-                            else "grill_scenario_result"
+                            else (
+                                "scenario_report_answer_result"
+                                if data.get("type") == "answer_scenario_report_question"
+                                else "grill_scenario_result"
+                            )
                         ),
                         "id": command_id,
                         "status": "failed",

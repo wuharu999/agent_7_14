@@ -23,6 +23,7 @@ from shared.scenario_state import (
 )
 from worker.analysis_progress import progress_event, sanitize_summary
 from worker.manager import WorkerManager
+from worker import scenario_clarification
 
 
 @pytest.fixture(autouse=True)
@@ -233,6 +234,9 @@ def test_state_version_write_is_optimistic_and_migration_is_additive() -> None:
     database.initialize_database()
     with sqlite3.connect(database.DATABASE_PATH) as connection:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        session_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(scenario_sessions)")
+        }
     assert {
         "scenario_sessions",
         "scenario_state_versions",
@@ -241,6 +245,7 @@ def test_state_version_write_is_optimistic_and_migration_is_additive() -> None:
         "scenario_report_revisions",
         "scenario_share_links",
     } <= tables
+    assert "pending_reanalysis_state_version" in session_columns
 
 
 def test_claim_requires_token_then_disables_anonymous_resume() -> None:
@@ -300,10 +305,25 @@ def test_worker_clarification_queue_is_separate_and_bounded() -> None:
                 "model_id": "walker_s2",
             }
         )
+        await manager.route_message(
+            {
+                "type": "answer_scenario_report_question",
+                "id": "report-answer-1",
+                "model_id": "walker_s2",
+                "language": "en",
+                "user_question": "What is the payload limit?",
+                "approved_report": {"conditions": ["Payload below 2 kg"]},
+            }
+        )
 
     asyncio.run(queue_one())
-    assert manager.clarification_queue.qsize() == 1
+    assert manager.clarification_queue.qsize() == 2
     assert manager.capability_match_queue.qsize() == 0
+    assert manager.clarification_queue.get_nowait()["type"] == "grill_scenario"
+    assert (
+        manager.clarification_queue.get_nowait()["type"]
+        == "answer_scenario_report_question"
+    )
 
 
 def test_capability_migration_and_progress_sanitization() -> None:
@@ -594,6 +614,31 @@ def test_allowlisted_state_patch_updates_dynamic_spec_and_rejects_runtime_fields
             state,
             [{"op": "set", "path": "status.value", "value": "report_ready"}],
         )
+    invalid_values = [
+        {"op": "set", "path": "workflow.steps", "value": "navigate -> grasp"},
+        {"op": "set", "path": "goal.confirmation", "value": True},
+        {
+            "op": "set",
+            "path": "operating_profile.payload_kg",
+            "value": {"unexpected": "object"},
+        },
+        {
+            "op": "upsert",
+            "path": "candidate_solution_paths",
+            "value": {"semantic_key": "model-derived-path"},
+        },
+        {
+            "op": "upsert",
+            "path": "facts",
+            "value": {
+                "semantic_key": "payload.boundary",
+                "normalized_value": {"unexpected": "object"},
+            },
+        },
+    ]
+    for invalid in invalid_values:
+        with pytest.raises(ValueError):
+            apply_state_patch(state, [invalid])
 
 
 def test_ecs_requests_worker_evidence_and_returns_validated_state_patch(
@@ -671,7 +716,18 @@ def test_answer_route_applies_worker_patch_to_authoritative_state(
                     "op": "set",
                     "path": "environment.lighting",
                     "value": "300-500 lux",
-                }
+                },
+                {
+                    "op": "set",
+                    "path": "workflow.steps",
+                    "value": "navigate -> grasp",
+                },
+                {"op": "set", "path": "goal.confirmation", "value": True},
+                {
+                    "op": "set",
+                    "path": "operating_profile.payload_kg",
+                    "value": {"unexpected": "object"},
+                },
             ],
         }
 
@@ -696,6 +752,107 @@ def test_answer_route_applies_worker_patch_to_authoritative_state(
         item.get("semantic_key") == "environment.lighting_range"
         for item in updated["facts"]
     )
+    assert isinstance(updated["workflow"]["steps"], list)
+    assert updated["goal"]["confirmation"] == "confirmed"
+    assert "payload_kg" not in updated["operating_profile"]
+
+
+def test_report_finalization_closes_state_change_race_and_queues_latest_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-FINALIZE-RACE"
+    state_v1 = _minimum_ready_state(session_id)
+    scenario = database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash="hash",
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state_v1,
+    )
+    job, _ = database.create_scenario_analysis_job_record(
+        job_id="JOB-FINALIZE-RACE",
+        session_id=session_id,
+        state_version=state_v1["state_version"],
+        catalog_revision="catalog-current",
+        evidence_revision="wiki-current",
+        pipeline_version=routes.PIPELINE_VERSION,
+        language="en",
+        idempotency_key="finalize-race-v1",
+    )
+    gateway.websocket = object()
+
+    async def fake_command(message_type: str, **payload):
+        return {"status": "ok", "result": _analysis_result()}
+
+    monkeypatch.setattr(gateway, "command", fake_command)
+    real_finalize = database.finalize_scenario_analysis_report
+    inserted_change = False
+
+    def finalize_after_state_change(**kwargs):
+        nonlocal inserted_change
+        if not inserted_change:
+            inserted_change = True
+            state_v2 = json.loads(json.dumps(state_v1))
+            state_v2["state_version"] += 1
+            state_v2["status"] = "analyzing"
+            state_v2["requirements"].append(
+                {
+                    "requirement_id": "REQ-RACE-CHANGE",
+                    "semantic_key": "locker.width.minimum",
+                    "original_text": "Locker opening is at least 450 mm",
+                    "normalized_value": "450 mm",
+                    "knowledge_state": "known",
+                    "owner": "customer",
+                    "last_changed_version": state_v2["state_version"],
+                }
+            )
+            database.save_scenario_state_version(
+                session_id=session_id,
+                expected_version=state_v1["state_version"],
+                state=state_v2,
+                change_source="race_test_change",
+                actor_user_id=None,
+            )
+        return real_finalize(**kwargs)
+
+    queued_versions: list[int] = []
+
+    async def fake_queue(latest: dict, *, trigger: str):
+        assert trigger == "coalesced_reanalysis"
+        latest_version = int(latest["current_state_version"])
+        queued_versions.append(latest_version)
+        queued_job, _ = database.create_scenario_analysis_job_record(
+            job_id="JOB-FINALIZE-RACE-V2",
+            session_id=session_id,
+            state_version=latest_version,
+            catalog_revision="catalog-current",
+            evidence_revision="wiki-current",
+            pipeline_version=routes.PIPELINE_VERSION,
+            language="en",
+            idempotency_key="finalize-race-v2",
+        )
+        database.update_scenario_session_status(session_id, status="analyzing")
+        return queued_job, True
+
+    monkeypatch.setattr(routes, "finalize_scenario_analysis_report", finalize_after_state_change)
+    monkeypatch.setattr(routes, "_queue_analysis", fake_queue)
+    asyncio.run(routes._run_analysis(job, state_v1, partial=False))
+
+    loaded = database.get_scenario_session(session_id)
+    reports = database.list_scenario_report_revisions(session_id)
+    completed_job = database.get_scenario_analysis_job(job["job_id"])
+    assert inserted_change is True
+    assert loaded["current_state_version"] == state_v1["state_version"] + 1
+    assert reports[0]["scenario_state_version"] == state_v1["state_version"]
+    assert reports[0]["status"] == "superseded"
+    assert reports[0]["is_current"] is False
+    assert completed_job["status"] == "completed"
+    assert completed_job["superseded"] == 1
+    assert queued_versions == [state_v1["state_version"] + 1]
+    assert database.get_active_scenario_analysis_job(session_id)["job_id"] == "JOB-FINALIZE-RACE-V2"
+    assert database.get_pending_scenario_reanalysis_version(session_id) is None
+    assert loaded["status"] == loaded["current_state"]["status"] == "analyzing"
 
 
 def _create_current_report(session_id: str, state: dict) -> str:
@@ -761,6 +918,107 @@ def test_structured_intent_classification_overrides_question_mark_heuristic(
     body = json.loads(response.body)
     assert body["intent"] == "requirement_change"
     assert body["confirmation_required"] is True
+
+
+def test_report_question_is_answered_by_ai_from_approved_report_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-REPORT-ANSWER"
+    token = "report-answer-token"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    report_id = _create_current_report(session_id, state)
+    with sqlite3.connect(database.DATABASE_PATH) as connection:
+        report = database.get_scenario_report_revision(session_id, report_id)["report"]
+        report["conditions"] = ["Payload must remain below 2 kg"]
+        report["technical_details"] = {"private_path": "/root/private/wiki.md"}
+        connection.execute(
+            "UPDATE scenario_report_revisions SET report_json = ? WHERE report_revision_id = ?",
+            (json.dumps(report), report_id),
+        )
+    gateway.websocket = object()
+    calls: list[str] = []
+
+    async def fake_command(message_type: str, **payload):
+        calls.append(message_type)
+        if message_type == "classify_scenario_message":
+            return {"status": "ok", "intent": "report_question", "proposed_change": None}
+        assert message_type == "answer_scenario_report_question"
+        assert payload["user_question"] == "What is the payload limit?"
+        assert payload["approved_report"]["conditions"] == ["Payload must remain below 2 kg"]
+        assert "technical_details" not in payload["approved_report"]
+        assert "/root/private" not in json.dumps(payload["approved_report"])
+        return {
+            "status": "ok",
+            "answer": "The report limits payload to below 2 kg.",
+            "citations": [{"section": "conditions", "index": 0}],
+        }
+
+    monkeypatch.setattr(gateway, "command", fake_command)
+    response = asyncio.run(
+        routes.message_route(
+            session_id,
+            routes.MessageRequest(
+                expected_state_version=state["state_version"],
+                message="What is the payload limit?",
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    body = json.loads(response.body)
+    assert calls == ["classify_scenario_message", "answer_scenario_report_question"]
+    assert body["response"] == "The report limits payload to below 2 kg."
+    assert body["report_citations"] == [{"section": "conditions", "index": 0}]
+
+
+def test_structured_clarification_uses_supported_no_tools_process_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = initial_state("SCNSESSION-CLAUDE-CONTRACT", "Retrieve parcels")
+    captured: dict = {}
+
+    async def fake_process(prompt: str, **kwargs):
+        captured.update(kwargs)
+        return json.dumps(
+            {
+                "state_patch": [],
+                "candidate_questions": [],
+                "candidate_issues": [],
+                "intent": "requirement_answer",
+                "model_readiness_opinion": {"stable": False, "reason": "More detail needed"},
+            }
+        )
+
+    monkeypatch.setattr(scenario_clarification, "run_claude_process", fake_process)
+    result = asyncio.run(
+        scenario_clarification.clarify_scenario(
+            state,
+            model_id=database.get_allowed_teams()[0],
+            language="en",
+        )
+    )
+    assert result["status"] == "ok"
+    assert captured["tools"] == ()
+    assert captured["system_prompt"]
+    assert "extra_args" not in captured
+    patch_variants = scenario_clarification.CLARIFICATION_RESPONSE_SCHEMA[
+        "properties"
+    ]["state_patch"]["items"]["oneOf"]
+    facts_variant = next(
+        variant
+        for variant in patch_variants
+        if variant["properties"]["path"].get("const") == "facts"
+    )
+    assert "semantic_key" in facts_variant["properties"]["value"]["properties"]
+    assert "actor_id" not in facts_variant["properties"]["value"]["properties"]
 
 
 def test_confirmed_refinement_keeps_report_visible_and_queues_reanalysis(
@@ -858,6 +1116,76 @@ def test_change_during_analysis_reuses_running_job_and_defers_one_reanalysis(
     assert loaded["current_state_version"] == state["state_version"] + 1
     assert loaded["current_report_revision_id"] == report_id
     assert loaded["status"] == loaded["current_state"]["status"] == "analyzing"
+
+
+def test_confirm_change_rechecks_job_if_analysis_finishes_during_save(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-CONFIRM-RACE"
+    token = "confirm-race-token"
+    state = _minimum_ready_state(session_id)
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    active, _ = database.create_scenario_analysis_job_record(
+        job_id="JOB-CONFIRM-RACE-V1",
+        session_id=session_id,
+        state_version=state["state_version"],
+        catalog_revision="catalog-v1",
+        evidence_revision="evidence-v1",
+        pipeline_version="pipeline-v1",
+        language="en",
+        idempotency_key="confirm-race-v1",
+    )
+    database.update_scenario_analysis_job_record(active["job_id"], status="processing")
+    gateway.websocket = object()
+    real_get_active = database.get_active_scenario_analysis_job
+    active_reads = 0
+
+    def finish_after_first_active_read(requested_session_id: str):
+        nonlocal active_reads
+        active_reads += 1
+        if active_reads == 1:
+            observed = real_get_active(requested_session_id)
+            database.update_scenario_analysis_job_record(
+                active["job_id"], status="completed"
+            )
+            return observed
+        return real_get_active(requested_session_id)
+
+    queued_versions: list[int] = []
+
+    async def fake_queue(latest: dict, *, trigger: str):
+        queued_versions.append(int(latest["current_state_version"]))
+        database.update_scenario_session_status(session_id, status="analyzing")
+        return {"job_id": "JOB-CONFIRM-RACE-V2"}, True
+
+    monkeypatch.setattr(
+        routes, "get_active_scenario_analysis_job", finish_after_first_active_read
+    )
+    monkeypatch.setattr(routes, "_queue_analysis", fake_queue)
+    response = asyncio.run(
+        routes.confirm_change_route(
+            session_id,
+            routes.ConfirmChangeRequest(
+                expected_state_version=state["state_version"],
+                confirmed=True,
+                proposed_change="Require a 2 kg payload limit",
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    body = json.loads(response.body)
+    assert active_reads == 2
+    assert queued_versions == [state["state_version"] + 1]
+    assert body["analysis_job_id"] == "JOB-CONFIRM-RACE-V2"
+    assert response.status_code == 202
 
 
 def test_sse_is_long_lived_and_browser_reconnects_after_normal_eof() -> None:

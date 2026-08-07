@@ -20,13 +20,15 @@ from pydantic import BaseModel, Field
 from ecs.app.auth import current_session, require_user, verify_csrf
 from ecs.app.database import (
     append_scenario_event,
+    clear_pending_scenario_reanalysis,
     claim_scenario_session,
     create_scenario_analysis_job_record,
-    create_scenario_report_revision,
     create_scenario_session,
     create_scenario_share_link,
+    finalize_scenario_analysis_report,
     get_allowed_teams,
     get_active_scenario_analysis_job,
+    get_pending_scenario_reanalysis_version,
     get_scenario_report_revision,
     get_scenario_session,
     get_scenario_share_link_by_hash,
@@ -234,6 +236,22 @@ def _normalize_worker_questions(result: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
+def _apply_advisory_state_patches(
+    state: dict[str, Any], patches: list[dict[str, Any]]
+) -> dict[str, Any]:
+    updated = state
+    for patch in patches[:32]:
+        try:
+            updated = apply_state_patch(updated, [patch])
+        except ValueError as exc:
+            log.warning(
+                "Discarded invalid advisory scenario patch for path %s: %s",
+                str(patch.get("path") or "")[:120],
+                exc,
+            )
+    return updated
+
+
 async def _candidate_questions(
     state: dict[str, Any], *, model_id: str, language: str, user_message: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -369,6 +387,39 @@ def _report_from_worker(
     }
 
 
+def _approved_report_question_context(content: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "conclusion": str(content.get("conclusion") or "insufficient_evidence")[:120],
+        "conditions": [str(value)[:1000] for value in content.get("conditions", [])[:20]],
+        "main_evidence": [
+            {
+                "name": str(item.get("name") or "Evidence")[:500],
+                "support_state": str(item.get("support_state") or "unproven")[:80],
+                "capability_type": str(item.get("capability_type") or "unclassified")[:80],
+            }
+            for item in content.get("main_evidence", [])[:30]
+            if isinstance(item, dict)
+        ],
+        "high_impact_unknowns": [
+            {
+                "name": str(item.get("name") or "Unknown")[:500],
+                "owner": str(item.get("owner") or "unassigned")[:80],
+                "next_action": str(item.get("next_action") or "Confirm or validate")[:1000],
+            }
+            for item in content.get("high_impact_unknowns", [])[:30]
+            if isinstance(item, dict)
+        ],
+        "next_actions": [
+            {
+                "owner": str(item.get("owner") or "owner")[:80],
+                "action": str(item.get("action") or "")[:1000],
+            }
+            for item in content.get("next_actions", [])[:30]
+            if isinstance(item, dict)
+        ],
+    }
+
+
 async def _emit_progress(
     session_id: str,
     job_id: str,
@@ -456,8 +507,6 @@ async def _run_analysis(job: dict[str, Any], state: dict[str, Any], *, partial: 
         await _emit_progress(session_id, job_id, state_version, "recommendation_building", "completed")
         await _emit_progress(session_id, job_id, state_version, "report_generation", "running")
 
-        latest = await asyncio.to_thread(get_scenario_session, session_id)
-        superseded = bool(latest and int(latest["current_state_version"]) > state_version)
         report_id = new_identifier("REPORT")
         report = _report_from_worker(
             session_id=session_id,
@@ -467,26 +516,33 @@ async def _run_analysis(job: dict[str, Any], state: dict[str, Any], *, partial: 
             result=worker_result,
             partial=partial,
         )
-        revision_status = "superseded" if superseded else ("partial" if partial else "current")
-        await asyncio.to_thread(
-            create_scenario_report_revision,
+        finalized = await asyncio.to_thread(
+            finalize_scenario_analysis_report,
             report_revision_id=report_id,
             session_id=session_id,
             state_version=state_version,
             analysis_job_id=job_id,
-            status=revision_status,
+            partial=partial,
             report=report,
             diff_summary="Initial report" if not list_scenario_report_revisions(session_id) else "Scenario requirements changed",
         )
-        await asyncio.to_thread(
-            update_scenario_analysis_job_record,
-            job_id,
-            status="completed",
-            superseded=superseded,
-        )
-        await _emit_progress(session_id, job_id, state_version, "report_generation", "completed")
-        if superseded and latest is not None:
-            await _queue_analysis(latest, trigger="coalesced_reanalysis")
+        try:
+            await _emit_progress(
+                session_id, job_id, state_version, "report_generation", "completed"
+            )
+        except Exception:
+            log.exception(
+                "Scenario report %s finalized but its completion event could not be persisted",
+                report_id,
+            )
+        if finalized["reanalysis_state_version"] is not None:
+            try:
+                await _queue_pending_reanalysis(session_id)
+            except Exception:
+                log.exception(
+                    "Pending scenario reanalysis could not be queued for %s; marker retained",
+                    session_id,
+                )
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -549,6 +605,29 @@ async def _queue_analysis(
             name=f"scenario-analysis-{job['job_id']}",
         )
         _analysis_tasks[str(job["job_id"])] = task
+    return job, created
+
+
+async def _queue_pending_reanalysis(
+    session_id: str,
+) -> tuple[dict[str, Any], bool] | None:
+    pending_version = await asyncio.to_thread(
+        get_pending_scenario_reanalysis_version, session_id
+    )
+    if pending_version is None:
+        return None
+    scenario = await asyncio.to_thread(get_scenario_session, session_id)
+    if scenario is None:
+        return None
+    current_version = int(scenario["current_state_version"])
+    if current_version < pending_version:
+        raise RuntimeError("Pending reanalysis version is newer than the current scenario")
+    job, created = await _queue_analysis(scenario, trigger="coalesced_reanalysis")
+    await asyncio.to_thread(
+        clear_pending_scenario_reanalysis,
+        session_id,
+        through_state_version=current_version,
+    )
     return job, created
 
 
@@ -648,7 +727,7 @@ async def answer_route(
             user_message=payload.answer,
         )
         if state_patches:
-            updated = apply_state_patch(updated, state_patches)
+            updated = _apply_advisory_state_patches(updated, state_patches)
         if technical_issues:
             existing_keys = {
                 str(item.get("semantic_key") or item.get("issue_id") or "")
@@ -798,7 +877,7 @@ async def keep_asking_route(
         user_message="Keep asking before analysis",
     )
     if patches:
-        updated = apply_state_patch(updated, patches)
+        updated = _apply_advisory_state_patches(updated, patches)
     if technical_issues:
         updated.setdefault("unresolved_issues", []).extend(technical_issues)
     updated = attach_next_question(updated, candidates, str(scenario["language"]))
@@ -867,22 +946,35 @@ async def message_route(
     else:
         intent = "unclear"
         proposed_change = None
+    report_citations: list[dict[str, Any]] = []
 
     if intent == "new_scenario":
         response = "Start a new scenario session to keep this report and its evidence snapshot intact."
     elif intent == "report_question":
-        conclusion = content.get("conclusion", "insufficient_evidence")
-        conditions = [str(value) for value in content.get("conditions", [])][:3]
-        unknowns = [
-            str(item.get("name") or "Unresolved condition")
-            for item in content.get("high_impact_unknowns", [])
-            if isinstance(item, dict)
-        ][:3]
-        response = f"The current report conclusion is {conclusion}."
-        if conditions:
-            response += " Conditions: " + "; ".join(conditions) + "."
-        if unknowns:
-            response += " High-impact unknowns: " + "; ".join(unknowns) + "."
+        approved_report = _approved_report_question_context(content)
+        try:
+            answered = await gateway.command(
+                "answer_scenario_report_question",
+                timeout=75,
+                model_id=str(scenario["model_id"]),
+                language=str(scenario["language"]),
+                user_question=text,
+                approved_report=approved_report,
+            )
+            response = str(answered.get("answer") or "").strip()
+            if not response:
+                raise ValueError("Worker returned an empty report answer")
+            report_citations = [
+                item
+                for item in answered.get("citations", [])
+                if isinstance(item, dict)
+            ][:8]
+        except Exception:
+            log.exception("Report question answering failed")
+            response = (
+                "The report could not answer that question right now. "
+                f"Its recorded conclusion is {approved_report['conclusion']}."
+            )
     elif intent == "requirement_change" and proposed_change:
         response = "Please confirm the proposed requirement change in this conversation before it updates the scenario."
     else:
@@ -897,6 +989,7 @@ async def message_route(
             "response": response,
             "proposed_change": proposed_change,
             "confirmation_required": intent == "requirement_change",
+            "report_citations": report_citations,
         }
     )
 
@@ -954,7 +1047,7 @@ async def confirm_change_route(
             user_message=payload.proposed_change,
         )
         if patches:
-            updated = apply_state_patch(updated, patches)
+            updated = _apply_advisory_state_patches(updated, patches)
         updated = attach_next_question(updated, candidates, str(scenario["language"]))
         updated["status"] = "refining"
     saved = await asyncio.to_thread(
@@ -968,7 +1061,10 @@ async def confirm_change_route(
     await asyncio.to_thread(supersede_current_scenario_report, session_id)
     saved = await asyncio.to_thread(get_scenario_session, session_id)
     queued_job: dict[str, Any] | None = None
-    if active_job:
+    active_after_save = await asyncio.to_thread(
+        get_active_scenario_analysis_job, session_id
+    )
+    if active_after_save:
         await asyncio.to_thread(update_scenario_session_status, session_id, status="analyzing")
         saved = await asyncio.to_thread(get_scenario_session, session_id)
     elif should_analyze and saved is not None:
@@ -977,15 +1073,19 @@ async def confirm_change_route(
     await asyncio.to_thread(_append_event, session_id, "requirement_change_confirmed", {"state_version": updated["state_version"]})
     return JSONResponse(
         {
-            "status": "accepted" if queued_job or active_job else "ok",
+            "status": "accepted" if queued_job or active_after_save else "ok",
             "session": _public_session(saved),
             "analysis_job_id": (
                 str(queued_job["job_id"])
                 if queued_job
-                else (str(active_job["job_id"]) if active_job else None)
+                else (
+                    str(active_after_save["job_id"])
+                    if active_after_save
+                    else None
+                )
             ),
         },
-        status_code=202 if queued_job or active_job else 200,
+        status_code=202 if queued_job or active_after_save else 200,
     )
 
 
@@ -1290,3 +1390,5 @@ async def shared_report_page(share_token: str) -> HTMLResponse:
         "for(const item of (items||[])){const li=document.createElement('li');li.textContent=typeof item==='string'?item:JSON.stringify(item);ul.append(li)}r.append(ul)}"
         "</script></body></html>"
     )
+    finalize_scenario_analysis_report,
+    get_pending_scenario_reanalysis_version,

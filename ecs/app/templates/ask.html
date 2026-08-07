@@ -97,7 +97,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
       </div>
       <label class="demand-toggle" for="demandMode">
         <input id="demandMode" type="checkbox" role="switch">
-        <span id="demandModeLabel">Analyze Demand Mode</span>
+        <span id="demandModeLabel">Scenario Feasibility</span>
       </label>
     </div>
     <div class="chat-history" id="chatHistory">
@@ -156,11 +156,11 @@ const demandModeKey='agent1_demand_mode';
 const latestAssessmentKey='agent1_latest_scenario_assessment';
 
 const demandI18n={
-  'zh-CN':{mode:'需求分析模式',working:'正在提取场景需求并匹配机器人能力…',workingDetail:'分析仍在后台进行，可以安全刷新或离开此页面。',ready:'已提取场景需求。是否查看可行性匹配？',open:'📊 打开可行性匹配工作台',failed:'场景需求分析失败。'},
-  'zh-TW':{mode:'需求分析模式',working:'正在提取場景需求並匹配機器人能力…',workingDetail:'分析仍在背景進行，可以安全重新整理或離開此頁面。',ready:'已提取場景需求。是否查看可行性匹配？',open:'📊 開啟可行性匹配工作台',failed:'場景需求分析失敗。'},
+  'zh-CN':{mode:'场景可行性',working:'正在提取场景需求并匹配机器人能力…',workingDetail:'分析仍在后台进行，可以安全刷新或离开此页面。',ready:'已提取场景需求。是否查看可行性匹配？',open:'📊 打开可行性匹配工作台',failed:'场景需求分析失败。'},
+  'zh-TW':{mode:'場景可行性',working:'正在提取場景需求並匹配機器人能力…',workingDetail:'分析仍在背景進行，可以安全重新整理或離開此頁面。',ready:'已提取場景需求。是否查看可行性匹配？',open:'📊 開啟可行性匹配工作台',failed:'場景需求分析失敗。'},
   'ko':{mode:'요구 분석 모드',working:'시나리오 요구사항과 로봇 역량을 분석하는 중…',workingDetail:'분석은 백그라운드에서 계속됩니다. 페이지를 안전하게 새로고침하거나 나갈 수 있습니다.',ready:'시나리오 요구사항을 추출했습니다. 타당성 매치를 확인할까요?',open:'📊 타당성 매치 워크벤치 열기',failed:'시나리오 요구 분석에 실패했습니다.'},
   'ja':{mode:'需要分析モード',working:'シナリオ要件とロボット能力を分析中…',workingDetail:'分析はバックグラウンドで続行されます。安全に更新または移動できます。',ready:'シナリオ要件を抽出しました。実現可能性を確認しますか？',open:'📊 実現可能性ワークベンチを開く',failed:'シナリオ需要分析に失敗しました。'},
-  'en':{mode:'Analyze Demand Mode',working:'Extracting scenario requirements and matching robot capabilities…',workingDetail:'Analysis continues in the background. You can safely refresh or leave this page.',ready:'Scenario requirements extracted. Check feasibility match?',open:'📊 Open Feasibility Match Workbench',failed:'Scenario demand analysis failed.'},
+  'en':{mode:'Scenario Feasibility',working:'Extracting scenario requirements and matching robot capabilities…',workingDetail:'Analysis continues in the background. You can safely refresh or leave this page.',ready:'Scenario requirements extracted. Check feasibility match?',open:'📊 Open Feasibility Match Workbench',failed:'Scenario demand analysis failed.'},
   'pt':{mode:'Modo de análise da demanda',working:'Extraindo requisitos e combinando capacidades do robô…',workingDetail:'A análise continua em segundo plano. Você pode atualizar ou sair desta página com segurança.',ready:'Requisitos do cenário extraídos. Verificar viabilidade?',open:'📊 Abrir bancada de viabilidade',failed:'Falha na análise da demanda.'},
   'ru':{mode:'Режим анализа требований',working:'Извлечение требований и сопоставление возможностей робота…',workingDetail:'Анализ продолжается в фоне. Страницу можно безопасно обновить или закрыть.',ready:'Требования сценария извлечены. Проверить реализуемость?',open:'📊 Открыть рабочую область',failed:'Не удалось проанализировать требования.'},
   'es':{mode:'Modo de análisis de demanda',working:'Extrayendo requisitos y comparando capacidades del robot…',workingDetail:'El análisis continúa en segundo plano. Puede actualizar o salir de esta página de forma segura.',ready:'Requisitos del escenario extraídos. ¿Comprobar viabilidad?',open:'📊 Abrir banco de viabilidad',failed:'Falló el análisis de demanda.'}

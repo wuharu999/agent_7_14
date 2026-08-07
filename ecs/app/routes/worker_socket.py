@@ -66,6 +66,7 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 "capability_match_result",
                 "grill_scenario_result",
                 "scenario_message_classification_result",
+                "scenario_report_answer_result",
                 "capability_catalog_result",
                 "capability_source_changes_result",
                 "update_capability_status_result",

@@ -20,6 +20,19 @@ log = logging.getLogger("worker.capability_matcher")
 
 R_AND_D_CLASSIFICATION = "Operational behavior evidence required"
 
+_BILINGUAL_EVIDENCE_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "locker": ("locker", "parcel locker", "快递柜", "储物柜", "柜门"),
+    "parcel": ("parcel", "package", "包裹", "快递", "货物"),
+    "retrieve": ("retrieve", "pick", "取件", "取出", "抓取"),
+    "navigation": ("navigation", "navigate", "导航", "定位", "行走"),
+    "lighting": ("lighting", "illumination", "light", "光照", "照明", "亮度"),
+    "payload": ("payload", "weight", "load", "负载", "重量", "载荷"),
+    "dimensions": ("dimensions", "width", "height", "depth", "尺寸", "宽度", "高度", "深度"),
+    "grasp": ("grasp", "gripper", "manipulation", "抓取", "夹爪", "操作"),
+    "collision": ("collision", "clearance", "碰撞", "避障", "间隙"),
+    "balance": ("balance", "stability", "平衡", "稳定性"),
+}
+
 _STRING_ARRAY = {"type": "array", "items": {"type": "string"}}
 _GATE_SCHEMA = {
     "type": "object",
@@ -514,31 +527,84 @@ def load_model_capability_catalog(model_id: str) -> list[dict[str, Any]]:
     return entries
 
 
+def _scenario_evidence_query(scenario_state: dict[str, Any]) -> str:
+    values: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, str):
+            clean = value.strip()
+            if clean:
+                values.append(clean)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.append(str(value))
+        elif isinstance(value, list):
+            for item in value[:100]:
+                collect(item)
+        elif isinstance(value, dict):
+            for item in list(value.values())[:100]:
+                collect(item)
+
+    for key in (
+        "initial_intent",
+        "goal",
+        "workflow",
+        "actors",
+        "objects",
+        "environment",
+        "operating_profile",
+        "allowed_modifications",
+        "human_intervention",
+        "acceptance_criteria",
+        "facts",
+        "assumptions",
+        "requirements",
+        "unresolved_issues",
+    ):
+        collect(scenario_state.get(key))
+    return " ".join(values).casefold()[:50_000]
+
+
 def retrieve_relevant_capability_evidence(
     scenario_state: dict[str, Any], model_id: str, *, limit: int = 12
 ) -> list[dict[str, Any]]:
     """Return bounded catalog evidence whose public fields overlap the scenario."""
     catalog = load_model_capability_catalog(normalize_team_name(model_id, allow_reserved=False))
-    query = json.dumps(scenario_state, ensure_ascii=False).casefold()
+    query = _scenario_evidence_query(scenario_state)
     terms = {
         token
         for token in re.findall(r"[\w-]+", query)
         if len(token) >= 4 and not token.isdigit()
     }
+    query_concepts = {
+        concept
+        for concept, aliases in _BILINGUAL_EVIDENCE_CONCEPTS.items()
+        if any(alias.casefold() in query for alias in aliases)
+    }
     ranked: list[tuple[int, str, dict[str, Any]]] = []
     for item in catalog:
-        searchable = " ".join(
-            str(item.get(key) or "")
-            for key in ("capability_id", "name", "effect", "description", "unknowns")
-        ).casefold()
-        score = sum(1 for term in terms if term in searchable)
         profiles = [
             profile
             for profile in item.get("verification_profiles", [])
             if isinstance(profile, dict)
         ]
-        if profiles:
-            score += 1
+        searchable = " ".join(
+            [
+                str(item.get(key) or "")
+                for key in (
+                    "capability_id", "name", "effect", "description", "unknowns",
+                    "aliases", "semantic_tags", "bilingual_tags",
+                )
+            ]
+            + [json.dumps(profile, ensure_ascii=False) for profile in profiles]
+        ).casefold()
+        item_concepts = {
+            concept
+            for concept, aliases in _BILINGUAL_EVIDENCE_CONCEPTS.items()
+            if any(alias.casefold() in searchable for alias in aliases)
+        }
+        direct_score = sum(1 for term in terms if term in searchable)
+        concept_score = len(query_concepts & item_concepts)
+        score = direct_score + (concept_score * 4)
         summary = {
             "capability_id": str(item.get("capability_id") or ""),
             "name": str(item.get("name") or ""),
@@ -551,11 +617,12 @@ def retrieve_relevant_capability_evidence(
             "migration_warnings": [
                 str(value) for value in item.get("migration_warnings", [])
             ][:12],
+            "bilingual_tags": sorted(item_concepts),
         }
         ranked.append((score, summary["capability_id"], summary))
     ranked.sort(key=lambda row: (-row[0], row[1]))
     positively_ranked = [row[2] for row in ranked if row[0] > 0]
-    return (positively_ranked or [row[2] for row in ranked])[: max(1, min(limit, 24))]
+    return positively_ranked[: max(1, min(limit, 24))]
 
 
 async def analyze_scenario(

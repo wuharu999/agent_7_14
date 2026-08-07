@@ -208,6 +208,7 @@ def initialize_database() -> None:
                 status TEXT NOT NULL,
                 current_state_version INTEGER NOT NULL,
                 current_report_revision_id TEXT,
+                pending_reanalysis_state_version INTEGER,
                 language TEXT NOT NULL,
                 model_id TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -378,6 +379,12 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE capability_catalog_jobs ADD COLUMN scan_mode "
                 "TEXT NOT NULL DEFAULT 'incremental'"
+            )
+        if "pending_reanalysis_state_version" not in _columns(
+            connection, "scenario_sessions"
+        ):
+            connection.execute(
+                "ALTER TABLE scenario_sessions ADD COLUMN pending_reanalysis_state_version INTEGER"
             )
         if "updated_at" not in scenario_columns:
             connection.execute(
@@ -2608,6 +2615,161 @@ def create_scenario_report_revision(
     if revision is None:
         raise RuntimeError("Scenario report revision was not created")
     return revision
+
+
+def finalize_scenario_analysis_report(
+    *,
+    report_revision_id: str,
+    session_id: str,
+    state_version: int,
+    analysis_job_id: str,
+    partial: bool,
+    report: dict[str, Any],
+    diff_summary: str = "",
+) -> dict[str, Any]:
+    """Atomically classify a completed snapshot and record pending reanalysis."""
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        session_row = connection.execute(
+            """
+            SELECT current_state_version, current_report_revision_id,
+                   pending_reanalysis_state_version
+            FROM scenario_sessions WHERE session_id = ? AND deleted_at IS NULL
+            """,
+            (session_id,),
+        ).fetchone()
+        if session_row is None:
+            raise KeyError("Scenario session not found")
+        current_state_version = int(session_row["current_state_version"])
+        superseded = current_state_version > int(state_version)
+        revision_status = "superseded" if superseded else ("partial" if partial else "current")
+        report_payload = dict(report)
+        report_payload["status"] = revision_status
+
+        ordinal_row = connection.execute(
+            """
+            SELECT COALESCE(MAX(ordinal), 0) + 1 AS next_ordinal
+            FROM scenario_report_revisions WHERE session_id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        ordinal = int(ordinal_row["next_ordinal"])
+        if not superseded:
+            connection.execute(
+                """
+                UPDATE scenario_report_revisions
+                SET is_current = 0,
+                    status = CASE WHEN status IN ('current', 'partial') THEN 'superseded' ELSE status END,
+                    updated_at = ?
+                WHERE session_id = ? AND is_current = 1
+                """,
+                (now, session_id),
+            )
+        connection.execute(
+            """
+            INSERT INTO scenario_report_revisions (
+                report_revision_id, session_id, ordinal, scenario_state_version,
+                analysis_job_id, status, is_current, report_json, diff_summary,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                report_revision_id,
+                session_id,
+                ordinal,
+                state_version,
+                analysis_job_id,
+                revision_status,
+                int(not superseded),
+                json.dumps(report_payload, ensure_ascii=False),
+                diff_summary,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE scenario_analysis_jobs
+            SET status = 'completed', superseded = ?, updated_at = ?
+            WHERE job_id = ?
+            """,
+            (int(superseded), now, analysis_job_id),
+        )
+        if superseded:
+            connection.execute(
+                """
+                UPDATE scenario_sessions
+                SET current_report_revision_id = COALESCE(current_report_revision_id, ?),
+                    pending_reanalysis_state_version = CASE
+                        WHEN pending_reanalysis_state_version IS NULL
+                          OR pending_reanalysis_state_version < ? THEN ?
+                        ELSE pending_reanalysis_state_version
+                    END,
+                    status = 'analyzing', updated_at = ?
+                WHERE session_id = ?
+                """,
+                (
+                    report_revision_id,
+                    current_state_version,
+                    current_state_version,
+                    now,
+                    session_id,
+                ),
+            )
+            _sync_current_scenario_state_status(connection, session_id, "analyzing")
+            reanalysis_state_version: int | None = current_state_version
+        else:
+            connection.execute(
+                """
+                UPDATE scenario_sessions
+                SET current_report_revision_id = ?, status = 'report_ready',
+                    pending_reanalysis_state_version = CASE
+                        WHEN pending_reanalysis_state_version <= ? THEN NULL
+                        ELSE pending_reanalysis_state_version
+                    END,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (report_revision_id, state_version, now, session_id),
+            )
+            _sync_current_scenario_state_status(connection, session_id, "report_ready")
+            reanalysis_state_version = None
+    revision = get_scenario_report_revision(session_id, report_revision_id)
+    if revision is None:
+        raise RuntimeError("Scenario report revision was not finalized")
+    return {
+        "revision": revision,
+        "superseded": superseded,
+        "reanalysis_state_version": reanalysis_state_version,
+    }
+
+
+def get_pending_scenario_reanalysis_version(session_id: str) -> int | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT pending_reanalysis_state_version FROM scenario_sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+    if row is None or row["pending_reanalysis_state_version"] is None:
+        return None
+    return int(row["pending_reanalysis_state_version"])
+
+
+def clear_pending_scenario_reanalysis(
+    session_id: str, *, through_state_version: int
+) -> None:
+    with _DB_LOCK, _connect() as connection:
+        connection.execute(
+            """
+            UPDATE scenario_sessions
+            SET pending_reanalysis_state_version = NULL, updated_at = ?
+            WHERE session_id = ?
+              AND pending_reanalysis_state_version IS NOT NULL
+              AND pending_reanalysis_state_version <= ?
+            """,
+            (utc_now(), session_id, through_state_version),
+        )
 
 
 def _scenario_report_from_row(row: sqlite3.Row) -> dict[str, Any]:

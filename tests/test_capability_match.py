@@ -247,6 +247,18 @@ def test_relevant_evidence_retrieval_prioritizes_operating_envelope(
     )
     assert evidence[0]["capability_id"] == "CAP-LOCKER-RETRIEVAL"
     assert evidence[0]["verification_profiles"][0]["lighting"] == "300-500 lux"
+    chinese_evidence = retrieve_relevant_capability_evidence(
+        {"initial_intent": "从快递柜取出包裹，并确认光照和重量边界"},
+        "walker_s2",
+        limit=1,
+    )
+    assert chinese_evidence[0]["capability_id"] == "CAP-LOCKER-RETRIEVAL"
+    unrelated = retrieve_relevant_capability_evidence(
+        {"initial_intent": "Calibrate an unrelated acoustic sensor"},
+        "walker_s2",
+        limit=1,
+    )
+    assert unrelated == []
 
 
 def test_worker_analysis_embeds_skills_and_reapplies_hard_gate(

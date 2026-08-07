@@ -105,11 +105,11 @@ them to users.
 
 ### Robot scenario feasibility compiler
 
-The public QA page now has an **Analyze Demand Mode** switch. When enabled, the
-browser sends the recent customer-side conversation turns to the private Worker
-after the normal answer completes. The Worker applies the bundled scenario
-requirements and feasibility skills, reads only the selected robot's local Wiki,
-and returns structured `SCN-*`, `REQ-*`, and `CAP-*` records.
+Open `/capability-match` to create a persistent scenario for one robot. The
+server saves each clarification answer as a version, asks one conclusion-changing
+customer question at a time, starts analysis when the scenario is stable, and
+keeps the latest report visible during later refinement. The QA page's **Scenario
+Feasibility** shortcut can prefill this workflow from recent customer-side turns.
 
 The deterministic matcher enforces four explicit capability layers:
 `L0_primitive_driver`, `L1_atomic_skill`, `L2_composite_skill`, and
@@ -117,9 +117,8 @@ The deterministic matcher enforces four explicit capability layers:
 match backed only by L0 primitives is always rewritten to
 `R&D Gap (Composite Skill Missing)`, even if the LLM proposed a passing match.
 
-Open `/capability-match` to run or review an assessment. The workbench shows the
-scenario, atomic match matrix, hard gates, technical/deployment conclusions,
-R&D person-week estimates, risks, and Markdown/PDF exports. Assessments are
+The scenario page shows reconnecting progress, versioned reports, conditions,
+evidence, unresolved boundaries, next actions, and Markdown/PDF exports. Assessments are
 stored additively in `agent_jobs.db`; anonymous public assessments have no user
 owner. At `/admin/capabilities`, administrators can review aggregate requested
 gaps, create idempotent evidence-acquisition stubs, inspect added/modified/deleted
@@ -290,7 +289,7 @@ extraction batch, 60 minutes for the final reduction, and 24 hours for the
 complete ECS-to-Worker job. A retry restores completed content-hashed batches,
 so only the unfinished batch must run again after a Claude timeout.
 
-After both restarts, confirm `worker_online: true`, run one small demand-mode
+After both restarts, confirm `worker_online: true`, run one small persistent
 scenario for a specific model, verify Markdown and PDF exports, and create one
 draft stub as an admin. Existing `.env` files, SQLite data, virtual environments,
 `raw/`, `wiki/`, `.llm-wiki/`, `.agent1-trash/`, and `.agent1-worker/` remain

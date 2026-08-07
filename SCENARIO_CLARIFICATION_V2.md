@@ -26,15 +26,25 @@ assessment API and stored assessments during rollout.
 - `scenario_sessions.status` and the current state-version status are updated
   together, including report completion and interrupted-analysis recovery.
 - Claude may propose only allowlisted `set`, `append`, and `upsert` operations
-  under customer specification roots. ECS validates those patches and never
-  permits model updates to IDs, versions, ownership, report pointers, or status.
+  under customer specification roots. Both the structured-output schema and ECS
+  enforce path-specific value contracts: bounded workflow steps and text,
+  confirmation enums, finite unit-bearing envelopes, and typed collection
+  records. Invalid advisory patches are logged and discarded without losing the
+  customer's answer. Model updates to derived solution paths, IDs, versions,
+  report pointers, and runtime status are forbidden.
 - Every dynamic custom answer is also retained as a semantic customer fact,
   even when it is not one of the original built-in question keys.
 - Before technical clarification, the Worker retrieves relevant catalog
-  records and verification profiles from the selected model's live Wiki.
+  records and verification profiles from the selected model's live Wiki. Direct
+  lexical matches and normalized Chinese/English concept tags contribute to
+  ranking; an unrelated query returns no arbitrary capability fallback.
 - A requirement change during analysis creates a newer state version without
-  cancelling the old snapshot. The old report is retained as superseded and
-  one idempotent analysis of the latest version is queued afterward.
+  cancelling the old snapshot. Report finalization begins `BEGIN IMMEDIATE`,
+  re-reads the authoritative state version, classifies the report, completes the
+  old job, and records the newest pending reanalysis version in one transaction.
+  After commit, that durable marker queues one idempotent analysis of the latest
+  version. The confirmation route also rechecks the active job after saving so
+  the inverse commit ordering cannot miss reanalysis.
 - The most recent report pointer remains visible while refinement or reanalysis
   is running. The composer also remains available during analysis.
 - SSE progress stays open until disconnect and resumes from `Last-Event-ID` or
@@ -44,7 +54,9 @@ assessment API and stored assessments during rollout.
   progress summaries.
 - Post-report messages use the Worker's structured intent classifier. When the
   Worker is unavailable or classification fails, ECS returns `unclear`; it does
-  not guess from punctuation.
+  not guess from punctuation. A classified report question is answered by a
+  second no-tools structured call using only approved report fields, with
+  section citations rather than a generic conclusion summary.
 - `I don't know yet` creates an explicit follow-up that lets the user provide a
   value, select a conservative assumption, or assign vendor/pilot validation.
 
@@ -68,6 +80,9 @@ ECS startup creates these tables idempotently:
 - `scenario_analysis_jobs`
 - `scenario_report_revisions`
 - `scenario_share_links`
+
+`scenario_sessions.pending_reanalysis_state_version` is an additive nullable
+column used as the durable coalescing marker for analysis races.
 
 Existing `scenario_assessments`, users, uploads, and other application tables
 are not rewritten. Jobs interrupted by an ECS restart are marked failed with a
