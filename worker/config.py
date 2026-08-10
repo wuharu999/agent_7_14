@@ -108,6 +108,19 @@ CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "240"))
 CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "").strip()
 CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "gpt-oss-120b").strip() or "gpt-oss-120b"
 CEREBRAS_TIMEOUT = max(1, int(os.environ.get("CEREBRAS_TIMEOUT", str(CLAUDE_TIMEOUT))))
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_MODEL = (
+    os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash").strip()
+    or "deepseek-v4-flash"
+)
+DEEPSEEK_BASE_URL = (
+    os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+    or "https://api.deepseek.com"
+)
+DEEPSEEK_TIMEOUT = max(1, int(os.environ.get("DEEPSEEK_TIMEOUT", str(CLAUDE_TIMEOUT))))
+QA_PROVIDER_COOLDOWN_SECONDS = max(
+    1, int(os.environ.get("QA_PROVIDER_COOLDOWN_SECONDS", "300"))
+)
 WIKI_QA_MAX_PAGES = max(1, min(10, int(os.environ.get("WIKI_QA_MAX_PAGES", "5"))))
 WIKI_QA_MAX_PAGE_CHARS = max(
     1_000, int(os.environ.get("WIKI_QA_MAX_PAGE_CHARS", "24000"))

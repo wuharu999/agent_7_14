@@ -72,7 +72,7 @@ The final package was checked with:
 
 External integrations still require live validation on the deployment machines:
 
-- real Cerebras retrieval and answer calls from the Worker;
+- real Cerebras retrieval/answer calls and DeepSeek failover from the Worker;
 - real LLM Wiki Source Watch deletion cleanup;
 - Alibaba security group and future HTTPS proxy.
 
@@ -117,7 +117,9 @@ Validated after the conversation update:
 - the Worker response boundary preserves localized notices, safe errors, and canonical product names;
 - the question page includes all eight language options and a New conversation control.
 
-Live validation on the Worker machine must configure `CEREBRAS_API_KEY`, then ask
-a question that requires an indexed Wiki page and confirm the answer streams in
-the selected language without retrieval narration. The test must not start,
-modify, or import from `$HOME/Documents/agent_tests`.
+Live validation on the Worker machine must configure `CEREBRAS_API_KEY` and
+`DEEPSEEK_API_KEY`, then ask an indexed question and a Walker C1 question whose
+page is absent from `index.md`. Confirm answers stream in the selected language
+without slugs or file paths. Simulate a Cerebras provider failure and confirm the
+same request succeeds through DeepSeek without exposing partial primary output.
+The test must not start, modify, or import from `$HOME/Documents/agent_tests`.

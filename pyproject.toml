@@ -19,6 +19,7 @@ ecs = [
 worker = [
     "cerebras-cloud-sdk>=1.0,<2",
     "httpx>=0.27,<1",
+    "openai>=1.0,<3",
     "python-dotenv>=1.0,<2",
     "websockets>=15,<17",
 ]

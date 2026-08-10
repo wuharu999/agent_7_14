@@ -22,15 +22,17 @@ environment files and ignored runtime data, create deployment backups, update
 Python dependencies, restart the expected tmux session, and run machine-level
 checks. Override the branch with `DEPLOY_BRANCH` when required.
 
-### Index-based Cerebras QA
+### Indexed QA with provider failover
 
 Public answers now use an Agent1-owned implementation based on the read-only
-pattern demonstrated in `$HOME/Documents/agent_tests`: a router call sees only
-`wiki/index.md`, Python validates the selected slugs and reads those pages, and a
-second Cerebras call streams the answer. Files in `agent_tests` are not imported,
-modified, packaged, or required at runtime. Configure `CEREBRAS_API_KEY` only in
-`worker/.env`; language selection, robot/topic selection, conversation IDs, rate
-limiting, streaming UI, and the private Worker filesystem boundary remain intact.
+pattern demonstrated in `$HOME/Documents/agent_tests`: a router sees the Wiki
+index plus a bounded set of filename-matched pages for the selected robot/topic,
+Python validates the selected slugs and reads those pages, and a second model call
+streams the answer. Cerebras is primary; any Cerebras API failure opens a
+five-minute circuit and retries through DeepSeek V4 Flash. Internal slugs and
+paths are removed before display. Files in `agent_tests` are not imported,
+modified, packaged, or required at runtime. Keep both provider keys only in
+`worker/.env`.
 
 ### Updating the cloud computers for the chunking-error fix
 

@@ -15,10 +15,10 @@ Browser
     -> Worker Manager on a new cloud computer
     -> local LLM Wiki project
     -> index-constrained Wiki retrieval
-    -> Cerebras chat-completion API for QA
+    -> Cerebras chat-completion API with DeepSeek V4 Flash failover for QA
 ```
 
-The ECS is the public-facing gateway. The Worker computer owns the real knowledge-base files, runs LLM Wiki, performs index-constrained retrieval, and calls Cerebras for public QA.
+The ECS is the public-facing gateway. The Worker computer owns the real knowledge-base files, runs LLM Wiki, performs bounded retrieval, and calls Cerebras with DeepSeek V4 Flash failover for public QA.
 
 ---
 
@@ -217,13 +217,18 @@ The normal Worker configuration is:
 CEREBRAS_API_KEY=<Worker-only secret>
 CEREBRAS_MODEL=gpt-oss-120b
 CEREBRAS_TIMEOUT=240
+DEEPSEEK_API_KEY=<Worker-only fallback secret>
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_TIMEOUT=240
+QA_PROVIDER_COOLDOWN_SECONDS=300
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
 
-The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees only `wiki/index.md`, Python validates returned slugs and reads those local pages, and a second Cerebras call streams the answer. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
+The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees `wiki/index.md` plus at most 20 filename/path matches for the selected robot/topic when the index is stale, Python validates returned slugs and reads only those permitted pages, and a second provider call streams the answer. Cerebras is primary; any Cerebras API failure opens a five-minute circuit and retries the complete request through DeepSeek V4 Flash. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
 
 Public QA output requirements:
 
@@ -232,6 +237,7 @@ Public QA output requirements:
 - Do not mention tool permissions.
 - Do not show chain of thought.
 - Do not explain internal retrieval.
+- Do not expose Wiki slugs, local file paths, citations, or source lists.
 - Mark insufficient knowledge according to the repository's existing knowledge-gap convention.
 
 ## Architecture boundaries
@@ -250,7 +256,7 @@ Public QA output requirements:
 
 - Maintain the outbound WebSocket connection to ECS
 - QA queues and QA lane routing
-- Perform index-constrained retrieval and call the Cerebras API
+- Perform bounded Wiki retrieval and call Cerebras with DeepSeek fallback
 - Download uploaded files
 - Safe ZIP extraction
 - Atomic source publication
@@ -311,6 +317,11 @@ CLAUDE_TIMEOUT=240
 CEREBRAS_API_KEY=<Worker-only secret>
 CEREBRAS_MODEL=gpt-oss-120b
 CEREBRAS_TIMEOUT=240
+DEEPSEEK_API_KEY=<Worker-only fallback secret>
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_TIMEOUT=240
+QA_PROVIDER_COOLDOWN_SECONDS=300
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 DOWNLOAD_TIMEOUT=1800
@@ -719,9 +730,11 @@ Do not point development tests at the live ECS or live Worker unless the user ex
 - same conversation maps to one QA lane
 - separate conversations can run concurrently
 - eight languages transmitted and honored
-- router call receives only the Wiki index, selected robot/topic, and bounded history
+- router call receives the Wiki index, selected robot/topic, bounded history, and at most 20 topic-matched stale-index slugs
 - router-selected slugs are validated before Python reads local pages
-- answer call includes only selected pages and the configured Cerebras model
+- answer call includes only selected pages and uses Cerebras or the configured DeepSeek fallback
+- answers contain no Wiki slugs, local paths, retrieval citations, or source lists
+- one Cerebras failure opens a five-minute circuit with one half-open recovery probe
 - no permission-request text in normal answer
 - timeout and nonzero exit handling
 
@@ -823,7 +836,7 @@ Existing ecs/.env and SQLite data are preserved.
 A new Worker secret is identical on ECS and Worker.
 The old Worker is stopped.
 The new Worker is connected.
-The Worker has a valid Cerebras key and a live QA request retrieves indexed Wiki pages and streams an answer.
+The Worker has valid Cerebras and DeepSeek keys; live QA retrieves permitted Wiki pages, streams without internal references, and fails over automatically.
 LLM Wiki opens the migrated project on the new computer.
 Source Watch and Auto Ingest are enabled.
 Automatic Worker rescan is disabled.

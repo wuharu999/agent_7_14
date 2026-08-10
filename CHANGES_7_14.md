@@ -26,6 +26,15 @@
 - Added root `pyproject.toml` and `uv.lock`; deployment scripts now synchronize
   `.venv-ecs` and `.venv-worker` with `uv` while retaining their interpreters.
 
+## Public QA provider failover and retrieval privacy
+
+- Removed visible Wiki slug/path citations from prompts, streaming chunks, and
+  final answers while retaining ordinary links and approved Wiki images.
+- Added DeepSeek V4 Flash failover with a five-minute Cerebras circuit breaker
+  and one half-open recovery probe.
+- Added bounded robot/topic filename discovery so stale `index.md` files do not
+  hide existing Walker C1 pages; unrelated unindexed pages remain unavailable.
+
 ## QA conversation and language update
 
 - Added a browser-generated conversation ID stored in `localStorage`.

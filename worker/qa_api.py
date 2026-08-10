@@ -6,9 +6,11 @@ import logging
 import queue
 import re
 import threading
+import time
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from worker.claude_runner import (
     _STREAM_SAFETY_HOLDBACK,
@@ -22,6 +24,11 @@ from worker.config import (
     CEREBRAS_API_KEY,
     CEREBRAS_MODEL,
     CEREBRAS_TIMEOUT,
+    DEEPSEEK_API_KEY,
+    DEEPSEEK_BASE_URL,
+    DEEPSEEK_MODEL,
+    DEEPSEEK_TIMEOUT,
+    QA_PROVIDER_COOLDOWN_SECONDS,
     WIKI_QA_MAX_PAGE_CHARS,
     WIKI_QA_MAX_PAGES,
     get_team_config,
@@ -35,7 +42,24 @@ log = logging.getLogger("worker.qa_api")
 
 EXCLUDED_FILENAMES = {"index.md", "overview.md", "log.md"}
 WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+BRACKET_REFERENCE_RE = re.compile(
+    r"\[([^\]\n]{1,2048})\](?:\(([^)\n]{1,4096})\))?"
+)
+BARE_MARKDOWN_PATH_RE = re.compile(
+    r"(?<![\w])((?:[A-Za-z]:[\\/]|/|\.{1,2}/)?"
+    r"(?:[^\s\[\]()<>]+[\\/])*[^\s\[\]()<>]+\.md)(?![\w])",
+    re.IGNORECASE,
+)
+SOURCE_SECTION_RE = re.compile(
+    r"(?:^|\n)[ \t]*(?:sources?|references?|source files?|"
+    r"参考(?:资料|来源|文件|文献)?|引用(?:资料|来源)?|资料来源|"
+    r"fuentes?|referencias?|fontes?|источники|출처)"
+    r"[ \t]*[:：]?[ \t]*(?:\n|$)",
+    re.IGNORECASE,
+)
 _STREAM_QUEUE_SIZE = 100
+_REFERENCE_STREAM_HOLDBACK = 512
+_MAX_TOPIC_SUPPLEMENTAL_PAGES = 20
 
 LANGUAGE_NAMES = {
     "zh-CN": "Simplified Chinese (简体中文)",
@@ -77,14 +101,96 @@ Output requirements:
 - For procedures, troubleshooting, and safety questions, organize the answer as conclusion, steps, status checks,
   and cautions when the supplied evidence supports those sections.
 - If the supplied pages are insufficient, put [KNOWLEDGE_GAP] on the first line and briefly state what is missing.
-- Cite factual statements with relevant page slugs in square brackets, for example [status-light-system].
+- Never include citations, source lists, Wiki page names, slugs, local file paths, or retrieval references.
 - You may include at most three existing project-relative Markdown image references found in the supplied pages.
   Never invent a path or use an external URL.
 """
 
 
 class QAAPIError(RuntimeError):
-    """Cerebras retrieval or answer generation failed safely."""
+    """Provider retrieval or answer generation failed safely."""
+
+
+class ProviderCallError(QAAPIError):
+    """An external model provider failed at a known request stage."""
+
+    def __init__(self, provider: str, stage: str):
+        super().__init__(f"{provider} failed during {stage}")
+        self.provider = provider
+        self.stage = stage
+
+
+class StreamCallbackError(QAAPIError):
+    """The local Worker-to-ECS streaming callback failed."""
+
+
+class ChatProvider(Protocol):
+    timeout: int
+
+    def complete(self, system: str, user: str) -> str: ...
+
+    def stream(self, system: str, user: str) -> Iterator[str]: ...
+
+
+@dataclass(frozen=True)
+class CircuitDecision:
+    provider: str
+    generation: int
+    probe: bool = False
+
+
+class ProviderCircuitBreaker:
+    """Process-wide Cerebras circuit with a single half-open probe."""
+
+    def __init__(
+        self,
+        cooldown_seconds: int,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.cooldown_seconds = cooldown_seconds
+        self.clock = clock
+        self._lock = threading.Lock()
+        self._opened_until = 0.0
+        self._probe_in_flight = False
+        self._generation = 0
+
+    def select(self) -> CircuitDecision:
+        now = self.clock()
+        with self._lock:
+            if self._opened_until == 0:
+                return CircuitDecision("cerebras", self._generation)
+            if now < self._opened_until:
+                return CircuitDecision("deepseek", self._generation)
+            if self._probe_in_flight:
+                return CircuitDecision("deepseek", self._generation)
+            self._probe_in_flight = True
+            return CircuitDecision("cerebras", self._generation, probe=True)
+
+    def success(self, decision: CircuitDecision) -> None:
+        if decision.provider != "cerebras":
+            return
+        with self._lock:
+            if decision.probe and decision.generation == self._generation:
+                self._opened_until = 0
+                self._probe_in_flight = False
+
+    def failure(self, decision: CircuitDecision) -> None:
+        if decision.provider != "cerebras":
+            return
+        with self._lock:
+            self._generation += 1
+            self._opened_until = self.clock() + self.cooldown_seconds
+            self._probe_in_flight = False
+
+    def reset(self) -> None:
+        with self._lock:
+            self._opened_until = 0
+            self._probe_in_flight = False
+            self._generation += 1
+
+
+_CEREBRAS_CIRCUIT = ProviderCircuitBreaker(QA_PROVIDER_COOLDOWN_SECONDS)
 
 
 @dataclass(frozen=True)
@@ -123,10 +229,37 @@ class Wiki:
                 paths_by_slug.setdefault(path.stem, []).append(path)
         return {slug: sorted(paths) for slug, paths in paths_by_slug.items()}
 
-    def load(self, slugs: list[str]) -> list[Document]:
+    def candidate_slugs(self, team: str, question: str) -> set[str]:
+        """Add a bounded set of topic-matching pages when index.md is stale."""
+        topic_keys: set[str] = set()
+        normalized_team = re.sub(r"[^a-z0-9]+", "", team.casefold())
+        if team not in {"all", "default"} and len(normalized_team) >= 4:
+            topic_keys.add(normalized_team)
+        if re.search(r"(?<![a-z0-9])(?:walker[ _-]*)?c1(?![a-z0-9])", question.casefold()):
+            topic_keys.add("walkerc1")
+        if not topic_keys:
+            return set(self.retrievable_slugs)
+
+        supplemental: list[str] = []
+        for slug, paths in sorted(self.pages.items()):
+            searchable = " ".join([slug, *(str(path.relative_to(self.root)) for path in paths)])
+            normalized = re.sub(r"[^a-z0-9]+", "", searchable.casefold())
+            if any(key in normalized for key in topic_keys):
+                supplemental.append(slug)
+            if len(supplemental) == _MAX_TOPIC_SUPPLEMENTAL_PAGES:
+                break
+        return set(self.retrievable_slugs) | set(supplemental)
+
+    def load(
+        self,
+        slugs: list[str],
+        *,
+        allowed_slugs: set[str] | None = None,
+    ) -> list[Document]:
+        permitted = self.allowed_slugs if allowed_slugs is None else allowed_slugs
         documents: list[Document] = []
         for slug in slugs:
-            if slug not in self.allowed_slugs:
+            if slug not in permitted:
                 continue
             for path in self.pages.get(slug, []):
                 text = path.read_text(encoding="utf-8")
@@ -134,6 +267,94 @@ class Wiki:
                     text = text[:WIKI_QA_MAX_PAGE_CHARS] + "\n\n[Page truncated by retrieval limit.]"
                 documents.append(Document(slug=slug, path=path, text=text))
         return documents
+
+
+def strip_retrieval_references(
+    text: str,
+    wiki: Wiki,
+    allowed_slugs: set[str] | None = None,
+) -> str:
+    """Remove internal Wiki citations without touching ordinary links or images."""
+    source_section = SOURCE_SECTION_RE.search(text)
+    if source_section:
+        text = text[: source_section.start()]
+
+    known_slugs = {
+        slug.casefold()
+        for slug in (wiki.retrievable_slugs if allowed_slugs is None else allowed_slugs)
+    }
+
+    def replace(match: re.Match[str]) -> str:
+        label = match.group(1).strip()
+        target = (match.group(2) or "").strip()
+        folded_label = label.casefold()
+        folded_target = target.casefold()
+        label_is_slug = not target and folded_label in known_slugs
+        contains_local_markdown = ".md" in folded_label or (
+            bool(target)
+            and ".md" in folded_target
+            and not folded_target.startswith(("http://", "https://"))
+        )
+        if label_is_slug or contains_local_markdown:
+            return ""
+        return match.group(0)
+
+    text = BRACKET_REFERENCE_RE.sub(replace, text)
+
+    def remove_bare_markdown_path(match: re.Match[str]) -> str:
+        path = match.group(1)
+        if path.casefold().startswith(("http://", "https://")):
+            return path
+        return ""
+
+    text = BARE_MARKDOWN_PATH_RE.sub(remove_bare_markdown_path, text)
+    text = re.sub(r"[ \t]+([,.;!?，。；！？])", r"\1", text)
+    return text
+
+
+class RetrievalReferenceStreamFilter:
+    """Hold a bounded suffix so internal references never flash while streaming."""
+
+    def __init__(self, wiki: Wiki, allowed_slugs: set[str] | None = None) -> None:
+        self.wiki = wiki
+        self.allowed_slugs = allowed_slugs
+        self.buffer = ""
+        self.dropping_source_section = False
+
+    def feed(self, text: str) -> str:
+        if not text or self.dropping_source_section:
+            return ""
+        self.buffer += text
+        source_section = SOURCE_SECTION_RE.search(self.buffer)
+        if source_section:
+            safe = strip_retrieval_references(
+                self.buffer[: source_section.start()], self.wiki, self.allowed_slugs
+            )
+            self.buffer = ""
+            self.dropping_source_section = True
+            return safe
+        if len(self.buffer) <= _REFERENCE_STREAM_HOLDBACK:
+            return ""
+
+        cutoff = len(self.buffer) - _REFERENCE_STREAM_HOLDBACK
+        prefix = self.buffer[:cutoff]
+        unmatched_open = prefix.rfind("[")
+        if unmatched_open > prefix.rfind("]"):
+            cutoff = unmatched_open
+        safe = strip_retrieval_references(
+            self.buffer[:cutoff], self.wiki, self.allowed_slugs
+        )
+        self.buffer = self.buffer[cutoff:]
+        return safe
+
+    def finish(self) -> str:
+        if self.dropping_source_section:
+            return ""
+        safe = strip_retrieval_references(
+            self.buffer, self.wiki, self.allowed_slugs
+        )
+        self.buffer = ""
+        return safe
 
 
 class CerebrasClient:
@@ -146,6 +367,7 @@ class CerebrasClient:
             raise QAAPIError("cerebras-cloud-sdk is not installed") from exc
         self.client = Cerebras(api_key=CEREBRAS_API_KEY, timeout=float(CEREBRAS_TIMEOUT))
         self.model = model
+        self.timeout = CEREBRAS_TIMEOUT
 
     def complete(self, system: str, user: str) -> str:
         result = self.client.chat.completions.create(
@@ -164,6 +386,52 @@ class CerebrasClient:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             temperature=0,
             stream=True,
+        )
+        for chunk in result:
+            if chunk.choices and (content := chunk.choices[0].delta.content):
+                yield str(content)
+
+
+class DeepSeekClient:
+    def __init__(self, model: str = DEEPSEEK_MODEL):
+        if not DEEPSEEK_API_KEY:
+            raise QAAPIError("DEEPSEEK_API_KEY is not configured")
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise QAAPIError("openai is not installed") from exc
+        self.client = OpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url=DEEPSEEK_BASE_URL,
+            timeout=float(DEEPSEEK_TIMEOUT),
+        )
+        self.model = model
+        self.timeout = DEEPSEEK_TIMEOUT
+
+    @staticmethod
+    def _options() -> dict[str, object]:
+        return {
+            "temperature": 0,
+            "extra_body": {"thinking": {"type": "disabled"}},
+        }
+
+    def complete(self, system: str, user: str) -> str:
+        result = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            **self._options(),
+        )
+        content = result.choices[0].message.content
+        if not content:
+            raise QAAPIError("DeepSeek returned an empty response")
+        return str(content)
+
+    def stream(self, system: str, user: str) -> Iterator[str]:
+        result = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            stream=True,
+            **self._options(),
         )
         for chunk in result:
             if chunk.choices and (content := chunk.choices[0].delta.content):
@@ -206,20 +474,26 @@ def _target_name(team: str) -> str:
     return "All Robots" if team in {"all", "default"} else team
 
 
-def _router_prompt(question: str, team: str, history: Sequence[ConversationTurn], wiki: Wiki) -> str:
+def _router_prompt(
+    question: str,
+    team: str,
+    history: Sequence[ConversationTurn],
+    wiki: Wiki,
+    candidate_slugs: set[str],
+) -> str:
     return (
         f"SELECTED ROBOT OR TOPIC: {_target_name(team)}\n"
         "RECENT CONVERSATION CONTEXT (reference resolution only):\n"
         f"{_history_text(history)}\n\nCURRENT QUESTION:\n{question}\n\n"
         f"WIKI INDEX:\n{wiki.index_text}\n\n"
-        f"RETRIEVABLE PAGE SLUGS:\n{json.dumps(sorted(wiki.retrievable_slugs), ensure_ascii=False)}"
+        f"RETRIEVABLE PAGE SLUGS:\n{json.dumps(sorted(candidate_slugs), ensure_ascii=False)}"
     )
 
 
 def _make_context(wiki: Wiki, documents: list[Document]) -> str:
     return "\n\n".join(
-        f"===== WIKI PAGE: {doc.slug} ({doc.path.relative_to(wiki.root)}) =====\n{doc.text}"
-        for doc in documents
+        f"===== RETRIEVED DOCUMENT {position} =====\n{doc.text}"
+        for position, doc in enumerate(documents, start=1)
     )
 
 
@@ -246,6 +520,8 @@ def _answer_prompt(
 async def _stream_in_thread(
     iterator: Iterator[str],
     on_token: Callable[[str], Awaitable[None]],
+    *,
+    timeout: int = CEREBRAS_TIMEOUT,
 ) -> str:
     events: queue.Queue[tuple[str, object]] = queue.Queue(maxsize=_STREAM_QUEUE_SIZE)
     stop = threading.Event()
@@ -281,21 +557,106 @@ async def _stream_in_thread(
             if kind == "done":
                 break
             if kind == "error":
-                raise QAAPIError("Cerebras streaming failed") from value
+                raise QAAPIError("Provider streaming failed") from value
             token = str(value)
             answer_parts.append(token)
-            await on_token(token)
+            try:
+                await on_token(token)
+            except Exception as exc:
+                raise StreamCallbackError("Local streaming callback failed") from exc
 
     try:
-        await asyncio.wait_for(consume(), timeout=CEREBRAS_TIMEOUT)
+        await asyncio.wait_for(consume(), timeout=timeout)
         await producer
     except asyncio.TimeoutError as exc:
-        raise QAAPIError("Cerebras streaming timed out") from exc
+        raise QAAPIError("Provider streaming timed out") from exc
     finally:
         stop.set()
         if not producer.done():
             producer.cancel()
     return "".join(answer_parts)
+
+
+def _provider_client(provider: str) -> ChatProvider:
+    if provider == "cerebras":
+        return CerebrasClient()
+    if provider == "deepseek":
+        return DeepSeekClient()
+    raise ValueError(f"Unknown QA provider: {provider}")
+
+
+async def _run_provider(
+    provider: str,
+    wiki: Wiki,
+    question: str,
+    *,
+    team: str,
+    language: str,
+    history: Sequence[ConversationTurn],
+    on_token: Callable[[str], Awaitable[None]],
+) -> str:
+    candidate_slugs = wiki.candidate_slugs(team, question)
+    try:
+        client = _provider_client(provider)
+    except Exception as exc:
+        raise ProviderCallError(provider, "client initialization") from exc
+
+    try:
+        router_response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.complete,
+                ROUTER_SYSTEM,
+                _router_prompt(question, team, history, wiki, candidate_slugs),
+            ),
+            timeout=client.timeout,
+        )
+    except Exception as exc:
+        raise ProviderCallError(provider, "retrieval") from exc
+    try:
+        selected_slugs = parse_router_response(router_response, candidate_slugs)
+    except QAAPIError as exc:
+        raise ProviderCallError(provider, "retrieval response validation") from exc
+
+    documents = await asyncio.to_thread(
+        wiki.load,
+        selected_slugs,
+        allowed_slugs=candidate_slugs,
+    )
+    prompt = _answer_prompt(
+        question,
+        team=team,
+        language=language,
+        history=history,
+        context=_make_context(wiki, documents),
+    )
+    reference_filter = RetrievalReferenceStreamFilter(wiki, candidate_slugs)
+
+    async def safe_token(text: str) -> None:
+        safe = reference_filter.feed(text)
+        if safe:
+            await on_token(safe)
+
+    try:
+        raw_answer = await _stream_in_thread(
+            client.stream(ANSWER_SYSTEM, prompt),
+            safe_token,
+            timeout=client.timeout,
+        )
+    except StreamCallbackError:
+        raise
+    except Exception as exc:
+        raise ProviderCallError(provider, "answer streaming") from exc
+
+    sanitized_answer = strip_retrieval_references(
+        raw_answer, wiki, candidate_slugs
+    ).strip()
+    if not sanitized_answer:
+        raise ProviderCallError(provider, "answer response validation")
+
+    tail = reference_filter.finish()
+    if tail:
+        await on_token(tail)
+    return sanitized_answer
 
 
 async def _retrieve_and_stream(
@@ -305,28 +666,52 @@ async def _retrieve_and_stream(
     language: str,
     history: Sequence[ConversationTurn],
     on_token: Callable[[str], Awaitable[None]],
+    on_reset: Callable[[], Awaitable[None]],
 ) -> str:
     wiki = await asyncio.to_thread(Wiki, get_team_config(team).wiki_dir)
-    client = CerebrasClient()
-    try:
-        router_response = await asyncio.wait_for(
-            asyncio.to_thread(client.complete, ROUTER_SYSTEM, _router_prompt(question, team, history, wiki)),
-            timeout=CEREBRAS_TIMEOUT,
+    decision = _CEREBRAS_CIRCUIT.select()
+    if decision.provider == "deepseek":
+        return await _run_provider(
+            "deepseek",
+            wiki,
+            question,
+            team=team,
+            language=language,
+            history=history,
+            on_token=on_token,
         )
-    except Exception as exc:  # External SDK boundary; cancellation is not an Exception.
-        raise QAAPIError("Cerebras retrieval failed") from exc
-    documents = await asyncio.to_thread(
-        wiki.load,
-        parse_router_response(router_response, wiki.retrievable_slugs),
-    )
-    prompt = _answer_prompt(
-        question,
-        team=team,
-        language=language,
-        history=history,
-        context=_make_context(wiki, documents),
-    )
-    return await _stream_in_thread(client.stream(ANSWER_SYSTEM, prompt), on_token)
+
+    try:
+        answer = await _run_provider(
+            "cerebras",
+            wiki,
+            question,
+            team=team,
+            language=language,
+            history=history,
+            on_token=on_token,
+        )
+    except ProviderCallError as exc:
+        _CEREBRAS_CIRCUIT.failure(decision)
+        log.warning(
+            "Cerebras QA failed during %s; using DeepSeek for %s seconds",
+            exc.stage,
+            QA_PROVIDER_COOLDOWN_SECONDS,
+            exc_info=True,
+        )
+        await on_reset()
+        return await _run_provider(
+            "deepseek",
+            wiki,
+            question,
+            team=team,
+            language=language,
+            history=history,
+            on_token=on_token,
+        )
+    else:
+        _CEREBRAS_CIRCUIT.success(decision)
+        return answer
 
 
 async def run_qa_api_stream(
@@ -336,6 +721,7 @@ async def run_qa_api_stream(
     language: str = "zh-CN",
     history: Sequence[ConversationTurn] = (),
     on_chunk: Callable[[str, str, int], Awaitable[None]],
+    on_replace: Callable[[str], Awaitable[None]] | None = None,
     guard_decision: GuardDecision | None = None,
 ) -> str:
     predefined = check_predefined_responses(question, language)
@@ -372,6 +758,15 @@ async def run_qa_api_stream(
         emitted_text += safe_prefix
         await on_chunk(safe_prefix, "", 0)
 
+    async def reset_stream() -> None:
+        nonlocal pending_text, emitted_text, blocked_stream
+        had_visible_text = bool(emitted_text)
+        pending_text = ""
+        emitted_text = ""
+        blocked_stream = False
+        if had_visible_text and on_replace is not None:
+            await on_replace("")
+
     try:
         raw_answer = await _retrieve_and_stream(
             question,
@@ -379,6 +774,7 @@ async def run_qa_api_stream(
             language=language,
             history=history,
             on_token=capture_token,
+            on_reset=reset_stream,
         )
         raw_safe_answer = _safe_answer(raw_answer, language)
         safe_answer = canonicalize_product_names(raw_safe_answer)
@@ -397,7 +793,7 @@ async def run_qa_api_stream(
             await on_chunk(remaining, "", 0)
         return response
     except Exception:  # Public QA boundary: log technical detail, return localized safe text.
-        log.exception("Cerebras Wiki Q&A failed")
+        log.exception("Wiki Q&A providers failed")
         answer = with_ai_notice(generic_error_response(language), language)
         await on_chunk(answer, "", 0)
         return answer

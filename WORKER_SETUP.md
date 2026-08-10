@@ -31,12 +31,20 @@ LLM_WIKI_RESCAN_AFTER_PUBLISH=false
 CEREBRAS_API_KEY=replace-with-a-worker-only-key
 CEREBRAS_MODEL=gpt-oss-120b
 CEREBRAS_TIMEOUT=240
+DEEPSEEK_API_KEY=replace-with-a-worker-only-key
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_TIMEOUT=240
+QA_PROVIDER_COOLDOWN_SECONDS=300
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 ```
 
-The Worker reads `BASE_DIR/wiki/index.md`, validates router-selected slugs, and
-opens only indexed Markdown pages before calling Cerebras. The browser continues
+The Worker reads `BASE_DIR/wiki/index.md`, supplements a stale index with at
+most 20 filename/path matches for the selected robot/topic (including Walker C1),
+validates router-selected slugs, and opens only those permitted Markdown pages.
+Cerebras remains primary; DeepSeek V4 Flash handles provider failures during the
+five-minute circuit cooldown. The browser continues
 to receive streamed chunks through the authenticated Worker WebSocket and never
 receives a Worker file path. `$HOME/Documents/agent_tests` is reference material
 only and is not part of deployment.
@@ -59,7 +67,7 @@ Clarification has a separate short-work queue so one-question turns cannot
 starve immutable report analysis. Keep `CLARIFICATION_WORKERS=1` until the
 Worker host has been tested with additional concurrent Claude subprocesses.
 
-Public QA uses index-constrained Python retrieval plus two Cerebras calls. The
+Public QA uses bounded Python retrieval plus two calls to the selected provider.
 authoring and capability workflows continue to use hardened Claude subprocesses
 with stdin-delivered prompts and code-enforced tool limits. Ambiguous
 security-sensitive QA requests still use at most `PROMPT_GUARD_CONCURRENCY`

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -13,6 +12,7 @@ def test_uv_metadata_and_lock_cover_both_runtimes() -> None:
     assert 'ecs = [' in project
     assert 'worker = [' in project
     assert '"cerebras-cloud-sdk>=1.0,<2"' in project
+    assert '"openai>=1.0,<3"' in project
     assert (ROOT / "uv.lock").is_file()
 
 

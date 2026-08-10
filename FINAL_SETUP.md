@@ -135,6 +135,15 @@ PROMPT_SCAN_MAX_FILE_BYTES=2097152
 PROMPT_SCAN_MAX_TOTAL_BYTES=10485760
 PROMPT_SCAN_MAX_WARNINGS=1000
 
+CEREBRAS_API_KEY=<worker-only-key>
+CEREBRAS_MODEL=gpt-oss-120b
+CEREBRAS_TIMEOUT=240
+DEEPSEEK_API_KEY=<worker-only-fallback-key>
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_TIMEOUT=240
+QA_PROVIDER_COOLDOWN_SECONDS=300
+
 LLM_WIKI_QUEUE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
 LLM_WIKI_CACHE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
 LLM_WIKI_RESCAN_AFTER_PUBLISH=false

@@ -14,7 +14,7 @@ Alibaba ECS — FastAPI
         │
         ▼
 Private Worker
-├── 3 QA consumers → indexed Wiki retrieval → Cerebras API
+├── 3 QA consumers → bounded Wiki retrieval → Cerebras / DeepSeek fallback
 ├── 2 async download consumers
 ├── 1 serialized file-operation consumer
 │   ├── list raw/sources
@@ -40,8 +40,10 @@ Existing LLM Wiki GUI
 - Authoring sessions are persisted under the Worker runtime directory; Claude receives only read-only tools.
 - Generated articles remain drafts until an editor/admin explicitly publishes reviewed Markdown into `raw/sources/`.
 - A bounded authoring queue runs separate sessions concurrently and serializes commands for the same session.
-- Public QA uses validated index-only retrieval and sends only selected Wiki pages
-  to Cerebras. Authoring retains stdin-delivered untrusted content, no Claude
+- Public QA uses validated index retrieval plus bounded robot/topic filename
+  discovery for stale indexes and sends only selected Wiki pages to the active
+  provider. Cerebras is primary and DeepSeek V4 Flash is the circuit-breaker
+  fallback. Authoring retains stdin-delivered untrusted content, no Claude
   session persistence, an empty strict MCP configuration, and code-enforced
   read-only tools.
 - High-confidence prompt attacks are refused locally. Only ambiguous suspicious

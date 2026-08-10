@@ -539,6 +539,19 @@ class WorkerManager:
                                     "status": "chunk",
                                 })
 
+                    async def on_replace(text: str) -> None:
+                        nonlocal accumulated_text, sent_length, has_gap_marker
+                        accumulated_text = text
+                        sent_length = len(text)
+                        has_gap_marker = text.startswith(GAP_MARKER)
+                        await self.emit({
+                            "type": "qa_stream_chunk",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "replace_text": text,
+                            "status": "chunk",
+                        })
+
                     try:
                         answer = await run_qa_api_stream(
                             job.question,
@@ -546,6 +559,7 @@ class WorkerManager:
                             language=job.language,
                             history=history,
                             on_chunk=on_chunk,
+                            on_replace=on_replace,
                             guard_decision=guard_decision,
                         )
                         if has_gap_marker or answer.startswith(GAP_MARKER):
