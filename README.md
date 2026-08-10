@@ -22,6 +22,16 @@ environment files and ignored runtime data, create deployment backups, update
 Python dependencies, restart the expected tmux session, and run machine-level
 checks. Override the branch with `DEPLOY_BRANCH` when required.
 
+### Index-based Cerebras QA
+
+Public answers now use an Agent1-owned implementation based on the read-only
+pattern demonstrated in `$HOME/Documents/agent_tests`: a router call sees only
+`wiki/index.md`, Python validates the selected slugs and reads those pages, and a
+second Cerebras call streams the answer. Files in `agent_tests` are not imported,
+modified, packaged, or required at runtime. Configure `CEREBRAS_API_KEY` only in
+`worker/.env`; language selection, robot/topic selection, conversation IDs, rate
+limiting, streaming UI, and the private Worker filesystem boundary remain intact.
+
 ### Updating the cloud computers for the chunking-error fix
 
 The recommended path is to merge the GitHub pull request into `main`, then
@@ -57,7 +67,7 @@ The final health response must show `worker_online: true`. Then start a new
 browser conversation and test a normal `tian_gong` question in Simplified
 Chinese. The old raw error must not appear; if the upstream failure recurs, the
 page should show the localized temporary-unavailable message and the Worker log
-should contain `Suppressed internal document-chunking error in Claude output`.
+should contain the internal Cerebras retrieval or generation failure.
 
 To validate the feature branch before merge, run either update script with:
 
@@ -68,7 +78,7 @@ DEPLOY_BRANCH=agent/upload-token-notice ./scripts/pull_and_restart_worker.sh
 Use the equivalent ECS script on the ECS machine. Normal production updates
 should return to the default `main` branch after the pull request is merged.
 
-### Why `Separator is found, but chunk is longer than limit` appeared
+### Legacy Claude stream error: `Separator is found, but chunk is longer than limit`
 
 This message comes from Python's asynchronous subprocess stream reader, not
 from LLM Wiki splitting a Markdown document. The Worker reads Claude CLI's
@@ -90,13 +100,12 @@ requires a different bounded value.
 
 ### Knowledge-base images in QA answers
 
-Claude may include up to three relevant images that it has actually read from
+The answer model may include up to three relevant images referenced by retrieved
 `wiki/media/`. The Worker accepts only project-relative Markdown references,
 rejects traversal and symlinks, permits PNG, JPEG, GIF, and WebP, and limits each
 image to 8 MiB and the total answer images to 12 MiB. Validated images are sent
-through the existing authenticated Worker connection and rendered by the two QA
-pages; the private Worker filesystem is never exposed as a public path. Text-only
-consumers such as WeCom receive the cleaned answer without image-path markers.
+through the existing authenticated Worker connection and rendered by the QA
+page; the private Worker filesystem is never exposed as a public path.
 
 QA answers must preserve product, project, platform, SDK, API, company, and brand
 names exactly as written in the knowledge base. The Worker also corrects known
@@ -158,7 +167,7 @@ reasons.
 
 ## Included
 
-- Public question page and WeCom callback.
+- Public question page.
 - Authenticated multi-file upload page with per-file pipeline status.
 - Authenticated source-tree manager.
 - Editor and admin roles.
@@ -166,7 +175,7 @@ reasons.
 - CSRF-protected file-changing requests.
 - SQLite users, sessions, uploads, source status and audit logs.
 - Strict isolation of files and QA sessions across multiple knowledge base teams.
-- Three concurrent Claude QA subprocess slots by default.
+- Three concurrent local SSE-backed QA slots by default.
 - Two concurrent downloads by default.
 - QA rate limiting (10 requests/min, 50 requests/hour per IP).
 - Complete UI language synchronization and translation for public QA.
@@ -176,7 +185,7 @@ reasons.
 - Scenario feasibility workbench with deterministic L0 hard-gate enforcement.
 - SQLite-backed capability-gap analytics and admin draft-stub generation.
 - Shared capability-organization progress and source-manifest change tracking.
-- Prompt/command-injection hardening for browser QA, WeCom, authoring, and
+- Prompt/command-injection hardening for browser QA, authoring, and
   retrieved source content.
 - Non-blocking text-source security warnings on upload status pages.
 
@@ -191,7 +200,6 @@ reasons.
 - `/capability-match` — public scenario feasibility workbench
 - `/admin/capabilities` — admin-only atomic capability organizer, shared progress,
   source changes, R&D gap analytics, and draft stubs
-- `/wecom/callback` — WeCom callback
 
 ## Roles
 

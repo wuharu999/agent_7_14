@@ -72,9 +72,8 @@ The final package was checked with:
 
 External integrations still require live validation on the deployment machines:
 
-- real Claude CLI calls;
+- real Cerebras retrieval and answer calls from the Worker;
 - real LLM Wiki Source Watch deletion cleanup;
-- real WeCom callback credentials;
 - Alibaba security group and future HTTPS proxy.
 
 ## Scenario clarification V2 validation
@@ -110,11 +109,14 @@ Validated after the conversation update:
 - all Python modules compile;
 - the same conversation ID maps to the same QA worker lane;
 - different conversation IDs can map across the configured QA lanes;
-- conversation history is included in the next Claude prompt;
+- conversation history is included in the next SSE API request and answer prompt;
 - all eight requested language codes are accepted;
 - unsupported languages return HTTP 400;
-- the Claude command includes read-only `--allowedTools Read Glob Grep` arguments;
-- both bundled `CLAUDE.md` files prohibit permission requests and retrieval narration;
+- the API receives the selected language and robot/topic and retrieves only index-selected Wiki pages;
+- the Worker response boundary preserves localized notices, safe errors, and canonical product names;
 - the question page includes all eight language options and a New conversation control.
 
-Live validation still required on the Worker machine: run `claude --help` once to confirm the installed Claude CLI supports `--allowedTools` (current Claude Code versions do). Then ask a question that requires reading `wiki/index.md` and confirm no permission-request text is returned.
+Live validation on the Worker machine must configure `CEREBRAS_API_KEY`, then ask
+a question that requires an indexed Wiki page and confirm the answer streams in
+the selected language without retrieval narration. The test must not start,
+modify, or import from `$HOME/Documents/agent_tests`.

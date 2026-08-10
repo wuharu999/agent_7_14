@@ -6,7 +6,7 @@
 
 Replace the current `Grill Me` questionnaire and capability-match workbench with a persistent, evidence-aware scenario clarification system. The system must ask one high-value question at a time, prevent repeated questions, allow early analysis after a minimum requirement gate, automatically analyze when the conclusion becomes stable, and present versioned results in a draggable report drawer on the same page.
 
-The implementation must preserve the existing Cloud/Worker architecture, Wiki ingestion, authentication, uploads, WeCom integration, and completed assessment data unless a migration in this plan explicitly requires otherwise.
+The implementation must preserve the existing Cloud/Worker architecture, Wiki ingestion, authentication, uploads, and completed assessment data unless a migration in this plan explicitly requires otherwise.
 
 Before editing code, read the repository `AGENTS.md`, inspect the current schemas and tests, and produce a short file-level impact map. Do not perform a broad rewrite of unrelated systems.
 
@@ -955,7 +955,7 @@ The feature is complete when:
 8. Progress streaming exposes only approved stages and sanitized summaries.
 9. No raw Claude output or sensitive internal information reaches the user UI.
 10. Markdown/PDF exports remain available for a selected report revision.
-11. Existing knowledge Q&A, upload, catalog organization, authentication, and WeCom behavior continue to pass their tests.
+11. Existing knowledge Q&A, upload, catalog organization, and authentication behavior continue to pass their tests.
 12. The feature is validated with a real Claude CLI and the deployed ECS/Worker connection before the legacy flow is removed.
 
 ---

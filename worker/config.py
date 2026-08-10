@@ -105,6 +105,13 @@ CAPABILITY_CATALOG_QUEUE_MAX = max(
 AUTHORING_LOCK_STRIPES = max(1, int(os.environ.get("AUTHORING_LOCK_STRIPES", "64")))
 FILE_MANAGER_MAX_ENTRIES = int(os.environ.get("FILE_MANAGER_MAX_ENTRIES", "10000"))
 CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "240"))
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "").strip()
+CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "gpt-oss-120b").strip() or "gpt-oss-120b"
+CEREBRAS_TIMEOUT = max(1, int(os.environ.get("CEREBRAS_TIMEOUT", str(CLAUDE_TIMEOUT))))
+WIKI_QA_MAX_PAGES = max(1, min(10, int(os.environ.get("WIKI_QA_MAX_PAGES", "5"))))
+WIKI_QA_MAX_PAGE_CHARS = max(
+    1_000, int(os.environ.get("WIKI_QA_MAX_PAGE_CHARS", "24000"))
+)
 CAPABILITY_CATALOG_BATCH_BYTES = max(
     16 * 1024,
     int(os.environ.get("CAPABILITY_CATALOG_BATCH_BYTES", str(96 * 1024))),

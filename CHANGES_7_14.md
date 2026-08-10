@@ -45,7 +45,7 @@
 
 ## Account settings menu
 
-- Added one shared ChatGPT-style account control with a circular initial avatar and username across the QA, WeCom QA, source manager, upload, upload-status, and administrator pages.
+- Added one shared ChatGPT-style account control with a circular initial avatar and username across the QA, source manager, upload, upload-status, and administrator pages.
 - Moved source management, upload, knowledge-base export, and sign-out actions into the shared account settings menu on every application route.
 - The user-management link appears only when `/api/me` identifies the signed-in user as an administrator.
 - Removed standalone user-management links from the source manager and upload pages, and removed the standalone wiki-export buttons from the chat area.

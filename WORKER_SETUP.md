@@ -24,7 +24,18 @@ PROMPT_SCAN_MAX_FILE_BYTES=2097152
 PROMPT_SCAN_MAX_TOTAL_BYTES=10485760
 PROMPT_SCAN_MAX_WARNINGS=1000
 LLM_WIKI_RESCAN_AFTER_PUBLISH=false
+CEREBRAS_API_KEY=replace-with-a-worker-only-key
+CEREBRAS_MODEL=gpt-oss-120b
+CEREBRAS_TIMEOUT=240
+WIKI_QA_MAX_PAGES=5
+WIKI_QA_MAX_PAGE_CHARS=24000
 ```
+
+The Worker reads `BASE_DIR/wiki/index.md`, validates router-selected slugs, and
+opens only indexed Markdown pages before calling Cerebras. The browser continues
+to receive streamed chunks through the authenticated Worker WebSocket and never
+receives a Worker file path. `$HOME/Documents/agent_tests` is reference material
+only and is not part of deployment.
 
 Keep LLM Wiki open with Source Watch and Auto Ingest enabled.
 The Worker never calls `/sources/rescan`; Source Watch is the only ingestion trigger.
@@ -44,9 +55,9 @@ Clarification has a separate short-work queue so one-question turns cannot
 starve immutable report analysis. Keep `CLARIFICATION_WORKERS=1` until the
 Worker host has been tested with additional concurrent Claude subprocesses.
 
-Public QA, WeCom QA, and authoring share one hardened Claude launcher. Messages
-are sent through stdin, only `--model` is accepted from `CLAUDE_EXTRA_ARGS`, and
-the effective tools are hard-limited to `Read`, `Glob`, and `Grep`. Ambiguous
-security-sensitive requests use at most `PROMPT_GUARD_CONCURRENCY` isolated,
-zero-tool classifier subprocesses. Text uploads are scanned within the byte
-limits above; warnings are informational and do not block atomic publication.
+Public QA uses index-constrained Python retrieval plus two Cerebras calls. The
+authoring and capability workflows continue to use hardened Claude subprocesses
+with stdin-delivered prompts and code-enforced tool limits. Ambiguous
+security-sensitive QA requests still use at most `PROMPT_GUARD_CONCURRENCY`
+isolated, zero-tool classifier subprocesses. Text uploads are scanned within the
+byte limits above; warnings are informational and do not block atomic publication.

@@ -9,15 +9,16 @@ Codex should continue development, testing, and deployment from the current proj
 The production topology is:
 
 ```text
-Browser / WeCom
+Browser
     -> existing Alibaba ECS FastAPI server
     -> one authenticated persistent WebSocket
     -> Worker Manager on a new cloud computer
     -> local LLM Wiki project
-    -> Claude CLI for QA
+    -> index-constrained Wiki retrieval
+    -> Cerebras chat-completion API for QA
 ```
 
-The ECS is the public-facing gateway. The Worker computer owns the real knowledge-base files and runs LLM Wiki and Claude CLI.
+The ECS is the public-facing gateway. The Worker computer owns the real knowledge-base files, runs LLM Wiki, performs index-constrained retrieval, and calls Cerebras for public QA.
 
 ---
 
@@ -208,63 +209,30 @@ LLM Wiki ingestion is serial. Several visible Activity items usually represent o
 
 The web must surface LLM Wiki errors such as DeepSeek network failures without rewriting or hiding them.
 
-### Claude QA
-
-Normal QA must allow only read-only tools:
-
-```text
-Read
-Glob
-Grep
-```
+### Public QA retrieval and API generation
 
 The normal Worker configuration is:
 
 ```env
-CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
-CLAUDE_EXTRA_ARGS=--model haiku
+CEREBRAS_API_KEY=<Worker-only secret>
+CEREBRAS_MODEL=gpt-oss-120b
+CEREBRAS_TIMEOUT=240
+WIKI_QA_MAX_PAGES=5
+WIKI_QA_MAX_PAGE_CHARS=24000
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
 
-The Worker starts a new Claude CLI subprocess for each question. Conversation continuity is currently implemented by injecting recent history, not by keeping one interactive Claude process alive.
+The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees only `wiki/index.md`, Python validates returned slugs and reads those local pages, and a second Cerebras call streams the answer. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
 
-Do not let Claude use shell, edit, or write tools for ordinary QA.
+Public QA output requirements:
 
-Claude output requirements:
-
-- Read `CLAUDE.md` and relevant wiki files silently.
+- Retrieve relevant indexed Wiki pages silently inside the Worker.
 - Return only the user-facing answer.
 - Do not mention tool permissions.
 - Do not show chain of thought.
 - Do not explain internal retrieval.
 - Mark insufficient knowledge according to the repository's existing knowledge-gap convention.
-
-### WeCom
-
-The existing WeCom integration remains on the ECS.
-
-The following values belong only in `ecs/.env`:
-
-```env
-WXWORK_TOKEN=
-WXWORK_AESKEY=
-WXWORK_CORPID=
-WXWORK_AGENTID=
-WXWORK_CORPSECRET=
-```
-
-Never place WeCom secrets in Worker configuration, browser code, tests, logs, screenshots, Git history, or documentation examples containing real values.
-
-The callback route is:
-
-```text
-/wecom/callback
-```
-
-Use the same WeCom user ID as the conversation key so follow-up messages from the same person share recent history.
-
----
 
 ## Architecture boundaries
 
@@ -277,13 +245,12 @@ Use the same WeCom user ID as the conversation key so follow-up messages from th
 - Upload/status pages
 - Worker command dispatch over WebSocket
 - Audit logging
-- WeCom callbacks and replies
 
 ### Worker responsibilities
 
 - Maintain the outbound WebSocket connection to ECS
 - QA queues and QA lane routing
-- Start Claude CLI subprocesses
+- Perform index-constrained retrieval and call the Cerebras API
 - Download uploaded files
 - Safe ZIP extraction
 - Atomic source publication
@@ -322,11 +289,6 @@ SESSION_COOKIE_NAME=agent1_session
 SESSION_HOURS=8
 COOKIE_SECURE=false
 COOKIE_SAMESITE=lax
-WXWORK_TOKEN=<existing value>
-WXWORK_AESKEY=<existing value>
-WXWORK_CORPID=<existing value>
-WXWORK_AGENTID=<existing value>
-WXWORK_CORPSECRET=<existing value>
 ```
 
 Use `COOKIE_SECURE=false` only during plain-HTTP testing. Change it to `true` after HTTPS deployment.
@@ -346,6 +308,11 @@ DOWNLOAD_WORKERS=2
 FILE_OPERATION_WORKERS=1
 FILE_MANAGER_MAX_ENTRIES=10000
 CLAUDE_TIMEOUT=240
+CEREBRAS_API_KEY=<Worker-only secret>
+CEREBRAS_MODEL=gpt-oss-120b
+CEREBRAS_TIMEOUT=240
+WIKI_QA_MAX_PAGES=5
+WIKI_QA_MAX_PAGE_CHARS=24000
 DOWNLOAD_TIMEOUT=1800
 LLM_WIKI_QUEUE_FILE=$HOME/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
 LLM_WIKI_CACHE_FILE=$HOME/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
@@ -384,7 +351,7 @@ chmod 600 ecs/.env
 chmod 600 worker/.env
 ```
 
-Never commit `.env`, SQLite data, uploaded source files, LLM provider keys, WeCom values, session tokens, or Claude credentials.
+Never commit `.env`, SQLite data, uploaded source files, LLM provider keys, session tokens, or Claude credentials.
 
 ---
 
@@ -410,7 +377,6 @@ cp ecs/.env.example ecs/.env
 #   - Set PUBLIC_BASE_URL to the cloud server's public URL
 #   - Set DATA_ROOT and DATABASE_PATH
 #   - Set WORKER_SHARED_SECRET (generate with: python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
-#   - Set WeCom values if applicable
 #   - Optionally set DEFAULT_ADMIN_PASSWORD (default: Admin#2026!Secured89)
 chmod 600 ecs/.env
 
@@ -470,7 +436,6 @@ The following values in `.env` files must be adjusted for each deployment:
 | `LLM_WIKI_QUEUE_FILE` | — | ✅ | Absolute path to ingest-queue.json |
 | `LLM_WIKI_CACHE_FILE` | — | ✅ | Absolute path to ingest-cache.json |
 | `DEFAULT_ADMIN_PASSWORD` | ✅ | — | Optional; default `Admin#2026!Secured89` |
-| `WXWORK_*` | ✅ | — | WeCom integration secrets |
 
 ### Default admin account
 
@@ -763,8 +728,9 @@ Do not point development tests at the live ECS or live Worker unless the user ex
 - same conversation maps to one QA lane
 - separate conversations can run concurrently
 - eight languages transmitted and honored
-- Claude command includes read-only tools
-- Claude command includes configured model
+- router call receives only the Wiki index, selected robot/topic, and bounded history
+- router-selected slugs are validated before Python reads local pages
+- answer call includes only selected pages and the configured Cerebras model
 - no permission-request text in normal answer
 - timeout and nonzero exit handling
 
@@ -828,7 +794,6 @@ Only copy the updated `CLAUDE.md` into the live LLM Wiki project when the QA ins
 6. Run a small upload test.
 7. Run a QA language/context test.
 8. Run a soft-delete test.
-9. Test WeCom last.
 
 ---
 
@@ -864,11 +829,10 @@ The deployment is complete only when all are true:
 ```text
 Existing ECS runs the latest code.
 Existing ecs/.env and SQLite data are preserved.
-Existing WeCom values are preserved.
 A new Worker secret is identical on ECS and Worker.
 The old Worker is stopped.
 The new Worker is connected.
-Claude CLI is installed, authenticated, and uses Haiku.
+The Worker has a valid Cerebras key and a live QA request retrieves indexed Wiki pages and streams an answer.
 LLM Wiki opens the migrated project on the new computer.
 Source Watch and Auto Ingest are enabled.
 Automatic Worker rescan is disabled.
@@ -881,8 +845,7 @@ Retry count and actual DeepSeek errors are visible.
 Soft deletion moves sources to .agent1-trash.
 QA supports all eight languages.
 Same-browser follow-up questions retain recent context.
-Claude does not ask the website user for file-read permission.
-WeCom receives a valid answer through the existing ECS callback.
+The answer does not narrate retrieval or ask the website user for file permission.
 ```
 
 ---

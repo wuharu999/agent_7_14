@@ -15,8 +15,9 @@ from worker.claude_runner import (
     GAP_MARKER,
     generic_error_response,
     run_claude,
-    run_claude_stream,
+    with_ai_notice,
 )
+from worker.qa_api import run_qa_api, run_qa_api_stream
 from worker.capability_matcher import (
     analyze_scenario,
     grill_scenario,
@@ -472,14 +473,28 @@ class WorkerManager:
                 )
                 guard_decision = await guard_user_input(job.question)
                 if guard_decision.blocked:
-                    await self.emit(
-                        {
+                    blocked_answer = with_ai_notice(refusal_text(job.language), job.language)
+                    if job.stream:
+                        await self.emit({
+                            "type": "qa_stream_chunk",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "text": blocked_answer,
+                            "status": "chunk",
+                        })
+                        await self.emit({
+                            "type": "qa_stream_chunk",
+                            "id": job.job_id,
+                            "conversation_id": job.conversation_id,
+                            "status": "done",
+                        })
+                    else:
+                        await self.emit({
                             "type": "answer",
                             "id": job.job_id,
                             "conversation_id": job.conversation_id,
-                            "text": refusal_text(job.language),
-                        }
-                    )
+                            "text": blocked_answer,
+                        })
                     continue
                 history = self.conversations.history(job.conversation_id)
 
@@ -525,7 +540,7 @@ class WorkerManager:
                                 })
 
                     try:
-                        answer = await run_claude_stream(
+                        answer = await run_qa_api_stream(
                             job.question,
                             team=job.team,
                             language=job.language,
@@ -543,7 +558,10 @@ class WorkerManager:
                             answer,
                             get_team_config(job.team).base_dir,
                         )
-                        if display_answer != answer:
+                        streamed_display = accumulated_text
+                        if streamed_display.startswith(GAP_MARKER):
+                            streamed_display = streamed_display[len(GAP_MARKER):].strip()
+                        if display_answer != streamed_display:
                             await self.emit({
                                 "type": "qa_stream_chunk",
                                 "id": job.job_id,
@@ -569,16 +587,16 @@ class WorkerManager:
                             "status": "done",
                         })
                     except Exception as stream_exc:
-                        log.exception("Claude streaming failed")
+                        log.exception("Cerebras Wiki Q&A streaming failed")
                         await self.emit({
                             "type": "qa_stream_chunk",
                             "id": job.job_id,
                             "conversation_id": job.conversation_id,
                             "status": "error",
-                            "error": generic_error_response(job.language),
+                            "error": with_ai_notice(generic_error_response(job.language), job.language),
                         })
                 else:
-                    answer = await run_claude(
+                    answer = await run_qa_api(
                         job.question,
                         team=job.team,
                         language=job.language,
@@ -605,7 +623,7 @@ class WorkerManager:
                         "id": job.job_id,
                         "conversation_id": job.conversation_id,
                         "status": "error",
-                        "error": generic_error_response(job.language),
+                        "error": with_ai_notice(generic_error_response(job.language), job.language),
                     })
                 else:
                     await self.emit(
@@ -613,7 +631,9 @@ class WorkerManager:
                             "type": "answer",
                             "id": job.job_id,
                             "conversation_id": job.conversation_id,
-                            "text": f"[错误] Worker QA failed: {exc}",
+                            "text": with_ai_notice(
+                                generic_error_response(job.language), job.language
+                            ),
                         }
                     )
             finally:
