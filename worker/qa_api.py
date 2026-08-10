@@ -62,8 +62,8 @@ SOURCE_SECTION_RE = re.compile(
     re.IGNORECASE,
 )
 _STREAM_QUEUE_SIZE = 100
-_REFERENCE_STREAM_HOLDBACK = 512
 _MAX_TOPIC_SUPPLEMENTAL_PAGES = 20
+_STREAM_BOUNDARY_RE = re.compile(r"(?:\r?\n|[。！？；，!?]|[.,;:](?=\s))")
 
 LANGUAGE_NAMES = {
     "zh-CN": "Simplified Chinese (简体中文)",
@@ -327,7 +327,7 @@ def strip_retrieval_references(
 
 
 class RetrievalReferenceStreamFilter:
-    """Hold a bounded suffix so internal references never flash while streaming."""
+    """Release complete phrases while unfinished references remain buffered."""
 
     def __init__(self, wiki: Wiki, allowed_slugs: set[str] | None = None) -> None:
         self.wiki = wiki
@@ -347,10 +347,11 @@ class RetrievalReferenceStreamFilter:
             self.buffer = ""
             self.dropping_source_section = True
             return safe
-        if len(self.buffer) <= _REFERENCE_STREAM_HOLDBACK:
+        boundaries = list(_STREAM_BOUNDARY_RE.finditer(self.buffer))
+        if not boundaries:
             return ""
 
-        cutoff = len(self.buffer) - _REFERENCE_STREAM_HOLDBACK
+        cutoff = boundaries[-1].end()
         prefix = self.buffer[:cutoff]
         unmatched_open = prefix.rfind("[")
         if unmatched_open > prefix.rfind("]"):
@@ -358,6 +359,8 @@ class RetrievalReferenceStreamFilter:
         unmatched_cjk_open = prefix.rfind("【")
         if unmatched_cjk_open > prefix.rfind("】"):
             cutoff = min(cutoff, unmatched_cjk_open)
+        if cutoff == 0:
+            return ""
         safe = strip_retrieval_references(
             self.buffer[:cutoff], self.wiki, self.allowed_slugs
         )

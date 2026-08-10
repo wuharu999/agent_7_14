@@ -112,8 +112,7 @@ def test_main_qa_renders_safe_markdown_and_stream_replacements():
     assert "function appendInlineMarkdown" in template
     assert "answer-table-wrap" in template
     assert "container.replaceChildren()" in template
-    assert "function renderStreamingAnswerText" in template
-    assert "renderStreamingAnswerText(ensureTextContainer(botBubble), accumulatedText)" in template
+    assert "function renderStreamingAnswerText" not in template
     assert 'if (event.status === "done")' in template
     assert "renderAnswerText(ensureTextContainer(botBubble), accumulatedText)" in template
     assert "textContainer.textContent += event.text" not in template

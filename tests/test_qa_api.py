@@ -310,6 +310,37 @@ def test_stream_filter_hides_reference_split_across_chunks(tmp_path: Path) -> No
     assert "References" not in visible
 
 
+def test_stream_filter_releases_complete_phrases_without_waiting_for_512_chars(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "index.md", "[[walker]]")
+    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
+    stream_filter = qa_api.RetrievalReferenceStreamFilter(qa_api.Wiki(tmp_path))
+
+    first = stream_filter.feed("First sentence. ")
+    second = stream_filter.feed("第二句，后面仍在生成")
+    tail = stream_filter.finish()
+
+    assert first == "First sentence."
+    assert second == " 第二句，"
+    assert tail == "后面仍在生成"
+
+
+def test_stream_filter_keeps_split_reference_private_until_closed(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "index.md", "[[walker]]")
+    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
+    stream_filter = qa_api.RetrievalReferenceStreamFilter(qa_api.Wiki(tmp_path))
+
+    assert stream_filter.feed("Answer [walker (concepts/walker.") == ""
+    visible = stream_filter.feed("md)]. Next sentence. ") + stream_filter.finish()
+
+    assert "walker" not in visible
+    assert ".md" not in visible
+    assert "Next sentence." in visible
+
+
 def test_circuit_breaker_uses_one_probe_and_recovers() -> None:
     now = [100.0]
     circuit = qa_api.ProviderCircuitBreaker(300, clock=lambda: now[0])
@@ -357,7 +388,7 @@ class FakeProvider:
             return
         yield f"{self.name} answer"
         if self.fail_stream:
-            yield " " + "x" * 700
+            yield ". " + "x" * 700
             raise RuntimeError("stream interrupted")
 
 
