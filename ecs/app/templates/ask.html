@@ -588,15 +588,8 @@ async function submitQuestion(){
                 botBubble.insertBefore(thinkingDiv, botBubble.firstChild);
               }
               thinkingDiv.dataset.raw = (thinkingDiv.dataset.raw || '') + event.thinking;
-              let text = thinkingDiv.dataset.raw;
-              text = text.replace(/claude\.md/gi, (match) => {
-                return /[\u4e00-\u9fa5]/.test(text) ? '系统指南' : 'system guidelines';
-              });
-              text = text.replace(/\b(read|reading|check|checking|inspect|inspecting)\s+CLAUDE\b/gi, '$1 guidelines');
-              text = text.replace(/\b(读取|查看|检查)\s*CLAUDE\b/gi, '$1系统指南');
-
-              thinkingDiv.textContent = text;
-              thinkingDiv.style.display = text.trim() ? 'block' : 'none';
+              thinkingDiv.textContent = thinkingDiv.dataset.raw;
+              thinkingDiv.style.display = thinkingDiv.dataset.raw.trim() ? 'block' : 'none';
             }
 
             if (event.thinking_tokens && !event.thinking && !event.text && !thinkingDiv?.dataset.raw) {

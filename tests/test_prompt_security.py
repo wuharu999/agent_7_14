@@ -1,80 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import worker.authoring as authoring
-import worker.claude_process as claude_process
 import worker.prompt_security as prompt_security
 import worker.publisher as publisher
 from worker.manager import WorkerManager
 from worker.models import QuestionJob
 from worker.prompt_security import GuardDecision
-
-
-class FakeClaudeProcess:
-    def __init__(self, output: bytes = b"safe answer", returncode: int = 0) -> None:
-        self.output = output
-        self.returncode = returncode
-        self.input: bytes | None = None
-
-    async def communicate(self, input: bytes | None = None) -> tuple[bytes, bytes]:
-        self.input = input
-        return self.output, b"failure detail"
-
-
-class HangingClaudeProcess:
-    def __init__(self) -> None:
-        self.returncode: int | None = None
-        self.terminated = False
-        self.killed = False
-
-    async def communicate(self, input: bytes | None = None) -> tuple[bytes, bytes]:
-        del input
-        await asyncio.sleep(60)
-        return b"", b""
-
-    def terminate(self) -> None:
-        self.terminated = True
-        self.returncode = -15
-
-    def kill(self) -> None:
-        self.killed = True
-        self.returncode = -9
-
-    async def wait(self) -> int:
-        return self.returncode or 0
-
-
-class FakeStreamInput:
-    def __init__(self) -> None:
-        self.data = b""
-        self.closed = False
-
-    def write(self, data: bytes) -> None:
-        self.data += data
-
-    async def drain(self) -> None:
-        return None
-
-    def close(self) -> None:
-        self.closed = True
-
-
-class FakeStreamingClaudeProcess:
-    def __init__(self, stdout: asyncio.StreamReader) -> None:
-        self.stdin = FakeStreamInput()
-        self.stdout = stdout
-        self.stderr = asyncio.StreamReader()
-        self.stderr.feed_eof()
-        self.returncode = 0
-
-    async def wait(self) -> int:
-        return self.returncode
+from worker.deepseek_client import DeepSeekError
 
 
 class PromptGuardTests(unittest.IsolatedAsyncioTestCase):
@@ -152,128 +90,55 @@ class PromptGuardTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             prompt_security,
             "_classify_ambiguous",
-            new=AsyncMock(side_effect=claude_process.ClaudeProcessError("timeout")),
+            new=AsyncMock(
+                side_effect=DeepSeekError(
+                    "prompt security classification",
+                    retryable=True,
+                    category="timeout",
+                )
+            ),
         ):
             decision = await prompt_security.guard_user_input(
                 "How should an API key be configured safely?"
             )
         self.assertTrue(decision.blocked)
 
-    async def test_classifier_is_started_with_zero_tools(self) -> None:
-        output = '{"decision":"allow","category":"none","language":"en"}'
-        with patch.object(
-            prompt_security,
-            "run_claude_process",
-            new=AsyncMock(return_value=output),
-        ) as runner:
+    async def test_classifier_uses_structured_tool_free_api_boundary(self) -> None:
+        client = Mock()
+        client.complete_json = AsyncMock(
+            return_value={"decision": "allow", "category": "none", "language": "en"}
+        )
+        with patch.object(prompt_security, "create_deepseek_client", return_value=client):
             decision = await prompt_security._classify_ambiguous("API key guidance")
         self.assertFalse(decision.blocked)
-        self.assertEqual(runner.await_args.kwargs["tools"], ())
+        kwargs = client.complete_json.await_args.kwargs
+        self.assertIs(kwargs["schema"], prompt_security._CLASSIFIER_SCHEMA)
+        self.assertNotIn("tools", kwargs)
 
     async def test_classifier_concurrency_is_bounded(self) -> None:
         active = 0
         maximum = 0
 
-        async def classify(*_args: object, **_kwargs: object) -> str:
+        async def classify(*_args: object, **_kwargs: object) -> dict[str, str]:
             nonlocal active, maximum
             active += 1
             maximum = max(maximum, active)
             await asyncio.sleep(0.01)
             active -= 1
-            return '{"decision":"allow","category":"none","language":"en"}'
+            return {"decision": "allow", "category": "none", "language": "en"}
+
+        client = Mock()
+        client.complete_json = AsyncMock(side_effect=classify)
 
         with patch.object(
             prompt_security,
             "_guard_semaphore",
             asyncio.Semaphore(2),
-        ), patch.object(prompt_security, "run_claude_process", side_effect=classify):
+        ), patch.object(prompt_security, "create_deepseek_client", return_value=client):
             await asyncio.gather(
                 *(prompt_security._classify_ambiguous("API key") for _ in range(6))
             )
         self.assertEqual(maximum, 2)
-
-
-class HardenedProcessTests(unittest.IsolatedAsyncioTestCase):
-    async def test_large_image_sized_stream_event_exceeds_old_8_mib_limit(self) -> None:
-        answer = "x" * (9 * 1024**2)
-        event = {
-            "type": "assistant",
-            "message": {"content": [{"type": "text", "text": answer}]},
-        }
-        stdout = asyncio.StreamReader(limit=claude_process.CLAUDE_STREAM_BUFFER_LIMIT)
-        stdout.feed_data(json.dumps(event).encode("utf-8") + b"\n")
-        stdout.feed_eof()
-        process = FakeStreamingClaudeProcess(stdout)
-        chunks: list[str] = []
-
-        async def create(*_command: str, **kwargs: object) -> FakeStreamingClaudeProcess:
-            self.assertEqual(
-                kwargs["limit"], claude_process.CLAUDE_STREAM_BUFFER_LIMIT
-            )
-            return process
-
-        async def on_chunk(text: str, _thinking: str, _tokens: int) -> None:
-            chunks.append(text)
-
-        with patch(
-            "worker.claude_process.asyncio.create_subprocess_exec",
-            side_effect=create,
-        ):
-            result = await claude_process.run_claude_process_stream(
-                "benign question",
-                team="tian_gong",
-                system_prompt="private policy",
-                on_chunk=on_chunk,
-            )
-
-        self.assertEqual(result, answer)
-        self.assertEqual(chunks, [answer])
-
-    async def test_disclosure_canary_is_rejected(self) -> None:
-        async def create(*command: str, **_kwargs: object) -> FakeClaudeProcess:
-            system_prompt = command[command.index("--append-system-prompt") + 1]
-            canary = system_prompt.rsplit(" ", 1)[-1]
-            return FakeClaudeProcess(canary.encode("utf-8"))
-
-        with patch(
-            "worker.claude_process.asyncio.create_subprocess_exec",
-            side_effect=create,
-        ):
-            with self.assertRaises(claude_process.ClaudePolicyViolation):
-                await claude_process.run_claude_process(
-                    "benign question",
-                    team="tian_gong",
-                    system_prompt="private policy",
-                )
-
-    def test_configuration_cannot_add_tools_or_permission_flags(self) -> None:
-        with patch.object(
-            claude_process,
-            "CLAUDE_EXTRA_ARGS",
-            "--model haiku --allowedTools Write",
-        ):
-            with self.assertRaises(claude_process.ClaudeProcessError):
-                claude_process.build_command(
-                    system_prompt="policy",
-                    tools=claude_process.READ_ONLY_TOOLS,
-                )
-        with self.assertRaises(claude_process.ClaudeProcessError):
-            claude_process.build_command(system_prompt="policy", tools=("Bash",))
-
-    async def test_timeout_terminates_and_reaps_process(self) -> None:
-        process = HangingClaudeProcess()
-        with patch(
-            "worker.claude_process.asyncio.create_subprocess_exec",
-            new=AsyncMock(return_value=process),
-        ):
-            with self.assertRaises(claude_process.ClaudeProcessError):
-                await claude_process.run_claude_process(
-                    "benign question",
-                    team="tian_gong",
-                    system_prompt="private policy",
-                    timeout=0.01,
-                )
-        self.assertTrue(process.terminated)
 
 
 class SourceScanTests(unittest.TestCase):

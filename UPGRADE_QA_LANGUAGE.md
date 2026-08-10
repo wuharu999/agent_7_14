@@ -3,7 +3,7 @@
 This version fixes two QA behaviors:
 
 1. The same browser conversation is always routed to the same QA worker lane and receives a bounded recent conversation history.
-2. Claude is started with the read-only tools `Read`, `Glob`, and `Grep` pre-approved, and is instructed to read the wiki silently rather than asking the web user for permission.
+2. Python performs bounded Wiki retrieval and sends only approved excerpts to the provider API; no model receives filesystem tools.
 
 It also adds these answer languages to the public question page:
 
@@ -33,18 +33,14 @@ tmux attach -t agent-7-14-ecs
 
 ### Worker
 
-Copy the new Worker code, preserve `worker/.env`, and copy the updated rules into the actual LLM Wiki project:
-
-```bash
-cp agent1/agent/CLAUDE.md \
-  /home/eason/Documents/agent_7_14/agent1/agent/CLAUDE.md
-```
+Copy the new Worker code and preserve `worker/.env`. No instruction file needs
+to be copied into the live LLM Wiki project.
 
 The following settings are optional because the code has defaults:
 
 ```env
-CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
-CLAUDE_EXTRA_ARGS=
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_TIMEOUT=240
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```

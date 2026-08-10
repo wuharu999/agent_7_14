@@ -20,7 +20,7 @@ cp worker/.env "$backup_dir/worker.env"
 git rev-parse HEAD > "$backup_dir/previous-commit.txt"
 
 live_items=()
-for item in CLAUDE.md raw wiki .llm-wiki; do
+for item in raw wiki .llm-wiki; do
   [ -e "$LIVE_PROJECT/$item" ] && live_items+=("$item")
 done
 if [ "${#live_items[@]}" -gt 0 ]; then

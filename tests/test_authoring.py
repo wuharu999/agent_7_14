@@ -4,23 +4,20 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import worker.authoring as authoring
-import worker.claude_process as claude_process
 import worker.publisher as publisher
 from worker.manager import WorkerManager
 
 
-class FakeClaudeProcess:
-    def __init__(self, output: bytes = b"Claude response") -> None:
-        self.returncode = 0
-        self.input: bytes | None = None
-        self.output = output
+class FakeDeepSeekClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict]] = []
 
-    async def communicate(self, input: bytes | None = None) -> tuple[bytes, bytes]:
-        self.input = input
-        return self.output, b""
+    async def complete_text(self, system: str, prompt: str, **kwargs: object) -> str:
+        self.calls.append((system, prompt, dict(kwargs)))
+        return "API response"
 
 
 class AuthoringPromptTests(unittest.IsolatedAsyncioTestCase):
@@ -35,49 +32,18 @@ class AuthoringPromptTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Earlier turns omitted", history)
         self.assertNotIn("old-", history)
 
-    def test_only_model_extra_argument_is_accepted(self) -> None:
-        self.assertEqual(
-            claude_process.safe_model_args("--model haiku"),
-            ["--model", "haiku"],
-        )
-        with self.assertRaises(claude_process.ClaudeProcessError):
-            claude_process.safe_model_args("--allowedTools Write")
-        with self.assertRaises(claude_process.ClaudeProcessError):
-            claude_process.safe_model_args("--dangerously-skip-permissions")
-        with self.assertRaises(claude_process.ClaudeProcessError):
-            claude_process.safe_model_args("--model haiku --model opus")
-        with self.assertRaises(claude_process.ClaudeProcessError):
-            claude_process.safe_model_args("--model 'unterminated")
-
-    async def test_prompt_is_sent_on_stdin_with_read_only_tools(self) -> None:
-        process = FakeClaudeProcess()
-        create = AsyncMock(return_value=process)
-        with patch.object(claude_process, "CLAUDE_EXTRA_ARGS", "--model haiku"), patch(
-            "worker.claude_process.asyncio.create_subprocess_exec", create
-        ):
+    async def test_authoring_uses_tool_free_deepseek_boundary(self) -> None:
+        client = FakeDeepSeekClient()
+        with patch.object(authoring, "create_deepseek_client", return_value=client):
             result = await authoring._run(
                 "a" * 250_000,
                 team="tian_gong",
                 system_prompt="Private task policy",
             )
-        self.assertEqual(result, "Claude response")
-        self.assertEqual(process.input, b"a" * 250_000)
-        command = create.await_args.args
-        self.assertNotIn("a" * 250_000, command)
-        self.assertIn("--safe-mode", command)
-        self.assertIn("--disable-slash-commands", command)
-        self.assertIn("--no-chrome", command)
-        self.assertIn("--no-session-persistence", command)
-        self.assertEqual(
-            command[command.index("--mcp-config") + 1],
-            '{"mcpServers":{}}',
-        )
-        self.assertEqual(command[command.index("--tools") + 1], "Read,Glob,Grep")
-        allowed = command[command.index("--allowedTools") + 1]
-        self.assertIn("Read(./wiki/**)", allowed)
-        self.assertNotIn("Read,Glob,Grep", allowed)
-        self.assertIn("Write", command[command.index("--disallowedTools") + 1])
-        self.assertNotIn("--allowedTools Write", command)
+        self.assertEqual(result, "API response")
+        self.assertEqual(client.calls[0][0], "Private task policy")
+        self.assertEqual(client.calls[0][1], "a" * 250_000)
+        self.assertEqual(client.calls[0][2]["stage"], "authenticated Wiki authoring")
 
 
 class PublicationTests(unittest.TestCase):

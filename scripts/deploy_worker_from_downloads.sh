@@ -59,7 +59,7 @@ cp "$PROJECT_ROOT/worker/.env" "$backup_dir/worker.env"
 sha256sum "$ZIP_PATH" > "$backup_dir/release.sha256"
 
 live_items=()
-for item in CLAUDE.md raw wiki .llm-wiki; do
+for item in raw wiki .llm-wiki; do
   [ ! -e "$PROJECT_ROOT/agent1/agent/$item" ] || live_items+=("$item")
 done
 if [ "${#live_items[@]}" -gt 0 ]; then

@@ -17,12 +17,12 @@ from worker.qa_response import (
     with_ai_notice,
 )
 from worker.qa_api import run_qa_api, run_qa_api_stream
-from worker.claude_process import run_claude_process
 from worker.capability_matcher import (
     analyze_scenario,
     grill_scenario,
-    retrieve_relevant_capability_evidence,
 )
+from worker.deepseek_client import create_deepseek_client
+from worker.scenario_retrieval import anonymous_text, retrieve_scenario_evidence
 from worker.scenario_clarification import (
     answer_report_question,
     clarify_scenario,
@@ -51,6 +51,7 @@ from worker.config import (
     DOWNLOAD_WORKERS,
     FILE_OPERATION_WORKERS,
     QA_WORKERS,
+    SCENARIO_RETRIEVAL_CANDIDATES,
     STAGING_DIR,
     ensure_directories,
     get_team_config,
@@ -660,14 +661,23 @@ class WorkerManager:
             try:
                 log.info("Capability match worker %d handling %s", worker_number, command_id)
                 scenario_state = data.get("scenario_state")
-                evidence_context = (
-                    retrieve_relevant_capability_evidence(
-                        scenario_state,
-                        str(data.get("model_id") or ""),
-                    )
+                model_id = str(data.get("model_id") or "")
+                evidence_snapshot = await asyncio.to_thread(
+                    retrieve_scenario_evidence,
+                    json.dumps(scenario_state, ensure_ascii=False)
                     if isinstance(scenario_state, dict)
-                    else None
+                    else str(data.get("scenario_text") or ""),
+                    model_id,
+                    limit=SCENARIO_RETRIEVAL_CANDIDATES,
                 )
+                evidence_context = [
+                    {
+                        "document_id": item.document_id,
+                        "kind": item.kind,
+                        "text": anonymous_text(item.text),
+                    }
+                    for item in evidence_snapshot.documents
+                ]
                 await self.emit(
                     {
                         "type": "scenario_analysis_progress",
@@ -675,7 +685,8 @@ class WorkerManager:
                         "stage": "evidence_retrieval",
                         "status": "completed",
                         "approved_facts": {
-                            "documents_checked": len(evidence_context or [])
+                            "documents_checked": len(evidence_context),
+                            "evidence_revision": evidence_snapshot.revision[:16],
                         },
                     }
                 )
@@ -694,6 +705,10 @@ class WorkerManager:
                     language=str(data.get("language") or "en"),
                     evidence_context=evidence_context,
                 )
+                result["evidence_revision"] = evidence_snapshot.revision
+                assessment_result = result.get("feasibility_assessment")
+                if isinstance(assessment_result, dict):
+                    assessment_result["capability_catalog_revision"] = evidence_snapshot.revision
                 requirements = result.get("atomic_requirements", [])
                 assessment = result.get("feasibility_assessment", {})
                 matches = assessment.get("matches", []) if isinstance(assessment, dict) else []
@@ -777,10 +792,21 @@ class WorkerManager:
                     )
                     result_type = "scenario_message_classification_result"
                 elif isinstance(scenario_state, dict):
-                    evidence_context = retrieve_relevant_capability_evidence(
-                        scenario_state,
-                        str(data.get("model_id") or ""),
+                    model_id = str(data.get("model_id") or "")
+                    evidence_snapshot = await asyncio.to_thread(
+                        retrieve_scenario_evidence,
+                        json.dumps(scenario_state, ensure_ascii=False),
+                        model_id,
+                        limit=6,
                     )
+                    evidence_context = [
+                        {
+                            "document_id": item.document_id,
+                            "kind": item.kind,
+                            "text": anonymous_text(item.text),
+                        }
+                        for item in evidence_snapshot.documents
+                    ]
                     result = await clarify_scenario(
                         scenario_state,
                         model_id=str(data.get("model_id") or ""),
@@ -1347,7 +1373,7 @@ class WorkerManager:
     async def run_contradiction_review(self, task_id: str, team: str) -> None:
         log.info("Running contradiction review for team %s", team)
         team_config = get_team_config(team)
-        wiki_dir = team_config.project_dir / "wiki"
+        wiki_dir = team_config.wiki_dir
         if not wiki_dir.is_dir():
             log.info("No wiki directory found for team %s", team)
             return
@@ -1372,15 +1398,12 @@ class WorkerManager:
                 pass
 
         try:
-            answer = await run_claude_process(
+            answer = await create_deepseek_client(timeout=180).complete_text(
+                "Review only the Wiki text supplied in the user prompt. Identify contradictory claims without "
+                "tools or external knowledge.",
                 prompt,
-                team=team,
-                system_prompt=(
-                    "Review only the Wiki text supplied in the user prompt. Identify "
-                    "contradictory claims without reading files or using other tools."
-                ),
-                tools=(),
-                timeout=180,
+                stage="Wiki contradiction review",
+                max_tokens=6000,
             )
 
             if "No contradictions found" not in answer:

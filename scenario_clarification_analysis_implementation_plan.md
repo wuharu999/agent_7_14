@@ -40,7 +40,7 @@ These decisions are requirements, not open questions:
    - an anonymous same-browser resume token; and
    - a private, revocable, read-only report share link.
 19. Share links expose only approved report content. They must not expose the clarification transcript, private evidence paths, raw prompts, or internal account information.
-20. Waiting UI shows workflow stages plus sanitized AI summaries. It must never stream raw Claude reasoning or subprocess output.
+20. Waiting UI shows workflow stages plus sanitized AI summaries. It must never stream raw provider reasoning or transport output.
 
 ---
 
@@ -74,7 +74,7 @@ Help an FDE, sales user, engineer, or future customer convert a vague deployment
 
 Verify each of these against the current source before implementing:
 
-1. `grill_scenario()` asks Claude to cover a broad fixed checklist and uses turn/field counts as a completion heuristic.
+1. `grill_scenario()` asks DeepSeek to cover a broad fixed checklist and uses turn/field counts as a completion heuristic.
 2. Clarification state is primarily browser-local and is not a durable, versioned server-side scenario record.
 3. The system passes accumulated history back to a stateless subprocess but does not enforce semantic question deduplication in Python.
 4. The clarification prompt and the engineering skill disagree about how many questions to ask per round.
@@ -83,7 +83,7 @@ Verify each of these against the current source before implementing:
 7. The front end inserts model-generated content into raw HTML and inline event handlers.
 8. Four capability abstraction levels are duplicated across schemas, prompts, deterministic gates, reports, UI, and tests.
 9. The maintained Wiki capability schema and shared runtime capability schema are not canonicalized. A missing abstraction level may default to L0 and incorrectly trigger the current hard gate.
-10. Raw Claude NDJSON must not be forwarded to the browser, especially given the prior oversized-line transport failure.
+10. Raw DeepSeek NDJSON must not be forwarded to the browser, especially given the prior oversized-line transport failure.
 
 ---
 
@@ -321,7 +321,7 @@ Increment `state_version` only after a validated patch is committed.
 
 ### 6.4 Deterministic question selector
 
-Claude proposes questions; Python selects the one shown.
+DeepSeek proposes questions; Python selects the one shown.
 
 Filter out candidates when:
 
@@ -547,7 +547,7 @@ Allowed stages include:
 
 ### 10.3 Sanitized AI summaries
 
-Never summarize raw Claude stdout or hidden reasoning.
+Never summarize raw provider output or hidden reasoning.
 
 Construct an `ApprovedProgressSnapshot` containing only allowlisted data:
 
@@ -864,7 +864,7 @@ Deliverable: end-to-end validation on the deployed ECS/Worker pair.
 ### Progress security
 
 - Only schema-valid allowlisted events reach the browser.
-- Raw Claude stdout, prompts, tool arguments, paths, environment values, and stack traces are never forwarded.
+- Raw provider output, prompts, tool arguments, paths, environment values, and stack traces are never forwarded.
 - Summary-generation failure uses a fixed safe template.
 - SSE reconnect does not restart the analysis.
 - Oversized or malformed subprocess events cannot become browser events.
@@ -953,10 +953,10 @@ The feature is complete when:
 6. Analysis revisions remain immutable and concurrent edits coalesce correctly.
 7. The report drawer and post-report refinement flow pass browser tests.
 8. Progress streaming exposes only approved stages and sanitized summaries.
-9. No raw Claude output or sensitive internal information reaches the user UI.
+9. No raw DeepSeek output or sensitive internal information reaches the user UI.
 10. Markdown/PDF exports remain available for a selected report revision.
 11. Existing knowledge Q&A, upload, catalog organization, and authentication behavior continue to pass their tests.
-12. The feature is validated with a real Claude CLI and the deployed ECS/Worker connection before the legacy flow is removed.
+12. The feature is validated with a real provider API and the deployed ECS/Worker connection before the legacy flow is removed.
 
 ---
 

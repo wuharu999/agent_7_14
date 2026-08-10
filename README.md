@@ -34,7 +34,7 @@ paths are removed before display. Files in `agent_tests` are not imported,
 modified, packaged, or required at runtime. Keep both provider keys only in
 `worker/.env`.
 
-The public QA path does not start Claude Code, read `CLAUDE.md`, or search
+The public QA path does not start local coding agents, read local agent instruction files, or search
 `raw/sources/`. Python opens only permitted Markdown under the selected
 project's `wiki/` directory. Legacy TianGong product names are canonicalized in
 memory before routing and generation and again at the streaming boundary; the
@@ -86,27 +86,6 @@ DEPLOY_BRANCH=agent/upload-token-notice ./scripts/pull_and_restart_worker.sh
 Use the equivalent ECS script on the ECS machine. Normal production updates
 should return to the default `main` branch after the pull request is merged.
 
-### Legacy non-QA Claude stream error: `Separator is found, but chunk is longer than limit`
-
-This message comes from Python's asynchronous subprocess stream reader, not
-from LLM Wiki splitting a Markdown document. The Worker reads Claude CLI's
-newline-delimited `stream-json` output with `readline()`. One JSON event could
-exceed Python's default 64 KiB stream limit even when every individual Markdown
-file was small. Tool results, image data, JSON escaping, and accumulated answer
-content can all make a single transport line much larger than its source file.
-It appeared only sometimes because the failure depended on what Claude read for
-that request and the size of the resulting JSON event.
-
-Public QA no longer uses this Claude Code stream. Authenticated authoring and
-other separate maintenance workflows still give Claude's stream a bounded 32 MiB
-buffer, convert any larger event into a controlled `ClaudeProcessError`, and keep a final manager-level
-boundary that never exposes raw exceptions. Normal answer text streams through
-a short rolling safety buffer, while thinking-token progress remains live and
-raw chain-of-thought stays private. Old raw failures are omitted from later
-conversation history. The technical event remains in the Worker log for
-diagnosis. Override `CLAUDE_STREAM_BUFFER_LIMIT` only if a known deployment
-requires a different bounded value.
-
 ### Knowledge-base images in QA answers
 
 The answer model may include up to three relevant images referenced by retrieved
@@ -151,8 +130,8 @@ generated Wiki evidence; later runs are incremental. **Resume full scan** reuses
 matching content checkpoints, while **Force full re-extraction** ignores them and
 calls the LLM for every batch. The organizer excludes its own generated
 `wiki/capabilities/` tree and does not send raw images directly through the
-text-only Claude evidence pass. Incomplete coverage is reported as partial and
-does not advance the successful baseline. Claude has read-only source access; only
+text-only DeepSeek evidence pass. Incomplete coverage is reported as partial and
+does not advance the successful baseline. DeepSeek receives only bounded generated Wiki evidence; only
 schema-validated draft entries are atomically published by Python, with a backup.
 Deletion, deprecation, and overwriting reviewed/verified entries are rejected.
 The persistent Worker WebSocket sends its shared secret in the
@@ -163,8 +142,8 @@ rolling Worker upgrade.
 Capability organization is a deterministic batched map/reduce pipeline. Python
 enumerates and reads every eligible generated Wiki text file, splits oversized
 files into UTF-8-safe evidence units, and creates stable content-hashed batches.
-Claude runs without tools for each batch and receives the complete bundled
-`maintain-model-atomic-capability-wiki` skill contract, so it cannot choose or
+DeepSeek runs without tools for each batch and receives only the relevant
+allowlisted catalog-policy sections, so it cannot choose or
 silently skip files and applies the same atomicity/evidence rules during extraction
 and reduction. Successful batch results are checkpointed under
 `.agent1-worker/capability-batch-cache/`; interrupted reruns reuse checkpoints.
@@ -312,7 +291,7 @@ CAPABILITY_CATALOG_REDUCE_TIMEOUT=3600
 These are enforced minimums during rolling upgrades: 30 minutes for each
 extraction batch, 60 minutes for the final reduction, and 24 hours for the
 complete ECS-to-Worker job. A retry restores completed content-hashed batches,
-so only the unfinished batch must run again after a Claude timeout.
+so only the unfinished batch must run again after a provider timeout.
 
 After both restarts, confirm `worker_online: true`, run one small persistent
 scenario for a specific model, verify Markdown and PDF exports, and create one
@@ -337,9 +316,10 @@ connection. An explicit ZIP path may be passed as its only argument.
 
 The public question page keeps a random conversation ID in the browser. Requests from that conversation are routed to the same QA lane and include a bounded recent history, so follow-up questions retain context without dedicating a provider session to one user. Selectable answer languages are Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
 
-Public QA uses the provider-neutral API pipeline in `worker/qa_api.py`; it does
-not import a Claude Q&A runner or rely on `CLAUDE.md`. Separate authenticated
-Claude workflows continue to use the safe-mode subprocess launcher.
+Public QA uses the provider-neutral API pipeline in `worker/qa_api.py`. Scenario
+clarification, feasibility analysis, authoring, capability organization, prompt
+classification, and contradiction review use the shared tool-free DeepSeek API
+client. Python alone controls Wiki retrieval, schemas, state, and publication.
 
 Direct policy-override, secret-extraction, and tool-escalation attempts receive
 a generic localized refusal and are not retained in conversation storage or
@@ -347,6 +327,6 @@ security logs. Text-based uploads are scanned before atomic publication. The
 status page shows relative filenames and warning categories only; suspicious
 documents continue into the normal LLM Wiki pipeline.
 
-Editors and admins can also use the Claude documentation author on `/upload`. The authoring conversation is persisted by the Worker, can generate a Markdown article for review, and publishes only after an explicit confirmation. Claude remains read-only; the Worker performs the final atomic publication into `raw/sources/` for LLM Wiki Source Watch.
+Editors and admins can also use the AI documentation author on `/upload`. The authoring conversation is persisted by the Worker, can generate a Markdown article for review, and publishes only after an explicit confirmation. DeepSeek receives bounded Wiki excerpts only; the Worker performs the final atomic publication into `raw/sources/` for LLM Wiki Source Watch.
 
-Authoring uses a bounded, configurable Worker pool. Separate sessions may run concurrently, while each session is serialized so turns cannot overwrite one another. Claude prompts are streamed through stdin with a bounded recent-history context; Python multiprocessing is intentionally unnecessary because Claude already runs as an external subprocess. The upload page polls the stored article status and displays LLM Wiki completion or the original ingestion error.
+Authoring uses a bounded, configurable Worker pool. Separate sessions may run concurrently, while each session is serialized so turns cannot overwrite one another. DeepSeek receives bounded recent history through the API and has no tools. The upload page polls the stored article status and displays LLM Wiki completion or the original ingestion error.

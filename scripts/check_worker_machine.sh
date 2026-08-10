@@ -3,7 +3,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 [ -f worker/.env ] || { echo "Missing worker/.env"; exit 1; }
-printf 'Claude: '; command -v claude || true
 PYTHON_BIN="$ROOT/.venv-worker/bin/python"
 [ -x "$PYTHON_BIN" ] || PYTHON_BIN="$(command -v python3)"
 "$PYTHON_BIN" - <<'PY'

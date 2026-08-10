@@ -12,7 +12,7 @@
     "technical_conclusion",
     "deployment_conclusion",
     "deployment_gates",
-    "rd_effort",
+    "engineering_effort",
     "residual_risks",
     "next_experiment"
   ],
@@ -58,12 +58,17 @@
           "gaps": {"type": "array", "items": {"type": "string"}},
           "rd_gap": {
             "type": ["object", "null"],
-            "required": ["classification", "domains", "person_weeks", "risk_factors"],
+            "required": ["classification", "effort_band", "domains", "workstreams", "dependencies", "risk_factors", "evidence_basis", "owner", "smallest_validation_step"],
             "properties": {
-              "classification": {"const": "R&D Gap (Composite Skill Missing)"},
+              "classification": {"const": "Operational behavior evidence required"},
+              "effort_band": {"enum": ["configuration", "integration", "prototype", "core_r_and_d"]},
               "domains": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-              "person_weeks": {"type": "number", "minimum": 0},
-              "risk_factors": {"type": "array", "items": {"type": "string"}}
+              "workstreams": {"type": "array", "items": {"type": "string"}},
+              "dependencies": {"type": "array", "items": {"type": "string"}},
+              "risk_factors": {"type": "array", "items": {"type": "string"}},
+              "evidence_basis": {"type": "string"},
+              "owner": {"type": "string"},
+              "smallest_validation_step": {"type": "string"}
             },
             "additionalProperties": false
           },
@@ -89,16 +94,21 @@
         "additionalProperties": false
       }
     },
-    "rd_effort": {
+    "engineering_effort": {
       "type": "object",
-      "required": ["total_person_weeks", "domains", "risk_factors"],
+      "required": ["overall_band", "workstreams", "dependencies", "risk_factors", "evidence_basis", "owners", "smallest_validation_step"],
       "properties": {
-        "total_person_weeks": {"type": "number", "minimum": 0},
-        "domains": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "risk_factors": {"type": "array", "items": {"type": "string"}}
+        "overall_band": {"enum": ["configuration", "integration", "prototype", "core_r_and_d"]},
+        "workstreams": {"type": "array", "items": {"type": "string"}},
+        "dependencies": {"type": "array", "items": {"type": "string"}},
+        "risk_factors": {"type": "array", "items": {"type": "string"}},
+        "evidence_basis": {"type": "string"},
+        "owners": {"type": "array", "items": {"type": "string"}},
+        "smallest_validation_step": {"type": "string"}
       },
       "additionalProperties": false
     },
+    "rd_effort": {"type": "object", "description": "Legacy reports only"},
     "residual_risks": {"type": "array", "items": {"type": "string"}},
     "next_experiment": {"type": ["string", "null"]}
   },

@@ -25,7 +25,7 @@ assessment API and stored assessments during rollout.
   state has no current question and enters `stability_countdown` immediately.
 - `scenario_sessions.status` and the current state-version status are updated
   together, including report completion and interrupted-analysis recovery.
-- Claude may propose only allowlisted `set`, `append`, and `upsert` operations
+- DeepSeek may propose only allowlisted `set`, `append`, and `upsert` operations
   under customer specification roots. Both the structured-output schema and ECS
   enforce path-specific value contracts: bounded workflow steps and text,
   confirmation enums, finite unit-bearing envelopes, and typed collection
@@ -59,7 +59,7 @@ assessment API and stored assessments during rollout.
 - SSE progress stays open until disconnect and resumes from `Last-Event-ID` or
   the explicit cursor. The browser reconnects after normal EOF.
 - Progress text is constructed only from server stage labels and allowlisted
-  integer counts. Raw Claude text, paths, prompts, and tool details are never
+  integer counts. Raw DeepSeek text, paths, prompts, and tool details are never
   progress summaries.
 - Post-report messages use the Worker's structured intent classifier. When the
   Worker is unavailable or classification fails, ECS returns `unclear`; it does

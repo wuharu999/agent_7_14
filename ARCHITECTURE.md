@@ -8,7 +8,7 @@ Alibaba ECS — FastAPI
 ├── public QA and health
 ├── login/session/role checks
 ├── authenticated multi-file upload queue and source manager
-├── authenticated Claude documentation authoring on `/upload`
+├── authenticated DeepSeek documentation authoring on `/upload`
 ├── SQLite users, sessions, uploads and audit log
 └── one persistent Worker WebSocket
         │
@@ -37,16 +37,15 @@ Existing LLM Wiki GUI
 - The Worker independently validates every relative path.
 - Only the Worker accesses local knowledge-base files.
 - The Worker WebSocket and download endpoint use the shared Worker secret.
-- Authoring sessions are persisted under the Worker runtime directory; Claude receives only read-only tools.
+- Authoring sessions are persisted under the Worker runtime directory; DeepSeek receives bounded Wiki excerpts and no tools.
 - Generated articles remain drafts until an editor/admin explicitly publishes reviewed Markdown into `raw/sources/`.
 - A bounded authoring queue runs separate sessions concurrently and serializes commands for the same session.
 - Public QA uses validated index retrieval plus bounded robot/topic filename
   discovery for stale indexes and sends only selected Wiki pages to the active
   provider. Cerebras is primary and DeepSeek V4 Flash is the circuit-breaker
-  fallback. Public QA never launches Claude Code, reads `CLAUDE.md`, or searches
-  original files under `raw/sources/`. Authoring retains stdin-delivered untrusted content, no Claude
-  session persistence, an empty strict MCP configuration, and code-enforced
-  read-only tools.
+  fallback. Public QA never launches local coding agents, reads local agent instruction files, or searches
+  original files under `raw/sources/`. Authoring treats editor messages and
+  Wiki excerpts as untrusted data and uses stateless API calls with thinking disabled.
 - High-confidence prompt attacks are refused locally. Only ambiguous suspicious
   messages enter the bounded zero-tool classifier; classifier failure closes
   that request without affecting ordinary traffic.

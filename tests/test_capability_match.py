@@ -122,7 +122,15 @@ def _worker_payload(
             "deployment_gates": [
                 {"name": "Safety", "status": "unknown", "hard": True, "basis": "No field test"}
             ],
-            "rd_effort": {"total_person_weeks": 0, "domains": [], "risk_factors": []},
+            "engineering_effort": {
+                "overall_band": "configuration",
+                "workstreams": [],
+                "dependencies": [],
+                "risk_factors": [],
+                "evidence_basis": "No gap identified",
+                "owners": ["engineering"],
+                "smallest_validation_step": "Run a bench test",
+            },
             "residual_risks": ["Outdoor lighting"],
             "next_experiment": "Bench filling test",
         },
@@ -187,11 +195,11 @@ def test_legacy_l0_only_match_is_deterministically_unproven() -> None:
 
     assert match["match_state"] == "unproven"
     assert R_AND_D_CLASSIFICATION in match["gaps"]
-    assert match["rd_gap"] is None
+    assert match["rd_gap"]["effort_band"] == "prototype"
     assert any(gate["name"] == "Operational evidence and contract gate" for gate in match["gates"])
     assert assessment["technical_conclusion"] == "prototype_required"
     assert assessment["deployment_conclusion"] == "business_case_incomplete"
-    assert assessment["rd_effort"]["total_person_weeks"] == 0.0
+    assert assessment["engineering_effort"]["overall_band"] == "prototype"
     assert result["capabilities"][0]["capability_type"] == "building_block"
 
 
@@ -205,6 +213,21 @@ def test_supported_operational_behavior_is_not_reclassified_by_evidence_gate() -
     assert match["match_state"] == "conditional"
     assert match["gaps"] == []
     assert match["rd_gap"] is None
+
+
+def test_hard_gate_failure_cannot_be_compensated_by_model_conclusion() -> None:
+    payload = _worker_payload(
+        capability_type="operational_behavior", verified_operational_profile=True
+    )
+    payload["feasibility_assessment"]["matches"][0]["gates"][0].update(
+        {"status": "fail", "hard": True}
+    )
+    payload["feasibility_assessment"]["technical_conclusion"] = "feasible"
+    payload["feasibility_assessment"]["deployment_conclusion"] = "viable"
+    result = enforce_abstraction_hard_gate(payload)
+    assessment = result["feasibility_assessment"]
+    assert assessment["technical_conclusion"] == "infeasible"
+    assert assessment["deployment_conclusion"] == "not_viable"
 
 
 def test_relevant_evidence_retrieval_prioritizes_operating_envelope(
@@ -261,17 +284,31 @@ def test_relevant_evidence_retrieval_prioritizes_operating_envelope(
     assert unrelated == []
 
 
-def test_worker_analysis_embeds_skills_and_reapplies_hard_gate(
+def test_worker_analysis_embeds_policies_and_reapplies_hard_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict = {}
 
-    async def fake_process(prompt: str, **kwargs):
-        captured["prompt"] = prompt
-        captured.update(kwargs)
-        return json.dumps(_worker_payload())
+    class FakeClient:
+        async def complete_json(self, system: str, prompt: str, **kwargs):
+            captured.setdefault("calls", []).append((system, prompt, kwargs))
+            stage = kwargs["stage"]
+            if stage == "scenario requirement extraction":
+                payload = _worker_payload()
+                return {
+                    "scenario_spec": payload["scenario_spec"],
+                    "atomic_requirements": payload["atomic_requirements"],
+                }
+            if stage == "scenario evidence evaluation":
+                return _worker_payload()
+            return {
+                "executive_summary": "Prototype validation is required.",
+                "engineering_effort": {"overall_band": "prototype"},
+                "tool_support": [],
+                "poc_plan": {"smallest_step": "Bench test"},
+            }
 
-    monkeypatch.setattr(capability_matcher, "run_claude_process", fake_process)
+    monkeypatch.setattr(capability_matcher, "create_deepseek_client", lambda **_kwargs: FakeClient())
     result = asyncio.run(
         capability_matcher.analyze_scenario(
             "Serve popcorn outdoors",
@@ -280,10 +317,10 @@ def test_worker_analysis_embeds_skills_and_reapplies_hard_gate(
         )
     )
 
-    assert captured["team"] == "walker_s2"
-    assert "ENGINEER SCENARIO REQUIREMENTS SKILL" in captured["system_prompt"]
-    assert "ASSESS SCENARIO FEASIBILITY SKILL" in captured["system_prompt"]
-    assert captured["json_schema"] is capability_matcher.MATCHER_RESPONSE_SCHEMA
+    system_prompt = captured["calls"][0][0]
+    assert "Build a `ScenarioSpec`" in system_prompt
+    assert "Do not equate an available API" in system_prompt
+    assert all("tools" not in call[2] for call in captured["calls"])
     assert result["feasibility_assessment"]["matches"][0]["match_state"] == "unproven"
 
 

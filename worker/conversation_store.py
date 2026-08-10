@@ -13,11 +13,11 @@ class ConversationTurn:
 
 
 class ConversationStore:
-    """Small in-memory conversation history used by the stateless Claude CLI calls.
+    """Small in-memory conversation history used by stateless provider API calls.
 
     The browser owns a random conversation ID. The Worker keeps only the latest
     few turns for that ID so follow-up questions retain context without keeping a
-    permanent Claude process alive.
+    permanent provider process alive.
     """
 
     def __init__(self) -> None:

@@ -78,16 +78,6 @@ def main():
     staging_dir.mkdir(parents=True, exist_ok=True)
     trash_dir.mkdir(parents=True, exist_ok=True)
     
-    # Copy CLAUDE.md from another team if available
-    first_team = list(teams_data["teams"].keys())[0] if teams_data["teams"] else None
-    if first_team and first_team != team_name:
-        src_claude_md = project_root / teams_data["teams"][first_team]["base_dir"] / "CLAUDE.md"
-        if src_claude_md.exists():
-            dest_claude_md = base_dir / "CLAUDE.md"
-            import shutil
-            shutil.copy2(src_claude_md, dest_claude_md)
-            print(f"Copied CLAUDE.md from {first_team}")
-
     print(f"Successfully added team '{team_name}'.")
     print(f"Update ecs/app/config.py ALLOWED_TEAMS to include '{team_name}'.")
     print(f"Make sure to start an LLM Wiki instance for this team on port {new_port}.")

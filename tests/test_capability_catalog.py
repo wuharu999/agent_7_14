@@ -143,7 +143,7 @@ def test_wiki_manifest_scans_text_evidence_and_excludes_generated_catalog(
     wiki = tmp_path / "wiki"
     (wiki / "sources").mkdir(parents=True)
     (wiki / "sources" / "manual.md").write_text("walk()", encoding="utf-8")
-    (wiki / "sources" / "image.png").write_bytes(b"not sent to Claude")
+    (wiki / "sources" / "image.png").write_bytes(b"not sent to the text model")
     (wiki / "capabilities" / "walker_s2").mkdir(parents=True)
     (wiki / "capabilities" / "walker_s2" / "CAP-OLD.md").write_text(
         "generated output", encoding="utf-8"
@@ -468,7 +468,17 @@ def test_batch_extractor_disables_tools_and_reducer_accounts_for_candidates(
             }
         )
 
-    monkeypatch.setattr(capability_catalog, "run_claude_process", fake_run)
+    class FakeClient:
+        async def complete_json(self, system: str, prompt: str, **kwargs):
+            output = await fake_run(
+                prompt,
+                system_prompt=system,
+                json_schema=kwargs.get("schema"),
+                tools=(),
+            )
+            return json.loads(output)
+
+    monkeypatch.setattr(capability_catalog, "create_deepseek_client", lambda **_kwargs: FakeClient())
     extraction = asyncio.run(
         capability_catalog._extract_batch(
             model="walker_s2",
@@ -640,7 +650,17 @@ def test_full_organization_batches_every_file_without_agent_tools(
         progress.append((stage, message))
 
     monkeypatch.setattr(capability_catalog, "get_team_config", lambda _model: config)
-    monkeypatch.setattr(capability_catalog, "run_claude_process", fake_run)
+    class FakeClient:
+        async def complete_json(self, system: str, prompt: str, **kwargs):
+            output = await fake_run(
+                prompt,
+                system_prompt=system,
+                json_schema=kwargs.get("schema"),
+                tools=(),
+            )
+            return json.loads(output)
+
+    monkeypatch.setattr(capability_catalog, "create_deepseek_client", lambda **_kwargs: FakeClient())
     monkeypatch.setattr(capability_catalog, "CAPABILITY_CATALOG_BATCH_BYTES", 500)
     monkeypatch.setattr(capability_catalog, "CAPABILITY_CATALOG_UNIT_BYTES", 400)
     monkeypatch.setattr(
@@ -673,7 +693,8 @@ def test_full_organization_batches_every_file_without_agent_tools(
     assert len(calls) == 2
     assert all(call["tools"] == () for call in calls)
     assert all(
-        "Atomic capability contract" in call["system_prompt"] for call in calls
+        "Extract triggerable actions and observable effects" in call["system_prompt"]
+        for call in calls
     )
     assert sum(stage == "batch_extracting" for stage, _message in progress) == 4
 
@@ -685,7 +706,7 @@ def test_generated_changeset_passes_the_bundled_hard_gate(tmp_path: Path) -> Non
     asyncio.run(capability_catalog._validate_changeset(path))
 
 
-def test_claude_generation_schema_is_draft7_compatible_and_focused() -> None:
+def test_provider_generation_schema_is_draft7_compatible_and_focused() -> None:
     schema = capability_catalog.CATALOG_CHANGESET_SCHEMA
     after_entry = schema["properties"]["operations"]["items"]["properties"][
         "after_entry"

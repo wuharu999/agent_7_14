@@ -805,7 +805,7 @@ def test_ecs_requests_worker_evidence_and_returns_validated_state_patch(
         }
 
     monkeypatch.setattr(gateway, "command", fake_command)
-    candidates, issues, patches = asyncio.run(
+    candidates, issues, patches, model_enriched = asyncio.run(
         routes._candidate_questions(
             state,
             model_id=database.get_allowed_teams()[0],
@@ -815,6 +815,7 @@ def test_ecs_requests_worker_evidence_and_returns_validated_state_patch(
     )
     assert candidates
     assert issues == []
+    assert model_enriched is True
     assert apply_state_patch(state, patches)["environment"]["lighting"] == "controlled"
 
 
@@ -899,6 +900,50 @@ def test_answer_route_applies_worker_patch_to_authoritative_state(
     assert isinstance(updated["workflow"]["steps"], list)
     assert updated["goal"]["confirmation"] == "confirmed"
     assert "payload_kg" not in updated["operating_profile"]
+
+
+def test_answer_is_saved_before_deepseek_enrichment_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = "SCNSESSION-ANSWER-FIRST"
+    token = "answer-first-token"
+    state = attach_next_question(
+        initial_state(session_id, "Retrieve a parcel"),
+        language="en",
+    )
+    question = state["current_question"]
+    database.create_scenario_session(
+        session_id=session_id,
+        owner_user_id=None,
+        anonymous_token_hash=routes._token_hash(token),
+        language="en",
+        model_id=database.get_allowed_teams()[0],
+        state=state,
+    )
+    gateway.websocket = object()
+
+    async def unavailable(*_args, **_kwargs):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(gateway, "command", unavailable)
+    response = asyncio.run(
+        routes.answer_route(
+            session_id,
+            routes.AnswerRequest(
+                expected_state_version=state["state_version"],
+                question_id=question["question_id"],
+                answer_mode="option",
+                answer=question["options"][0],
+            ),
+            _request(),
+            x_scenario_resume_token=token,
+        )
+    )
+    current = json.loads(response.body)["session"]["current_state"]
+    assert response.status_code == 200
+    assert current["state_version"] == state["state_version"] + 1
+    assert current["question_history"][-1]["answer"] == question["options"][0]
+    assert current["current_question"] is not None
 
 
 def test_report_finalization_closes_state_change_race_and_queues_latest_version(
@@ -1124,25 +1169,25 @@ def test_report_question_is_answered_by_ai_from_approved_report_fields(
     assert body["report_citations"] == [{"section": "conditions", "index": 0}]
 
 
-def test_structured_clarification_uses_supported_no_tools_process_contract(
+def test_structured_clarification_uses_supported_tool_free_api_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    state = initial_state("SCNSESSION-CLAUDE-CONTRACT", "Retrieve parcels")
+    state = initial_state("SCNSESSION-API-CONTRACT", "Retrieve parcels")
     captured: dict = {}
 
-    async def fake_process(prompt: str, **kwargs):
-        captured.update(kwargs)
-        return json.dumps(
-            {
+    class FakeClient:
+        async def complete_json(self, system: str, prompt: str, **kwargs):
+            captured.setdefault("calls", []).append((system, prompt, kwargs))
+            if kwargs["schema"] is scenario_clarification.QUESTION_PHRASE_SCHEMA:
+                return {"question": "What starts the workflow?", "options": ["On demand"]}
+            return {
                 "state_patch": [],
-                "candidate_questions": [],
                 "candidate_issues": [],
                 "intent": "requirement_answer",
                 "model_readiness_opinion": {"stable": False, "reason": "More detail needed"},
             }
-        )
 
-    monkeypatch.setattr(scenario_clarification, "run_claude_process", fake_process)
+    monkeypatch.setattr(scenario_clarification, "create_deepseek_client", lambda **_kwargs: FakeClient())
     result = asyncio.run(
         scenario_clarification.clarify_scenario(
             state,
@@ -1151,9 +1196,8 @@ def test_structured_clarification_uses_supported_no_tools_process_contract(
         )
     )
     assert result["status"] == "ok"
-    assert captured["tools"] == ()
-    assert captured["system_prompt"]
-    assert "extra_args" not in captured
+    assert captured["calls"]
+    assert all("tools" not in call[2] for call in captured["calls"])
     patch_variants = scenario_clarification.CLARIFICATION_RESPONSE_SCHEMA[
         "properties"
     ]["state_patch"]["items"]["oneOf"]

@@ -39,11 +39,11 @@
 
 - Added a browser-generated conversation ID stored in `localStorage`.
 - Questions from the same browser conversation are deterministically routed to the same QA worker lane.
-- Added recent in-memory conversation history so follow-up questions retain context even though each Claude CLI invocation is a separate subprocess.
+- Added recent in-memory conversation history so follow-up questions retain context even though each provider API invocation is a separate subprocess.
 - Added a **New conversation** button that intentionally resets the browser conversation ID.
 - Added answer-language selection for Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
-- Added read-only Claude tool pre-approval (`Read`, `Glob`, `Grep`) and stricter service prompts so Claude reads the wiki silently instead of asking the website user for permission.
-- Removed public-web-search instructions from the bundled `CLAUDE.md`; QA is now explicitly based on the local project files.
+- Added read-only DeepSeek tool pre-approval (`Read`, `Glob`, `Grep`) and stricter service prompts so DeepSeek reads the wiki silently instead of asking the website user for permission.
+- Removed public-web-search instructions from the bundled local agent instruction files; QA is now explicitly based on the local project files.
 
 ## Robot management and source-tree reconciliation
 
@@ -89,5 +89,5 @@
 - Status monitoring now follows the upstream LLM Wiki queue schema, where `maxRetries` is absent and the retry limit is fixed at three.
 - Upload support now uses upstream-compatible `.mdx` instead of unsupported `.markdown`.
 - Worker publishing now relies exclusively on LLM Wiki Source Watch and contains no `/sources/rescan` call, preventing duplicate ingestion even if an old environment setting is incorrect.
-- The Worker machine check loads `.env` through the Python configuration parser, so values containing spaces such as `CLAUDE_EXTRA_ARGS=--model haiku` no longer break the script.
+- The Worker machine check loads `.env` through the Python configuration parser so provider and path settings are validated consistently.
 - Protected HTML routes, including `/admin/users`, redirect signed-out users to the login page instead of displaying an API-style JSON error.

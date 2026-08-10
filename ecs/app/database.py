@@ -1628,7 +1628,7 @@ def get_all_upload_timestamps() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Claude authoring sessions and reviewed articles
+# AI authoring sessions and reviewed articles
 
 # ---------------------------------------------------------------------------
 
@@ -1994,7 +1994,7 @@ def aggregate_capability_gaps(limit: int = 100) -> list[dict[str, Any]]:
                     "model_id": str(assessment["model_id"]),
                     "requirement_name": name,
                     "occurrence_count": 0,
-                    "total_person_weeks": 0.0,
+                    "effort_bands": set(),
                     "domains": set(),
                     "latest_assessment_id": str(assessment["assessment_id"]),
                     "latest_requirement_id": requirement_id,
@@ -2003,16 +2003,15 @@ def aggregate_capability_gaps(limit: int = 100) -> list[dict[str, Any]]:
             )
             item["occurrence_count"] += 1
             if isinstance(rd_gap, dict):
-                try:
-                    person_weeks = float(rd_gap.get("person_weeks") or 0.0)
-                except (TypeError, ValueError):
-                    person_weeks = 0.0
-                item["total_person_weeks"] += max(0.0, person_weeks)
+                effort_band = str(rd_gap.get("effort_band") or "").strip()
+                if effort_band in {"configuration", "integration", "prototype", "core_r_and_d"}:
+                    item["effort_bands"].add(effort_band)
                 item["domains"].update(str(value) for value in rd_gap.get("domains", []))
     results: list[dict[str, Any]] = []
     for item in aggregated.values():
-        count = int(item["occurrence_count"])
-        item["average_person_weeks"] = round(float(item.pop("total_person_weeks")) / count, 2)
+        bands = item.pop("effort_bands")
+        order = {"configuration": 0, "integration": 1, "prototype": 2, "core_r_and_d": 3}
+        item["effort_band"] = max(bands, key=lambda value: order[value], default="unverified")
         item["domains"] = sorted(item["domains"])
         results.append(item)
     results.sort(key=lambda item: (-int(item["occurrence_count"]), str(item["requirement_name"])))

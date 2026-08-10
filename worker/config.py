@@ -104,10 +104,9 @@ CAPABILITY_CATALOG_QUEUE_MAX = max(
 )
 AUTHORING_LOCK_STRIPES = max(1, int(os.environ.get("AUTHORING_LOCK_STRIPES", "64")))
 FILE_MANAGER_MAX_ENTRIES = int(os.environ.get("FILE_MANAGER_MAX_ENTRIES", "10000"))
-CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "240"))
 CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "").strip()
 CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "gpt-oss-120b").strip() or "gpt-oss-120b"
-CEREBRAS_TIMEOUT = max(1, int(os.environ.get("CEREBRAS_TIMEOUT", str(CLAUDE_TIMEOUT))))
+CEREBRAS_TIMEOUT = max(1, int(os.environ.get("CEREBRAS_TIMEOUT", "240")))
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_MODEL = (
     os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash").strip()
@@ -117,7 +116,13 @@ DEEPSEEK_BASE_URL = (
     os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
     or "https://api.deepseek.com"
 )
-DEEPSEEK_TIMEOUT = max(1, int(os.environ.get("DEEPSEEK_TIMEOUT", str(CLAUDE_TIMEOUT))))
+DEEPSEEK_TIMEOUT = max(1, int(os.environ.get("DEEPSEEK_TIMEOUT", "240")))
+DEEPSEEK_STRUCTURED_RETRIES = max(
+    0, min(2, int(os.environ.get("DEEPSEEK_STRUCTURED_RETRIES", "1")))
+)
+DEEPSEEK_TRANSPORT_RETRIES = max(
+    0, min(3, int(os.environ.get("DEEPSEEK_TRANSPORT_RETRIES", "1")))
+)
 QA_PROVIDER_COOLDOWN_SECONDS = max(
     1, int(os.environ.get("QA_PROVIDER_COOLDOWN_SECONDS", "300"))
 )
@@ -137,25 +142,34 @@ CAPABILITY_CATALOG_UNIT_BYTES = max(
     ),
 )
 CAPABILITY_CATALOG_BATCH_TIMEOUT = max(
-    CLAUDE_TIMEOUT,
+    DEEPSEEK_TIMEOUT,
     1800,
     int(os.environ.get("CAPABILITY_CATALOG_BATCH_TIMEOUT", "1800")),
 )
 CAPABILITY_CATALOG_REDUCE_TIMEOUT = max(
-    CLAUDE_TIMEOUT,
+    DEEPSEEK_TIMEOUT,
     3600,
     int(os.environ.get("CAPABILITY_CATALOG_REDUCE_TIMEOUT", "3600")),
 )
-CLAUDE_STREAM_BUFFER_LIMIT = max(
-    64 * 1024,
-    int(os.environ.get("CLAUDE_STREAM_BUFFER_LIMIT", str(32 * 1024**2))),
+SCENARIO_RETRIEVAL_CACHE_FILE = Path(
+    os.environ.get(
+        "SCENARIO_RETRIEVAL_CACHE_FILE",
+        str(WORKER_ROOT_DIR / ".agent1-worker" / "scenario-retrieval.sqlite3"),
+    )
+).expanduser().resolve()
+SCENARIO_RETRIEVAL_CANDIDATES = max(
+    10, min(100, int(os.environ.get("SCENARIO_RETRIEVAL_CANDIDATES", "40")))
 )
-CLAUDE_ALLOWED_TOOLS = tuple(
-    item.strip()
-    for item in os.environ.get("CLAUDE_ALLOWED_TOOLS", "Read,Glob,Grep").split(",")
-    if item.strip()
+SCENARIO_RETRIEVAL_MAX_DOCUMENTS = max(
+    1, min(20, int(os.environ.get("SCENARIO_RETRIEVAL_MAX_DOCUMENTS", "12")))
 )
-CLAUDE_EXTRA_ARGS = os.environ.get("CLAUDE_EXTRA_ARGS", "").strip()
+SCENARIO_RETRIEVAL_MAX_PAGE_CHARS = max(
+    2_000, int(os.environ.get("SCENARIO_RETRIEVAL_MAX_PAGE_CHARS", "24000"))
+)
+SCENARIO_RETRIEVAL_MAX_TOTAL_CHARS = max(
+    SCENARIO_RETRIEVAL_MAX_PAGE_CHARS,
+    int(os.environ.get("SCENARIO_RETRIEVAL_MAX_TOTAL_CHARS", "120000")),
+)
 CONVERSATION_MAX_TURNS = int(os.environ.get("CONVERSATION_MAX_TURNS", "6"))
 CONVERSATION_MAX_SESSIONS = int(os.environ.get("CONVERSATION_MAX_SESSIONS", "1000"))
 AUTHORING_MAX_TURNS = int(os.environ.get("AUTHORING_MAX_TURNS", "100"))

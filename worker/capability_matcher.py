@@ -13,8 +13,9 @@ from shared.capability_types import (
     migrate_legacy_capability,
     required_capability_type,
 )
-from worker.config import get_team_config
-from worker.claude_process import run_claude_process
+from worker.config import SCENARIO_RETRIEVAL_MAX_DOCUMENTS, get_team_config
+from worker.deepseek_client import create_deepseek_client
+from worker.prompt_policy import scenario_analysis_policy
 
 log = logging.getLogger("worker.capability_matcher")
 
@@ -33,224 +34,6 @@ _BILINGUAL_EVIDENCE_CONCEPTS: dict[str, tuple[str, ...]] = {
     "balance": ("balance", "stability", "平衡", "稳定性"),
 }
 
-_STRING_ARRAY = {"type": "array", "items": {"type": "string"}}
-_GATE_SCHEMA = {
-    "type": "object",
-    "required": ["name", "status", "hard", "basis"],
-    "properties": {
-        "name": {"type": "string"},
-        "status": {"enum": ["pass", "fail", "unknown", "not_applicable"]},
-        "hard": {"type": "boolean"},
-        "basis": {"type": "string"},
-    },
-    "additionalProperties": False,
-}
-_RD_GAP_SCHEMA = {
-    "type": ["object", "null"],
-    "required": ["classification", "domains", "person_weeks", "risk_factors"],
-    "properties": {
-        "classification": {"const": R_AND_D_CLASSIFICATION},
-        "domains": _STRING_ARRAY,
-        "person_weeks": {"type": "number", "minimum": 0},
-        "risk_factors": _STRING_ARRAY,
-    },
-    "additionalProperties": False,
-}
-
-_COMPACT_RESPONSE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "required": [
-        "scenario_spec",
-        "atomic_requirements",
-        "capabilities",
-        "feasibility_assessment",
-    ],
-    "properties": {
-        "scenario_spec": {
-            "type": "object",
-            "required": [
-                "scenario_id",
-                "title",
-                "business_goal",
-                "target",
-                "environment",
-                "payload",
-                "throughput",
-                "assumptions",
-                "unknowns",
-            ],
-            "properties": {
-                "scenario_id": {"type": "string", "pattern": "^SCN-[A-Z0-9-]+$"},
-                "title": {"type": "string"},
-                "business_goal": {"type": "string"},
-                "target": {"type": "string"},
-                "environment": {"type": "string"},
-                "payload": {"type": "string"},
-                "throughput": {"type": "string"},
-                "assumptions": _STRING_ARRAY,
-                "unknowns": _STRING_ARRAY,
-            },
-            "additionalProperties": False,
-        },
-        "atomic_requirements": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-                "type": "object",
-                "required": [
-                    "requirement_id",
-                    "name",
-                    "required_capability_type",
-                    "effect",
-                    "acceptance_criteria",
-                    "constraints",
-                    "dependencies",
-                ],
-                "properties": {
-                    "requirement_id": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
-                    "name": {"type": "string"},
-                    "required_capability_type": {"enum": sorted(CAPABILITY_TYPES)},
-                    "effect": {"type": "string"},
-                    "acceptance_criteria": _STRING_ARRAY,
-                    "constraints": _STRING_ARRAY,
-                    "dependencies": {
-                        "type": "array",
-                        "items": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-        "capabilities": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": [
-                    "capability_id",
-                    "name",
-                    "capability_type",
-                    "effect",
-                    "status",
-                    "evidence_level",
-                    "evidence_refs",
-                    "verification_profiles",
-                    "migration_warnings",
-                ],
-                "properties": {
-                    "capability_id": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"},
-                    "name": {"type": "string"},
-                    "capability_type": {"enum": sorted(CAPABILITY_TYPES)},
-                    "effect": {"type": "string"},
-                    "status": {"enum": ["draft", "reviewed", "verified", "deprecated"]},
-                    "evidence_level": {"enum": ["E1", "E2", "E3", "E4", "E5"]},
-                    "evidence_refs": _STRING_ARRAY,
-                    "verification_profiles": {"type": "array", "items": {"type": "object"}},
-                    "migration_warnings": _STRING_ARRAY,
-                },
-                "additionalProperties": False,
-            },
-        },
-        "feasibility_assessment": {
-            "type": "object",
-            "required": [
-                "assessment_id",
-                "scenario_id",
-                "capability_catalog_revision",
-                "matches",
-                "technical_conclusion",
-                "deployment_conclusion",
-                "deployment_gates",
-                "rd_effort",
-                "residual_risks",
-                "next_experiment",
-            ],
-            "properties": {
-                "assessment_id": {"type": "string", "pattern": "^ASM-[A-Z0-9-]+$"},
-                "scenario_id": {"type": "string", "pattern": "^SCN-[A-Z0-9-]+$"},
-                "capability_catalog_revision": {"type": "string"},
-                "matches": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "match_id",
-                            "requirement_id",
-                            "capability_ids",
-                            "gates",
-                            "match_state",
-                            "confidence",
-                            "evidence_level",
-                            "conditions",
-                            "gaps",
-                            "next_action",
-                            "rd_gap",
-                        ],
-                        "properties": {
-                            "match_id": {"type": "string", "pattern": "^MATCH-[A-Z0-9-]+$"},
-                            "requirement_id": {"type": "string", "pattern": "^REQ-[A-Z0-9-]+$"},
-                            "capability_ids": {
-                                "type": "array",
-                                "items": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"},
-                            },
-                            "gates": {"type": "array", "minItems": 1, "items": _GATE_SCHEMA},
-                            "match_state": {
-                                "enum": [
-                                    "verified_satisfied",
-                                    "conditional",
-                                    "partial",
-                                    "composite",
-                                    "unproven",
-                                    "not_satisfied",
-                                    "requirement_incomplete",
-                                ]
-                            },
-                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                            "evidence_level": {"enum": ["E1", "E2", "E3", "E4", "E5"]},
-                            "conditions": _STRING_ARRAY,
-                            "gaps": _STRING_ARRAY,
-                            "next_action": {"type": "string"},
-                            "rd_gap": _RD_GAP_SCHEMA,
-                        },
-                        "additionalProperties": False,
-                    },
-                },
-                "technical_conclusion": {
-                    "enum": [
-                        "feasible",
-                        "feasible_with_conditions",
-                        "prototype_required",
-                        "currently_unproven",
-                        "infeasible",
-                    ]
-                },
-                "deployment_conclusion": {
-                    "enum": [
-                        "viable",
-                        "viable_with_conditions",
-                        "business_case_incomplete",
-                        "not_viable",
-                    ]
-                },
-                "deployment_gates": {"type": "array", "minItems": 1, "items": _GATE_SCHEMA},
-                "rd_effort": {
-                    "type": "object",
-                    "required": ["total_person_weeks", "domains", "risk_factors"],
-                    "properties": {
-                        "total_person_weeks": {"type": "number", "minimum": 0},
-                        "domains": _STRING_ARRAY,
-                        "risk_factors": _STRING_ARRAY,
-                    },
-                    "additionalProperties": False,
-                },
-                "residual_risks": _STRING_ARRAY,
-                "next_experiment": {"type": ["string", "null"]},
-            },
-            "additionalProperties": False,
-        },
-    },
-    "additionalProperties": False,
-}
 
 
 def _rewrite_schema_refs(value: Any, prefix: str) -> Any:
@@ -316,11 +99,6 @@ def _full_response_schema() -> dict[str, Any]:
 MATCHER_RESPONSE_SCHEMA = _full_response_schema()
 
 
-def _skill_text(name: str) -> str:
-    path = Path(__file__).resolve().parent / "skills" / name / "SKILL.md"
-    return path.read_text(encoding="utf-8")
-
-
 _MATCHER_REQUIRED_KEYS = {
     "scenario_spec",
     "atomic_requirements",
@@ -360,10 +138,10 @@ def _structured_payload(raw: str) -> dict[str, Any]:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError("Claude returned invalid feasibility JSON") from exc
+        raise ValueError("Provider returned invalid feasibility JSON") from exc
     structured = _find_structured_payload(parsed)
     if structured is None:
-        raise ValueError("Claude returned no complete structured feasibility result")
+        raise ValueError("Provider returned no complete structured feasibility result")
     return structured
 
 
@@ -464,33 +242,113 @@ def enforce_evidence_contract_gate(payload: dict[str, Any]) -> dict[str, Any]:
             gaps.append(gap_text)
         match["gaps"] = gaps
         match["next_action"] = "Build or identify an operational behavior and validate it inside the required operating envelope."
-        match["rd_gap"] = None
+        match["rd_gap"] = {
+            "classification": R_AND_D_CLASSIFICATION,
+            "effort_band": "prototype",
+            "domains": ["operational behavior validation"],
+            "workstreams": ["Implement or identify the missing end-to-end behavior"],
+            "dependencies": ["Representative operating envelope and acceptance test"],
+            "risk_factors": ["Only lower-level building blocks are evidenced"],
+            "evidence_basis": "No supported operational verification profile was supplied",
+            "owner": "engineering",
+            "smallest_validation_step": "Run a bounded bench test of the end-to-end behavior",
+        }
+
+    matched_requirement_ids = {
+        str(match.get("requirement_id") or "")
+        for match in assessment.get("matches", [])
+        if isinstance(match, dict)
+    }
+    for requirement in result.get("atomic_requirements", []):
+        if not isinstance(requirement, dict) or requirement.get("priority", "must") != "must":
+            continue
+        requirement_id = str(requirement.get("requirement_id") or "")
+        if not requirement_id or requirement_id in matched_requirement_ids:
+            continue
+        has_hard_gap = True
+        safe_id = re.sub(r"[^A-Z0-9-]", "-", requirement_id.upper()).strip("-") or "UNKNOWN"
+        assessment.setdefault("matches", []).append(
+            {
+                "match_id": f"MATCH-MISSING-{safe_id}"[:120],
+                "requirement_id": requirement_id,
+                "capability_ids": [],
+                "composition_id": None,
+                "gates": [
+                    {
+                        "name": "Mandatory requirement coverage",
+                        "category": "evidence",
+                        "status": "unknown",
+                        "hard": True,
+                        "requirement_value": requirement.get("effect"),
+                        "capability_value": None,
+                        "margin": None,
+                        "evidence_refs": [],
+                    }
+                ],
+                "match_state": "unproven",
+                "confidence": 0.0,
+                "evidence_level": "E1",
+                "conditions": [],
+                "gaps": ["No validated capability match was returned for this mandatory requirement"],
+                "rd_gap": None,
+                "next_action": "Retrieve or validate evidence for this mandatory requirement",
+            }
+        )
 
     rd_gaps = [
         match["rd_gap"]
         for match in assessment.get("matches", [])
         if isinstance(match, dict) and isinstance(match.get("rd_gap"), dict)
     ]
-    assessment["rd_effort"] = {
-        "total_person_weeks": round(
-            sum(_nonnegative_number(gap.get("person_weeks")) for gap in rd_gaps),
-            2,
+    band_order = {"configuration": 0, "integration": 1, "prototype": 2, "core_r_and_d": 3}
+    existing_effort = assessment.get("engineering_effort", {})
+    assessment["engineering_effort"] = {
+        "overall_band": max(
+            (str(gap.get("effort_band") or "prototype") for gap in rd_gaps),
+            key=lambda value: band_order.get(value, 2),
+            default=str(existing_effort.get("overall_band") or "configuration"),
         ),
-        "domains": sorted(
-            {str(domain) for gap in rd_gaps for domain in gap.get("domains", []) if str(domain)}
-        ),
-        "risk_factors": list(
-            dict.fromkeys(
-                str(risk)
-                for gap in rd_gaps
-                for risk in gap.get("risk_factors", [])
-                if str(risk)
-            )
+        "workstreams": list(dict.fromkeys(
+            str(value) for gap in rd_gaps for value in gap.get("workstreams", []) if str(value)
+        )) or [str(value) for value in existing_effort.get("workstreams", []) if str(value)],
+        "dependencies": list(dict.fromkeys(
+            str(value) for gap in rd_gaps for value in gap.get("dependencies", []) if str(value)
+        )) or [str(value) for value in existing_effort.get("dependencies", []) if str(value)],
+        "risk_factors": list(dict.fromkeys(
+            str(value) for gap in rd_gaps for value in gap.get("risk_factors", []) if str(value)
+        )) or [str(value) for value in existing_effort.get("risk_factors", []) if str(value)],
+        "evidence_basis": str(existing_effort.get("evidence_basis") or "Effort band is based on evidenced gaps, not a calendar estimate."),
+        "owners": list(dict.fromkeys(str(gap.get("owner") or "engineering") for gap in rd_gaps))
+        or [str(value) for value in existing_effort.get("owners", []) if str(value)]
+        or ["engineering"],
+        "smallest_validation_step": str(
+            existing_effort.get("smallest_validation_step")
+            or next((gap.get("smallest_validation_step") for gap in rd_gaps if gap.get("smallest_validation_step")), "Confirm the configuration against a representative task")
         ),
     }
-    if has_hard_gap:
+    assessment.pop("rd_effort", None)
+    hard_gates = [
+        gate
+        for match in assessment.get("matches", [])
+        if isinstance(match, dict)
+        for gate in match.get("gates", [])
+        if isinstance(gate, dict) and gate.get("hard") is True
+    ] + [
+        gate
+        for gate in assessment.get("deployment_gates", [])
+        if isinstance(gate, dict) and gate.get("hard") is True
+    ]
+    if any(gate.get("status") == "fail" for gate in hard_gates):
+        assessment["technical_conclusion"] = "infeasible"
+        assessment["deployment_conclusion"] = "not_viable"
+    elif has_hard_gap:
         if assessment.get("technical_conclusion") in {"feasible", "feasible_with_conditions"}:
             assessment["technical_conclusion"] = "prototype_required"
+        if assessment.get("deployment_conclusion") in {"viable", "viable_with_conditions"}:
+            assessment["deployment_conclusion"] = "business_case_incomplete"
+    elif any(gate.get("status") == "unknown" for gate in hard_gates):
+        if assessment.get("technical_conclusion") in {"feasible", "feasible_with_conditions"}:
+            assessment["technical_conclusion"] = "currently_unproven"
         if assessment.get("deployment_conclusion") in {"viable", "viable_with_conditions"}:
             assessment["deployment_conclusion"] = "business_case_incomplete"
     return result
@@ -637,48 +495,157 @@ async def analyze_scenario(
         raise ValueError("Scenario text cannot be empty")
 
     catalog = evidence_context or load_model_capability_catalog(model)
+    client = create_deepseek_client(timeout=450)
+    if evidence_context:
+        candidate_ids = [
+            str(item.get("document_id") or "")
+            for item in evidence_context
+            if isinstance(item, dict) and str(item.get("document_id") or "")
+        ]
+        rerank_schema = {
+            "type": "object",
+            "required": ["document_ids"],
+            "properties": {
+                "document_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": SCENARIO_RETRIEVAL_MAX_DOCUMENTS,
+                    "items": {"enum": candidate_ids},
+                    "uniqueItems": True,
+                }
+            },
+            "additionalProperties": False,
+        }
+        reranked = await client.complete_json(
+            "Select the most relevant anonymous evidence document IDs for a robot feasibility analysis. "
+            "You have no tools. Do not answer the scenario and do not invent IDs.",
+            "Scenario:\n"
+            + scenario_text.strip()
+            + "\n\nCandidates:\n"
+            + json.dumps(
+                [
+                    {
+                        "document_id": item.get("document_id"),
+                        "kind": item.get("kind"),
+                        "excerpt": str(item.get("text") or "")[:1600],
+                    }
+                    for item in evidence_context
+                    if isinstance(item, dict)
+                ],
+                ensure_ascii=False,
+            ),
+            schema=rerank_schema,
+            stage="scenario evidence reranking",
+            max_tokens=2048,
+        )
+        requested = [str(value) for value in reranked.get("document_ids", [])]
+        by_id = {
+            str(item.get("document_id")): item
+            for item in evidence_context
+            if isinstance(item, dict)
+        }
+        catalog = [by_id[value] for value in requested if value in by_id]
     catalog_summary = (
-        json.dumps(catalog, ensure_ascii=False, indent=2)
+        json.dumps(catalog[:SCENARIO_RETRIEVAL_MAX_DOCUMENTS], ensure_ascii=False, indent=2)
         if catalog
         else "No published capabilities in catalog yet."
     )
-
+    decomposition_schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["scenario_spec", "atomic_requirements"],
+        "properties": {
+            "scenario_spec": MATCHER_RESPONSE_SCHEMA["properties"]["scenario_spec"],
+            "atomic_requirements": MATCHER_RESPONSE_SCHEMA["properties"]["atomic_requirements"],
+        },
+        "$defs": MATCHER_RESPONSE_SCHEMA["$defs"],
+        "additionalProperties": False,
+    }
     system_prompt = (
-        "You are the Robot Scenario Feasibility Compiler. Follow a strict TWO-STAGE evaluation strategy:\n"
-        "STAGE 1 (Catalog Match): First, extract ScenarioSpec and atomic requirements, and check the pre-classified "
-        "published atomic capability catalog provided below in the prompt.\n"
-        "STAGE 2 (Wiki Fallback): If any required capability is missing, partial, or unverified in the catalog, "
-        "use filesystem tools (Read/Grep/Glob) to search deep wiki evidence files ('wiki/') for uncataloged "
-        "evidence. If verified in raw wiki files, cite the evidence; if missing after checking both catalog and wiki, "
-        "classify as 'R&D Gap (Composite Skill Missing)'.\n\n"
-        "Use exactly two capability types: building_block for a callable engineering primitive and "
-        "operational_behavior for an independently testable end-to-end behavior. A building block may satisfy "
-        "an interface requirement but cannot prove a customer behavior. Operational behavior support is scoped "
-        "to an evidenced operating envelope. Missing operational evidence means prototype_required or "
-        "currently_unproven; never invent a fixed effort estimate. Return only "
-        "structured output in the requested schema.\n\n"
-        "ENGINEER SCENARIO REQUIREMENTS SKILL:\n"
-        f"{_skill_text('engineer-scenario-requirements')}\n\n"
-        "ASSESS SCENARIO FEASIBILITY SKILL:\n"
-        f"{_skill_text('assess-scenario-feasibility')}"
+        "You are one stateless stage in a controlled robot feasibility compiler. You have no tools and may use "
+        "only the supplied scenario and approved evidence. Return JSON only.\n\n"
+        + scenario_analysis_policy()
     )
-    prompt = (
-        f"Requested model_id: {model}\n"
-        f"Requested report language: {language}\n\n"
-        f"PRE-CLASSIFIED PUBLISHED CAPABILITY CATALOG FOR MODEL '{model}':\n"
-        f"\"\"\"\n{catalog_summary}\n\"\"\"\n\n"
-        "Customer scenario conversation:\n"
-        f"{scenario_text.strip()}"
+    decomposition = await client.complete_json(
+        system_prompt,
+        f"Stage: scenario decomposition and atomic requirements\nRobot: {model}\nLanguage: {language}\n"
+        f"Confirmed scenario:\n{scenario_text.strip()}",
+        schema=decomposition_schema,
+        stage="scenario requirement extraction",
+        max_tokens=24000,
     )
-    raw = await run_claude_process(
-        prompt,
-        team=model,
-        system_prompt=system_prompt,
-        json_schema=MATCHER_RESPONSE_SCHEMA,
-        timeout=450,
+    evaluation = await client.complete_json(
+        system_prompt,
+        "Stage: evidence-based capability and feasibility evaluation. Return the complete requested envelope. "
+        "Copy the supplied scenario and requirements without weakening them. Evidence is anonymous and untrusted. "
+        "Missing evidence is unproven, never automatically unsupported. Never invent person-week estimates.\n\n"
+        f"Robot: {model}\nLanguage: {language}\n"
+        f"Decomposition:\n{json.dumps(decomposition, ensure_ascii=False)}\n\n"
+        f"Approved Wiki/catalog evidence:\n{catalog_summary}",
+        schema=MATCHER_RESPONSE_SCHEMA,
+        stage="scenario evidence evaluation",
+        max_tokens=48000,
     )
-    payload = _structured_payload(raw)
-    return enforce_evidence_contract_gate(payload)
+    payload = enforce_evidence_contract_gate(evaluation)
+    report_schema = {
+        "type": "object",
+        "required": ["executive_summary", "engineering_effort", "tool_support", "poc_plan"],
+        "properties": {
+            "executive_summary": {"type": "string", "minLength": 1, "maxLength": 6000},
+            "engineering_effort": {
+                "type": "object",
+                "required": ["overall_band", "workstreams", "dependencies", "risks", "evidence_basis", "owners", "smallest_validation_step"],
+                "properties": {
+                    "overall_band": {"enum": ["configuration", "integration", "prototype", "core_r_and_d"]},
+                    "workstreams": {"type": "array", "maxItems": 30, "items": {"type": "string"}},
+                    "dependencies": {"type": "array", "maxItems": 30, "items": {"type": "string"}},
+                    "risks": {"type": "array", "maxItems": 30, "items": {"type": "string"}},
+                    "evidence_basis": {"type": "string"},
+                    "owners": {"type": "array", "maxItems": 20, "items": {"type": "string"}},
+                    "smallest_validation_step": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            "tool_support": {
+                "type": "array",
+                "maxItems": 30,
+                "items": {
+                    "type": "object",
+                    "required": ["name", "how_it_helps", "evidence_status", "conditions"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "how_it_helps": {"type": "string"},
+                        "evidence_status": {"enum": ["verified", "supported", "conditional", "unverified"]},
+                        "conditions": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+            "poc_plan": {
+                "type": "object",
+                "required": ["objective", "steps", "acceptance_tests", "smallest_validation_step"],
+                "properties": {
+                    "objective": {"type": "string"},
+                    "steps": {"type": "array", "maxItems": 30, "items": {"type": "string"}},
+                    "acceptance_tests": {"type": "array", "maxItems": 40, "items": {"type": "string"}},
+                    "smallest_validation_step": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "additionalProperties": False,
+    }
+    payload["report_composition"] = await client.complete_json(
+        system_prompt,
+        "Stage: user-facing report composition. Summarize only the validated evaluation. Explain evidenced "
+        "SDK/API/platform/tool support, required integration, effort bands, and a measurable PoC. Do not include "
+        "citations, paths, slugs, percentages, or hidden mechanics.\n\n"
+        f"Language: {language}\nValidated evaluation:\n{json.dumps(payload, ensure_ascii=False)}",
+        schema=report_schema,
+        stage="scenario report composition",
+        max_tokens=16000,
+    )
+    return payload
 
 
 _MULTI_TURN_GRILL_SCHEMA: dict[str, Any] = {
@@ -714,10 +681,9 @@ async def grill_scenario(
     accumulated_specs: dict[str, str] | None = None,
     base_dir: Path | str | None = None,
 ) -> dict[str, Any]:
-    # Rolling-upgrade adapter for an older ECS that still sends the legacy
+    # Backward-compatible adapter for an older ECS that still sends the legacy
     # command. New ECS sessions include a validated ScenarioState and are
-    # handled directly by WorkerManager. Keep the old prompt below as dormant
-    # rollback code until the real split ECS/Worker pair is validated.
+    # handled directly by WorkerManager through the same DeepSeek boundary.
     from shared.scenario_state import initial_state
     from worker.scenario_clarification import clarify_scenario
 
@@ -761,129 +727,3 @@ async def grill_scenario(
         "is_complete": not questions,
         "summary_if_complete": scenario_text if not questions else "",
     }
-
-    # Dormant pre-V2 implementation retained only for a short rollback window.
-    lang_instruction = (
-        "Output all questions, options, and summaries in Simplified Chinese (zh-CN)."
-        if language in ("zh-CN", "zh", "cn")
-        else "Output all questions, options, and summaries in English."
-    )
-
-    specs_json = json.dumps(accumulated_specs or {}, indent=2, ensure_ascii=False)
-    history_json = json.dumps(history or [], indent=2, ensure_ascii=False)
-
-    prompt = f"""
-You are an expert senior robotics systems architect conducting an ongoing, multi-turn "Grill Me" technical interview to turn a vague customer request into a detailed, rock-solid engineering specification.
-
-Initial Customer Scenario Intent:
-\"\"\"{scenario_text}\"\"\"
-
-Accumulated Specifications & Parameters Clarified So Far:
-{specs_json}
-
-Previous Interview Q&A History:
-{history_json}
-
-Your Task:
-Critically evaluate whether the technical scenario is fully specified and detailed enough to perform a precise feasibility match against repository capabilities.
-You must systematically check ALL of the following technical dimensions for completeness. Do NOT mark as complete until the vast majority are clarified:
-
-Environment & Workspace:
-1. Specific environment type (e.g. automotive assembly line, semiconductor cleanroom, logistics warehouse, food processing plant, commercial restaurant, outdoor construction site, hospital, retail store, public exhibition)
-2. Floor surface & terrain (e.g. polished concrete, epoxy-coated, steel grating, carpet, gravel, grass, wet/oily surfaces, anti-static flooring)
-3. Workspace layout & obstacles (e.g. narrow aisles, conveyor belts, shelving racks, human foot traffic paths, doorways/thresholds, cable runs on floor)
-4. Ambient conditions (e.g. temperature range, humidity, dust/particle level, lighting conditions, noise level, explosive atmosphere classification ATEX)
-
-Mobility & Locomotion:
-5. Movement requirements (e.g. stationary workstation, wheeled AGV on flat floor, biped walking, stair climbing, slope traversal, step-over obstacles, outdoor uneven terrain)
-6. Navigation & mapping (e.g. pre-mapped fixed routes, SLAM dynamic navigation, follow-the-leader, GPS waypoints, visual landmark navigation)
-7. Speed & cycle time requirements (e.g. maximum walking speed, task cycle time, throughput per hour, response time to events)
-
-Manipulation & Payload:
-8. Object types & properties (e.g. rigid/deformable, fragile/robust, transparent, reflective, wet/slippery, hot/cold, hazardous materials)
-9. Payload weight & dimensions (e.g. max single-object mass, max volume, multi-object batch handling)
-10. Gripper & end-effector requirements (e.g. parallel jaw, vacuum suction, soft adaptive gripper, tool changer, force-torque sensing precision)
-11. Manipulation precision (e.g. placement accuracy ±mm, insertion tolerance, assembly force control, visual servoing alignment)
-
-Task Workflow & Process (CRITICAL — ask MULTIPLE questions about this):
-12. Exact task description step-by-step (e.g. "pick glass from conveyor → inspect for defects → place into shipping box" — break down every sub-step)
-13. Source & destination of objects (e.g. where do items arrive from? conveyor belt, pallet, shelf, human handoff, random bin? Where do they go? shipping box, tray, rack, another conveyor?)
-14. Sorting / grouping criteria (e.g. sort by size, color, SKU label, weight, defect status, destination address, product type)
-15. Quality inspection requirements (e.g. visual defect detection, dimensional measurement, weight verification, barcode/QR scanning, label verification)
-16. Packaging & shipping preparation (e.g. wrapping, cushioning/padding, box assembly, lid closing, labeling, palletizing, shrink-wrapping)
-17. Task throughput & speed (e.g. items per minute, boxes per hour, orders per shift, peak vs. steady-state rate)
-18. Error handling & exceptions (e.g. what happens when an object is dropped, broken, missing, wrong size? reject bin? human escalation? retry?)
-19. Multi-step sequencing & tool changes (e.g. does the robot need to switch between tasks? pick-and-place then inspection? assembly then packaging?)
-20. Object variety & SKU count (e.g. how many different object types? 1 uniform item, 5-10 variants, 100+ SKUs with different shapes/sizes?)
-21. Upstream & downstream process dependencies (e.g. does the robot wait for a conveyor signal? is there a human handing items? does a downstream machine need synchronization?)
-
-Connectivity & Control:
-22. Network infrastructure (e.g. offline standalone, local Wi-Fi, industrial Ethernet, 5G private network, mesh network, cloud connectivity requirements)
-23. Control interface & protocol (e.g. ROS2 topics, proprietary SDK API, REST/WebSocket, PLC integration, EtherCAT, OPC-UA)
-24. Integration with existing systems (e.g. MES/ERP integration, conveyor synchronization, AGV fleet coordination, vision system handoff)
-
-Safety & Compliance:
-25. Human coexistence level (e.g. no humans in workspace, occasional human entry with lockout, continuous human-robot collaboration, child/public-accessible area)
-26. Safety standards & certifications required (e.g. ISO 13849 PL-d, ISO 10218, ISO/TS 15066 collaborative, CE marking, UL certification)
-27. Emergency stop & protective measures (e.g. E-stop button placement, LiDAR safety zones, light curtains, pressure-sensitive skin, speed/force limiting)
-
-Power & Durability:
-28. Power source & battery requirements (e.g. continuous AC tethered, battery runtime hours, hot-swap battery, charging dock location, solar/hybrid)
-29. Operating schedule & duty cycle (e.g. single shift 8h, 24/7 continuous, intermittent on-demand, seasonal peaks)
-30. Environmental durability (e.g. IP rating for water/dust, operating temperature range, vibration resistance, corrosion resistance)
-
-Business & Deployment:
-31. Quantity & scale (e.g. single prototype, pilot fleet of 3-5, production fleet of 50+, multi-site deployment)
-32. Timeline & budget constraints (e.g. proof-of-concept timeline, production deployment deadline, budget range)
-33. Maintenance & support requirements (e.g. on-site technician availability, remote monitoring, predictive maintenance, spare parts logistics)
-
-Rules for your Decision:
-- ALWAYS prioritize drilling into the Task Workflow & Process dimensions FIRST. If the user says "sort glasses" or "ship packages", you must ask detailed follow-ups about exact step-by-step workflow, source/destination, sorting criteria, throughput, error handling, and inspection BEFORE moving to other categories.
-- If key boundary parameters remain vague or unclarified (e.g., user just said "factory" or "sort items" or only answered a few dimensions):
-  1. Set `is_complete: false`
-  2. Formulate 3 to 5 sharp, highly probing follow-up questions targeting the NEXT most critical unclarified dimensions.
-  3. Provide 3 to 4 concrete, realistic selectable option choices for each question.
-  4. Do NOT repeat questions already answered in the history.
-- If the technical specification is already comprehensive and detailed across at least 20 of the above dimensions (or if 6+ turns of detailed parameters have been provided covering task workflow, environment, mobility, manipulation, safety, connectivity, and power):
-  1. Set `is_complete: true`
-  2. Set `summary_if_complete` to a comprehensive, professional technical summary of the fully refined scenario specification covering all clarified dimensions.
-
-{lang_instruction}
-Return ONLY valid JSON matching this schema:
-{json.dumps(_MULTI_TURN_GRILL_SCHEMA, ensure_ascii=False)}
-"""
-    try:
-        raw_output = await run_claude_process(
-            prompt=prompt,
-            timeout=60.0,
-            extra_args=["--model", "haiku"],
-            base_dir=base_dir,
-        )
-        data = json.loads(raw_output)
-        if isinstance(data, dict):
-            questions = data.get("questions") if isinstance(data.get("questions"), list) else []
-            is_complete = bool(data.get("is_complete", False))
-            summary_if_complete = str(data.get("summary_if_complete") or "")
-            return {
-                "status": "ok",
-                "questions": questions,
-                "is_complete": is_complete,
-                "summary_if_complete": summary_if_complete,
-            }
-    except Exception as exc:
-        log.exception("Grill scenario failed: %s", exc)
-
-    is_zh = language in ("zh-CN", "zh", "cn")
-    fallback_questions = [
-        {
-            "id": "q_factory_env",
-            "question": "作业场地与工厂环境类型？" if is_zh else "What specific factory or environment type is this?",
-            "options": ["汽车/重工车间" if is_zh else "Automotive/Heavy Machinery", "电子/半导体洁净室" if is_zh else "Electronics Cleanroom", "电商物流仓库" if is_zh else "Logistics Warehouse", "商业餐饮/公共场所" if is_zh else "Restaurant / Public Area"],
-        },
-        {
-            "id": "q_mobility",
-            "question": "机器人移动与地形履约要求？" if is_zh else "Does the robot need to walk or navigate around obstacles?",
-            "options": ["固定工位/台面作业" if is_zh else "Static Station / Bench Top", "轮式平整地面移动" if is_zh else "Wheeled Flat Floor AGV", "双足跨越斜坡/障碍" if is_zh else "Biped Walking Over Slopes/Obstacles", "双足上下楼梯" if is_zh else "Biped Stair Climbing"],
-        },
-    ]
-    return {"status": "ok", "questions": fallback_questions, "is_complete": False, "summary_if_complete": ""}

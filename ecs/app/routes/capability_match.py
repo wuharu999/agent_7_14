@@ -395,14 +395,13 @@ _REPORT_LABELS: dict[str, dict[str, str]] = {
         "evidence": "Evidence",
         "gate": "Gate",
         "gap": "Gap",
-        "rd_estimate": "R&D estimate",
-        "person_weeks": "person-weeks",
+        "rd_estimate": "Engineering effort band",
         "next_action": "Next action",
         "conclusions": "Conclusions",
         "technical": "Technical",
         "deployment": "Deployment",
-        "rd_effort": "R&D effort",
-        "domains": "Domains",
+        "rd_effort": "Engineering effort",
+        "domains": "Workstreams / domains",
         "none": "None",
         "residual_risks": "Residual Risks",
         "no_risks": "No residual risks recorded",
@@ -428,14 +427,13 @@ _REPORT_LABELS: dict[str, dict[str, str]] = {
         "evidence": "证据",
         "gate": "门槛",
         "gap": "能力缺口",
-        "rd_estimate": "研发投入估算",
-        "person_weeks": "人周",
+        "rd_estimate": "工程投入等级",
         "next_action": "下一步行动",
         "conclusions": "结论",
         "technical": "技术结论",
         "deployment": "部署结论",
-        "rd_effort": "研发投入",
-        "domains": "研发领域",
+        "rd_effort": "工程投入",
+        "domains": "工作流 / 领域",
         "none": "无",
         "residual_risks": "剩余风险",
         "no_risks": "未记录剩余风险",
@@ -506,11 +504,6 @@ def _markdown_report(assessment: dict[str, Any], *, language: str = "en") -> str
                     f"({capability.get('capability_type') or capability.get('abstraction_level', '')}, "
                     f"{capability.get('status', '')}, {capability.get('evidence_level', '')})"
                 )
-                evidence_items = capability.get("evidence_refs", capability.get("evidence", []))
-                for evidence in evidence_items:
-                    if isinstance(evidence, dict):
-                        evidence = f"{evidence.get('wiki_entry', '')}#{evidence.get('locator', '')}"
-                    lines.append(f"    - {labels['evidence']}: `{evidence}`")
         for gate in match.get("gates", []):
             basis = gate.get("basis") or (
                 f"requirement={_display_value(gate.get('requirement_value'))}; "
@@ -525,19 +518,19 @@ def _markdown_report(assessment: dict[str, Any], *, language: str = "en") -> str
         rd_gap = match.get("rd_gap")
         if isinstance(rd_gap, dict):
             lines.append(
-                f"- {labels['rd_estimate']}: **{rd_gap.get('person_weeks', 0)} {labels['person_weeks']}** "
+                f"- {labels['rd_estimate']}: **{rd_gap.get('effort_band', 'unverified')}** "
                 f"({', '.join(str(value) for value in rd_gap.get('domains', []))})"
             )
         lines.extend(["", f"{labels['next_action']}: {match.get('next_action', '')}", ""])
-    effort = feasibility.get("rd_effort", {})
+    effort = feasibility.get("engineering_effort", {})
     lines.extend(
         [
             f"## {labels['conclusions']}",
             "",
             f"- {labels['technical']}: **{feasibility.get('technical_conclusion', '')}**",
             f"- {labels['deployment']}: **{feasibility.get('deployment_conclusion', '')}**",
-            f"- {labels['rd_effort']}: **{effort.get('total_person_weeks', 0)} {labels['person_weeks']}**",
-            f"- {labels['domains']}: {', '.join(str(value) for value in effort.get('domains', [])) or labels['none']}",
+            f"- {labels['rd_effort']}: **{effort.get('overall_band', 'unverified')}**",
+            f"- {labels['domains']}: {', '.join(str(value) for value in effort.get('workstreams', [])) or labels['none']}",
             "",
             f"## {labels['residual_risks']}",
             "",

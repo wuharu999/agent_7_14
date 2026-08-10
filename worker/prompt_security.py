@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from shared.source_types import TEXT_SOURCE_SUFFIXES
-from worker.claude_process import ClaudeProcessError, run_claude_process
+from worker.deepseek_client import DeepSeekError, create_deepseek_client
 from worker.config import (
     PROMPT_GUARD_CONCURRENCY,
     PROMPT_GUARD_ENABLED,
@@ -66,7 +66,7 @@ _HIGH_CONFIDENCE_RULES: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     "tool_escalation": (
         re.compile(
-            r"\b(?:you|assistant|agent|claude)\b.{0,50}"
+            r"\b(?:you|assistant|agent)\b.{0,50}"
             r"\b(?:run|execute|invoke|call|enable|use)\b.{0,50}"
             r"\b(?:bash|shell|terminal|write tool|edit tool|web search|browser tool|sudo)\b"
         ),
@@ -261,19 +261,13 @@ async def _classify_ambiguous(value: str) -> GuardDecision:
         "</untrusted_message>"
     )
     async with _guard_semaphore:
-        output = await run_claude_process(
+        parsed = await create_deepseek_client(timeout=PROMPT_GUARD_TIMEOUT).complete_json(
+            _CLASSIFIER_SYSTEM_PROMPT,
             prompt,
-            system_prompt=_CLASSIFIER_SYSTEM_PROMPT,
-            tools=(),
-            timeout=PROMPT_GUARD_TIMEOUT,
-            json_schema=_CLASSIFIER_SCHEMA,
+            schema=_CLASSIFIER_SCHEMA,
+            stage="prompt security classification",
+            max_tokens=1024,
         )
-    try:
-        parsed = _find_structured_output(json.loads(output))
-    except json.JSONDecodeError as exc:
-        raise ClaudeProcessError("Prompt guard returned invalid JSON") from exc
-    if parsed is None:
-        raise ClaudeProcessError("Prompt guard returned no structured decision")
     decision = str(parsed.get("decision") or "block")
     category = str(parsed.get("category") or "instruction_override")
     language = str(parsed.get("language") or detect_language(value))
@@ -291,7 +285,7 @@ async def guard_user_input(value: str) -> GuardDecision:
         return GuardDecision(False, language=language)
     try:
         return await _classify_ambiguous(value)
-    except ClaudeProcessError:
+    except DeepSeekError:
         # Fail closed only for messages that reached semantic classification.
         return GuardDecision(True, "instruction_override", language)
 

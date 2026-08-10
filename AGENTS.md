@@ -77,7 +77,7 @@ The latest intended product includes all of the following.
 - Send the selected language with each question.
 - The UI language syncs automatically to the selected answer language.
 - The active Cerebras or DeepSeek provider must answer in the selected language.
-- Public QA must not expose internal retrieval steps, use Claude Code, read `CLAUDE.md`, or search original source files.
+- Public QA must not expose internal retrieval steps, launch local coding agents, read local agent instruction files, or search original source files.
 - Rate limiting applies on the QA page (10 req/min, 50 req/hour per IP).
 - Internal provider errors are logged internally and a generic translated message is shown to users.
 
@@ -230,8 +230,8 @@ CONVERSATION_MAX_SESSIONS=1000
 
 The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees `wiki/index.md` plus at most 20 filename/path matches for the selected robot/topic when the index is stale, Python validates returned slugs and reads only those permitted pages, and a second provider call streams the answer. Cerebras is primary; any Cerebras API failure opens a five-minute circuit and retries the complete request through DeepSeek V4 Flash. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
 
-Public QA is API-only. It must not launch Claude Code, import a Claude Q&A
-runner, read `CLAUDE.md`, or fall back to `raw/sources/`. Terminology rewriting
+Public QA is API-only. It must not launch local coding agents, import an agent
+runner, read local agent instruction files, or fall back to `raw/sources/`. Terminology rewriting
 is an in-memory prompt/output boundary and must not mutate original uploads or
 generated Wiki files.
 
@@ -318,7 +318,6 @@ QA_WORKERS=3
 DOWNLOAD_WORKERS=2
 FILE_OPERATION_WORKERS=1
 FILE_MANAGER_MAX_ENTRIES=10000
-CLAUDE_TIMEOUT=240
 CEREBRAS_API_KEY=<Worker-only secret>
 CEREBRAS_MODEL=gpt-oss-120b
 CEREBRAS_TIMEOUT=240
@@ -326,6 +325,8 @@ DEEPSEEK_API_KEY=<Worker-only fallback secret>
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
+DEEPSEEK_STRUCTURED_RETRIES=1
+DEEPSEEK_TRANSPORT_RETRIES=1
 QA_PROVIDER_COOLDOWN_SECONDS=300
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
@@ -338,8 +339,6 @@ LLM_WIKI_RESCAN_AFTER_PUBLISH=false
 LLM_WIKI_API_URL=http://127.0.0.1:19828/api/v1
 LLM_WIKI_API_TOKEN=
 LLM_WIKI_PROJECT_ID=
-CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
-CLAUDE_EXTRA_ARGS=--model haiku
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
@@ -367,7 +366,7 @@ chmod 600 ecs/.env
 chmod 600 worker/.env
 ```
 
-Never commit `.env`, SQLite data, uploaded source files, LLM provider keys, session tokens, or Claude credentials.
+Never commit `.env`, SQLite data, uploaded source files, LLM provider keys, or session tokens.
 
 ---
 
@@ -472,7 +471,7 @@ First run:
 
 ```bash
 find . -maxdepth 4 -type f | sort
-rg -n "conversation_id|language|retry_count|global.*wiki|LLM_WIKI_RESCAN_AFTER_PUBLISH|source_tree|delete_source|create_user|CLAUDE_EXTRA_ARGS" .
+rg -n "conversation_id|language|retry_count|global.*wiki|LLM_WIKI_RESCAN_AFTER_PUBLISH|source_tree|delete_source|create_user|DEEPSEEK_MODEL" .
 ```
 
 Confirm which features are implemented before changing code.
@@ -504,7 +503,6 @@ A release may include an empty LLM Wiki skeleton and safe `.env.example` files, 
 - Use structured logging; do not use `print` in server/Worker runtime code.
 - Do not block the asyncio event loop with network or filesystem-heavy operations.
 - Use `asyncio.to_thread` for blocking ZIP/file work when appropriate.
-- Use `asyncio.create_subprocess_exec` for Claude.
 - Bound all queues.
 - Add timeouts for external network calls and subprocesses.
 - Preserve cancellation behavior.
@@ -608,15 +606,12 @@ The Worker must send a status update when any of these change, even if the broad
 - completion receipt
 - queue timestamp
 
-### Claude latency
+### DeepSeek scenario operations
 
-The intended fast default is:
-
-```env
-CLAUDE_EXTRA_ARGS=--model haiku
-```
-
-Do not invent a `Claude Flash` model. Haiku is the intended low-latency choice.
+Scenario clarification, feasibility analysis, authoring, capability catalog
+organization, prompt classification, and contradiction review use the shared
+tool-free DeepSeek API client. Python owns retrieval, validation, persistence,
+hard gates, and publication.
 
 ---
 
@@ -779,7 +774,6 @@ Back up:
 
 ```text
 worker/.env
-agent1/agent/CLAUDE.md
 live LLM Wiki project or at least raw/, wiki/, and .llm-wiki/
 ```
 
@@ -790,8 +784,6 @@ worker/.env
 .venv-worker/
 agent1/agent/
 ```
-
-Only copy the updated `CLAUDE.md` into the live LLM Wiki project when the QA instructions changed.
 
 ### Startup order
 
@@ -868,7 +860,7 @@ Run this first:
 ```bash
 pwd
 find . -maxdepth 4 -type f | sort
-rg -n "conversation_id|language|retry_count|max_retries|llm_wiki_snapshot|source_tree|delete_source|create_user|CLAUDE_EXTRA_ARGS|LLM_WIKI_RESCAN_AFTER_PUBLISH" .
+rg -n "conversation_id|language|retry_count|max_retries|llm_wiki_snapshot|source_tree|delete_source|create_user|DEEPSEEK_MODEL|LLM_WIKI_RESCAN_AFTER_PUBLISH" .
 ```
 
 Then compare the repository's actual implementation against this AGENTS.md and report:

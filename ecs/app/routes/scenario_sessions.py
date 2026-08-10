@@ -359,10 +359,10 @@ def _apply_advisory_state_patches(
 
 async def _candidate_questions(
     state: dict[str, Any], *, model_id: str, language: str, user_message: str
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], bool]:
     deterministic = default_candidate_questions(state, language)
-    if not state.get("minimum_gate", {}).get("passed") or not gateway.online:
-        return deterministic, [], []
+    if not gateway.online:
+        return deterministic, [], [], False
     try:
         result = await gateway.command(
             "grill_scenario",
@@ -391,10 +391,10 @@ async def _candidate_questions(
         patches = [
             patch for patch in result.get("state_patch", []) if isinstance(patch, dict)
         ][:32]
-        return candidates + deterministic, issues, patches
+        return candidates + deterministic, issues, patches, result.get("status") == "ok"
     except Exception:
         log.exception("Worker clarification failed; using deterministic candidates")
-        return deterministic, [], []
+        return deterministic, [], [], False
 
 
 def _conclusion_from_legacy(result: dict[str, Any]) -> str:
@@ -412,6 +412,51 @@ def _conclusion_from_legacy(result: dict[str, Any]) -> str:
     return "insufficient_evidence"
 
 
+_PRIVATE_REPORT_TEXT_RE = re.compile(
+    r"(?:[A-Za-z]:[\\/]|/|\.{1,2}/)?(?:[^\s\[\]()<>]+[\\/])*[^\s\[\]()<>]+\.md",
+    re.IGNORECASE,
+)
+_ABSOLUTE_REPORT_PATH_RE = re.compile(
+    r"(?:(?:/home|/root|/tmp|/Users)/[^\s\]\[()<>]+|[A-Za-z]:[\\/][^\s\]\[()<>]+)",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_report_value(value: Any, *, key: str = "") -> Any:
+    if key in {
+        "evidence_refs",
+        "evidence_locator",
+        "relative_path",
+        "source_path",
+        "wiki_entry",
+        "locator",
+        "document_id",
+        "digest",
+        "confidence",
+    }:
+        return [] if isinstance(value, list) else None
+    if isinstance(value, dict):
+        return {name: _sanitize_report_value(item, key=str(name)) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_report_value(item, key=key) for item in value]
+    if isinstance(value, str):
+        value = _PRIVATE_REPORT_TEXT_RE.sub("[internal reference removed]", value)
+        return _ABSOLUTE_REPORT_PATH_RE.sub("[internal reference removed]", value)
+    return value
+
+
+def _criterion_text(value: Any) -> str:
+    if not isinstance(value, dict):
+        return str(value)
+    metric = str(value.get("metric") or "Acceptance criterion")
+    operator = str(value.get("operator") or "")
+    expected = value.get("value")
+    unit = str(value.get("unit") or "")
+    test_method = str(value.get("test_method") or "")
+    threshold = " ".join(part for part in (operator, str(expected), unit) if part)
+    return f"{metric}: {threshold}" + (f"; test: {test_method}" if test_method else "")
+
+
 def _report_from_worker(
     *,
     session_id: str,
@@ -421,7 +466,9 @@ def _report_from_worker(
     result: dict[str, Any],
     partial: bool,
 ) -> dict[str, Any]:
+    result = _sanitize_report_value(result)
     feasibility = result.get("feasibility_assessment", {})
+    composition = result.get("report_composition", {})
     matches = feasibility.get("matches", []) if isinstance(feasibility, dict) else []
     conditions = [
         str(condition)
@@ -467,11 +514,38 @@ def _report_from_worker(
         "scenario_state_version": int(state["state_version"]),
         "status": "partial" if partial else "current",
         "conclusion": _conclusion_from_legacy(result),
+        "executive_summary": str(composition.get("executive_summary") or ""),
         "conditions": list(dict.fromkeys(conditions)),
         "main_evidence": evidence,
         "high_impact_unknowns": unknowns,
         "next_actions": next_actions,
         "next_experiment": next_experiment,
+        "confirmed_scenario": result.get("scenario_spec", {}),
+        "atomic_requirements": result.get("atomic_requirements", []),
+        "capability_evaluation": feasibility.get("matches", []),
+        "engineering_effort": feasibility.get("engineering_effort", composition.get("engineering_effort", {})),
+        "tool_support": composition.get("tool_support", []),
+        "preconditions_and_risks": {
+            "deployment_gates": feasibility.get("deployment_gates", []),
+            "residual_risks": feasibility.get("residual_risks", []),
+        },
+        "poc_plan": composition.get("poc_plan", {}),
+        "acceptance_tests": list(
+            dict.fromkeys(
+                [
+                    _criterion_text(criterion)
+                    for requirement in result.get("atomic_requirements", [])
+                    if isinstance(requirement, dict)
+                    for criterion in requirement.get("acceptance_criteria", [])
+                    if str(criterion)
+                ]
+                + [
+                    str(criterion)
+                    for criterion in composition.get("poc_plan", {}).get("acceptance_tests", [])
+                    if str(criterion)
+                ]
+            )
+        ),
         "sections": {
             "validation_assumptions": state.get("assumptions", []),
             "customer_environment": state.get("environment", {}),
@@ -484,7 +558,7 @@ def _report_from_worker(
         "metadata": {
             "analysis_job_id": job["job_id"],
             "catalog_revision": job["catalog_revision"],
-            "evidence_revision": job["evidence_revision"],
+            "evidence_revision": str(result.get("evidence_revision") or job["evidence_revision"]),
             "pipeline_version": job["pipeline_version"],
             "language": job["language"],
             "created_at": utc_now(),
@@ -495,6 +569,7 @@ def _report_from_worker(
 def _approved_report_question_context(content: dict[str, Any]) -> dict[str, Any]:
     return {
         "conclusion": str(content.get("conclusion") or "insufficient_evidence")[:120],
+        "executive_summary": str(content.get("executive_summary") or "")[:6000],
         "conditions": [str(value)[:1000] for value in content.get("conditions", [])[:20]],
         "main_evidence": [
             {
@@ -521,6 +596,12 @@ def _approved_report_question_context(content: dict[str, Any]) -> dict[str, Any]
             }
             for item in content.get("next_actions", [])[:30]
             if isinstance(item, dict)
+        ],
+        "engineering_effort": content.get("engineering_effort", {}),
+        "tool_support": content.get("tool_support", [])[:30],
+        "poc_plan": content.get("poc_plan", {}),
+        "acceptance_tests": [
+            str(value)[:1000] for value in content.get("acceptance_tests", [])[:40]
         ],
     }
 
@@ -973,18 +1054,55 @@ async def answer_route(
     if int(state["state_version"]) != payload.expected_state_version:
         return JSONResponse({"error": "Scenario state changed", "session": _public_session(scenario)}, status_code=409)
     try:
-        updated = apply_answer(
+        accepted = apply_answer(
             state,
             question_id=payload.question_id,
             answer=payload.answer,
             answer_mode=payload.answer_mode,
         )
-        candidates, technical_issues, state_patches = await _candidate_questions(
-            updated,
+        accepted = attach_next_question(
+            accepted,
+            default_candidate_questions(accepted, str(scenario["language"])),
+            str(scenario["language"]),
+        )
+        validate_state(accepted, session_id=session_id)
+        saved = await asyncio.to_thread(
+            save_scenario_state_version,
+            session_id=session_id,
+            expected_version=payload.expected_state_version,
+            state=accepted,
+            change_source="clarification_answer",
+            actor_user_id=int(account["user_id"]) if account else None,
+        )
+        await asyncio.to_thread(
+            _append_event,
+            session_id,
+            "answer_recorded",
+            {
+                "question_id": payload.question_id,
+                "answer_mode": payload.answer_mode,
+                "state_version": accepted["state_version"],
+            },
+        )
+
+        candidates, technical_issues, state_patches, model_enriched = await _candidate_questions(
+            saved["current_state"],
             model_id=str(scenario["model_id"]),
             language=str(scenario["language"]),
             user_message=payload.answer,
         )
+        if not model_enriched:
+            return JSONResponse(
+                {
+                    "status": "ok",
+                    "session": _public_session(saved),
+                    "clarification_enrichment": "retryable",
+                }
+            )
+
+        updated = deepcopy(saved["current_state"])
+        updated["state_version"] = int(updated["state_version"]) + 1
+        updated["current_question"] = None
         if state_patches:
             updated = _apply_advisory_state_patches(updated, state_patches)
         if technical_issues:
@@ -1019,18 +1137,16 @@ async def answer_route(
         saved = await asyncio.to_thread(
             save_scenario_state_version,
             session_id=session_id,
-            expected_version=payload.expected_state_version,
+            expected_version=accepted["state_version"],
             state=updated,
-            change_source="clarification_answer",
+            change_source="clarification_enrichment",
             actor_user_id=int(account["user_id"]) if account else None,
         )
         await asyncio.to_thread(
             _append_event,
             session_id,
-            "answer_recorded",
+            "clarification_enriched",
             {
-                "question_id": payload.question_id,
-                "answer_mode": payload.answer_mode,
                 "state_version": updated["state_version"],
             },
         )
@@ -1129,7 +1245,7 @@ async def keep_asking_route(
     updated["state_version"] = int(state["state_version"]) + 1
     updated["status"] = "refining"
     updated["countdown_suppressed_at_version"] = updated["state_version"]
-    candidates, technical_issues, patches = await _candidate_questions(
+    candidates, technical_issues, patches, _ = await _candidate_questions(
         updated,
         model_id=str(scenario["model_id"]),
         language=str(scenario["language"]),
@@ -1299,7 +1415,7 @@ async def confirm_change_route(
     updated["requirements"] = requirements
     if not active_job and not should_analyze:
         updated["countdown_suppressed_at_version"] = updated["state_version"]
-        candidates, _, patches = await _candidate_questions(
+        candidates, _, patches, _ = await _candidate_questions(
             updated,
             model_id=str(scenario["model_id"]),
             language=str(scenario["language"]),
@@ -1526,6 +1642,7 @@ def _shared_report(report: dict[str, Any]) -> dict[str, Any]:
         "ordinal": report.get("ordinal"),
         "status": report.get("status"),
         "conclusion": content.get("conclusion"),
+        "executive_summary": content.get("executive_summary", ""),
         "conditions": content.get("conditions", []),
         "main_evidence": [
             {
@@ -1539,6 +1656,11 @@ def _shared_report(report: dict[str, Any]) -> dict[str, Any]:
         "high_impact_unknowns": content.get("high_impact_unknowns", []),
         "next_actions": content.get("next_actions", []),
         "next_experiment": content.get("next_experiment"),
+        "engineering_effort": content.get("engineering_effort", {}),
+        "tool_support": content.get("tool_support", []),
+        "preconditions_and_risks": content.get("preconditions_and_risks", {}),
+        "poc_plan": content.get("poc_plan", {}),
+        "acceptance_tests": content.get("acceptance_tests", []),
     }
 
 
@@ -1558,6 +1680,11 @@ def _report_markdown(revision: dict[str, Any]) -> str:
     sections = (
         ("Conditions", report.get("conditions", [])),
         ("Main evidence", report.get("main_evidence", [])),
+        ("Engineering effort", [report.get("engineering_effort", {})] if report.get("engineering_effort") else []),
+        ("Tools and SDK support", report.get("tool_support", [])),
+        ("Preconditions and risks", [report.get("preconditions_and_risks", {})] if report.get("preconditions_and_risks") else []),
+        ("PoC plan", [report.get("poc_plan", {})] if report.get("poc_plan") else []),
+        ("Acceptance tests", report.get("acceptance_tests", [])),
         ("High-impact unknowns", report.get("high_impact_unknowns", [])),
         ("Next actions", report.get("next_actions", [])),
     )

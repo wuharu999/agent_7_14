@@ -49,7 +49,7 @@ to receive streamed chunks through the authenticated Worker WebSocket and never
 receives a Worker file path. `$HOME/Documents/agent_tests` is reference material
 only and is not part of deployment.
 
-Public QA is API-only: it does not launch Claude Code, read `CLAUDE.md`, or open
+Public QA is API-only: it does not launch local coding agents, read local agent instruction files, or open
 original documents under `raw/sources/`. Product-name normalization is applied
 to the in-memory Wiki projection and streamed answer; source and Wiki files on
 disk are not rewritten.
@@ -66,21 +66,20 @@ In Source Watch settings, include every format accepted by the website that you 
 
 Different authoring sessions can run concurrently, while commands for the same
 session are serialized to preserve message order. Each authoring worker starts at
-most one Claude subprocess, so increase `AUTHORING_WORKERS` only after checking
-Worker memory, Claude account limits, and observed latency.
+most one DeepSeek API request, so increase `AUTHORING_WORKERS` only after checking
+Worker memory, DeepSeek account limits, and observed latency.
 
 Scenario feasibility analysis has its own bounded queue. Keep one analysis
-worker initially because each item starts a read-only Claude subprocess and may
+worker initially because each item starts a read-only DeepSeek API request and may
 read many Wiki records. Increase `CAPABILITY_MATCH_WORKERS` only after checking
 memory, account concurrency, and latency; do not make the queue unbounded.
 
 Clarification has a separate short-work queue so one-question turns cannot
 starve immutable report analysis. Keep `CLARIFICATION_WORKERS=1` until the
-Worker host has been tested with additional concurrent Claude subprocesses.
+Worker host has been tested with additional concurrent DeepSeek API requests.
 
 Public QA uses bounded Python retrieval plus two calls to the selected provider.
-authoring and capability workflows continue to use hardened Claude subprocesses
-with stdin-delivered prompts and code-enforced tool limits. Ambiguous
-security-sensitive QA requests still use at most `PROMPT_GUARD_CONCURRENCY`
-isolated, zero-tool classifier subprocesses. Text uploads are scanned within the
+Authoring and capability workflows use the shared tool-free DeepSeek API client.
+Ambiguous security-sensitive requests still use at most `PROMPT_GUARD_CONCURRENCY`
+concurrent schema-validated classifier calls. Text uploads are scanned within the
 byte limits above; warnings are informational and do not block atomic publication.

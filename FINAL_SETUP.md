@@ -287,17 +287,21 @@ then restart the Worker.
 No new Python package is required. The new Worker settings are optional because defaults are built in:
 
 ```env
-CLAUDE_ALLOWED_TOOLS=Read,Glob,Grep
-CLAUDE_EXTRA_ARGS=--model haiku
+CEREBRAS_MODEL=gpt-oss-120b
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_TIMEOUT=240
+DEEPSEEK_STRUCTURED_RETRIES=1
+DEEPSEEK_TRANSPORT_RETRIES=1
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
 
-`CLAUDE_ALLOWED_TOOLS` is retained for configuration compatibility, but the
-service launcher now enforces `Read`, `Glob`, and `Grep` in code. Only a model
-selection is accepted in `CLAUDE_EXTRA_ARGS`; permission, tool, MCP, plugin, and
-session flags are rejected.
+Public QA uses Cerebras with DeepSeek failover. Scenario clarification,
+feasibility analysis, authoring, catalog organization, prompt classification,
+and contradiction review call DeepSeek directly with thinking disabled and no
+tools. Existing obsolete command-line-agent variables are ignored and may be
+removed from deployed environment files.
 
 After copying this version over the existing code, restart both ECS and Worker so the new `/ask` protocol is loaded. Existing browsers automatically receive a conversation ID on their next question. Use **New conversation** on the question page to intentionally clear context.
 
-The same browser conversation is routed to the same QA worker lane, but Claude still runs as a short-lived subprocess for each request. Context continuity is supplied by the Worker's bounded recent-turn history. That history is in memory and resets when the Worker process restarts.
+The same browser conversation is routed to the same QA worker lane. Context continuity is supplied by the Worker's bounded recent-turn history. That history is in memory and resets when the Worker process restarts.

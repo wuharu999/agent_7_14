@@ -43,11 +43,11 @@ On the deployed pair, verify in this order:
    evidence is inventoried without checkpoint reads while `wiki/capabilities/` and
    raw images are excluded.
    Confirm the progress advances through deterministic extraction batches and
-   reduction, every eligible evidence file has a final status, and Claude is
+   reduction, every eligible evidence file has a final status, and DeepSeek is
    invoked with no tools. Interrupt a test run after one batch, rerun it, and
    confirm completed batches are restored from content-hashed checkpoints.
-   Confirm every extraction call contains the complete atomic-capability skill
-   contract, and the shared UI displays cumulative candidates, blocked files, and
+   Confirm every extraction call contains the relevant allowlisted
+   atomic-capability policy sections, and the shared UI displays cumulative candidates, blocked files, and
    grouped exclusion reasons.
    Confirm deployed timeout floors are 1800 seconds per extraction batch, 3600
    seconds for reduction, and 86400 seconds for the complete ECS command.

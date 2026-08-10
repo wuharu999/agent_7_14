@@ -312,7 +312,7 @@ def parse_batch_extraction(
     required = {"batch_id", "sources", "candidates", "non_capability_candidates"}
     payload = _find_payload(raw, required)
     if payload is None:
-        raise ValueError("Claude returned no complete capability batch extraction")
+        raise ValueError("Provider returned no complete capability batch extraction")
     if payload.get("batch_id") != expected_batch_id:
         raise ValueError("Capability batch response ID does not match the request")
     sources = payload.get("sources")
@@ -623,7 +623,7 @@ def parse_reduction(
 ) -> dict[str, Any]:
     payload = _find_payload(raw, {"reducer_id", "decisions"})
     if payload is None:
-        raise ValueError("Claude returned no complete capability reduction")
+        raise ValueError("Provider returned no complete capability reduction")
     if payload.get("reducer_id") != expected_reducer_id:
         raise ValueError("Capability reduction ID does not match the request")
     decisions = payload.get("decisions")

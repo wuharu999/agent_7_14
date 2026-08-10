@@ -128,12 +128,12 @@ class WorkerGateway:
             while True:
                 elapsed = time.time() - start_time
                 if elapsed >= max_duration:
-                    raise TimeoutError("Claude streaming timed out")
+                    raise TimeoutError("Worker streaming timed out")
                 
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=max_duration - elapsed)
                 except asyncio.TimeoutError:
-                    raise TimeoutError("Claude streaming timed out")
+                    raise TimeoutError("Worker streaming timed out")
 
                 yield event
                 if event.get("status") in ("done", "error"):
