@@ -49,6 +49,11 @@ to receive streamed chunks through the authenticated Worker WebSocket and never
 receives a Worker file path. `$HOME/Documents/agent_tests` is reference material
 only and is not part of deployment.
 
+Public QA is API-only: it does not launch Claude Code, read `CLAUDE.md`, or open
+original documents under `raw/sources/`. Product-name normalization is applied
+to the in-memory Wiki projection and streamed answer; source and Wiki files on
+disk are not rewritten.
+
 Keep LLM Wiki open with Source Watch and Auto Ingest enabled.
 The Worker never calls `/sources/rescan`; Source Watch is the only ingestion trigger.
 In Source Watch settings, include every format accepted by the website that you plan to use (especially `json`, `xml`, `yaml`, and `yml`, which are ingestable but are not selected in LLM Wiki's current defaults). Also set the Source Watch file-size limit high enough for the individual source files you upload.

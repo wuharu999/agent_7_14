@@ -9,7 +9,7 @@ from typing import ClassVar
 import pytest
 
 from worker import qa_api
-from worker.claude_runner import AI_NOTICE_RESPONSES, GENERIC_ERROR_RESPONSES
+from worker.qa_response import AI_NOTICE_RESPONSES, GENERIC_ERROR_RESPONSES
 from worker.conversation_store import ConversationTurn
 from worker.prompt_security import GuardDecision
 
@@ -37,6 +37,52 @@ def test_wiki_reader_only_loads_indexed_pages_and_duplicate_slugs(tmp_path: Path
 
     assert wiki.retrievable_slugs == {"allowed", "same"}
     assert [document.text for document in wiki.load(["hidden", "same"])] == ["a", "b"]
+
+
+def test_wiki_reader_canonicalizes_in_memory_without_changing_files(tmp_path: Path) -> None:
+    index = tmp_path / "index.md"
+    page = tmp_path / "entities" / "tiangong.md"
+    write(index, "[[tiangong]] 天工2.0 Pro")
+    write(page, "# 天工2.0 Pro\n产品介绍")
+    original_index = index.read_bytes()
+    original_page = page.read_bytes()
+
+    wiki = qa_api.Wiki(tmp_path)
+    documents = wiki.load(["tiangong"])
+
+    assert "天工行者无疆" in wiki.index_text
+    assert documents[0].text.startswith("# 天工行者无疆")
+    assert index.read_bytes() == original_index
+    assert page.read_bytes() == original_page
+
+
+def test_api_prompts_are_wiki_only_and_canonicalize_all_untrusted_text(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "index.md", "[[tiangong]] 天工2.0")
+    write(tmp_path / "entities" / "tiangong.md", "天工3.0")
+    wiki = qa_api.Wiki(tmp_path)
+    history = [ConversationTurn("天工2.0 lite", "天工2.0 Plus")]
+    candidates = wiki.candidate_slugs("tian_gong", "天工2.0 Pro")
+    router = qa_api._router_prompt(
+        "天工2.0 Pro", "tian_gong", history, wiki, candidates
+    )
+    context = qa_api._make_context(wiki, wiki.load(["tiangong"]))
+    answer = qa_api._answer_prompt(
+        "天工2.0 Pro",
+        team="tian_gong",
+        language="zh-CN",
+        history=history,
+        context=context,
+    )
+
+    combined = router + answer
+    assert "天工行者无疆" in combined
+    assert "天工行者基础版" in combined
+    assert "天工行者无界" in combined
+    assert "天工行者dex" in combined
+    assert "raw/sources" not in combined
+    assert "CLAUDE.md" not in combined
 
 
 def test_router_response_rejects_unknown_duplicate_and_excess_slugs() -> None:
@@ -205,6 +251,17 @@ def test_answer_system_preserves_existing_prompt_contract() -> None:
         "temperature": 0,
         "extra_body": {"thinking": {"type": "disabled"}},
     }
+
+
+def test_public_qa_manager_has_no_claude_code_answer_path() -> None:
+    manager_source = (
+        Path(__file__).resolve().parents[1] / "worker" / "manager.py"
+    ).read_text(encoding="utf-8")
+
+    assert "run_qa_api_stream(" in manager_source
+    assert "run_qa_api(" in manager_source
+    assert "claude_runner" not in manager_source
+    assert "run_claude_stream(" not in manager_source
 
 
 def test_reference_filter_removes_internal_refs_but_preserves_links_and_images(

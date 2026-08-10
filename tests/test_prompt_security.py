@@ -400,7 +400,7 @@ class NoPersistenceTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(worker, return_exceptions=True)
 
     async def test_blocked_streaming_qa_uses_stream_contract_and_notice(self) -> None:
-        from worker.claude_runner import AI_NOTICE_RESPONSES
+        from worker.qa_response import AI_NOTICE_RESPONSES
 
         manager = WorkerManager()
         queue = manager.question_queues[0]

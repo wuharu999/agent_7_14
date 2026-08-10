@@ -43,7 +43,8 @@ Existing LLM Wiki GUI
 - Public QA uses validated index retrieval plus bounded robot/topic filename
   discovery for stale indexes and sends only selected Wiki pages to the active
   provider. Cerebras is primary and DeepSeek V4 Flash is the circuit-breaker
-  fallback. Authoring retains stdin-delivered untrusted content, no Claude
+  fallback. Public QA never launches Claude Code, reads `CLAUDE.md`, or searches
+  original files under `raw/sources/`. Authoring retains stdin-delivered untrusted content, no Claude
   session persistence, an empty strict MCP configuration, and code-enforced
   read-only tools.
 - High-confidence prompt attacks are refused locally. Only ambiguous suspicious

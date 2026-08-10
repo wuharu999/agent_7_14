@@ -11,13 +11,13 @@ from typing import Any
 
 import websockets
 
-from worker.claude_runner import (
+from worker.qa_response import (
     GAP_MARKER,
     generic_error_response,
-    run_claude,
     with_ai_notice,
 )
 from worker.qa_api import run_qa_api, run_qa_api_stream
+from worker.claude_process import run_claude_process
 from worker.capability_matcher import (
     analyze_scenario,
     grill_scenario,
@@ -1357,7 +1357,7 @@ class WorkerManager:
             log.info("No wiki files found for team %s", team)
             return
 
-        # Simple prompt for Claude
+        # This authenticated maintenance review is separate from public QA.
         prompt = (
             f"Please read the following wiki files for the team '{team}' and identify any "
             f"contradictions or conflicting information between them. If you find contradictions, "
@@ -1372,14 +1372,17 @@ class WorkerManager:
                 pass
 
         try:
-            result = await run_claude(
-                prompt=prompt,
-                allowed_tools=["Read"],
+            answer = await run_claude_process(
+                prompt,
+                team=team,
+                system_prompt=(
+                    "Review only the Wiki text supplied in the user prompt. Identify "
+                    "contradictory claims without reading files or using other tools."
+                ),
+                tools=(),
                 timeout=180,
-                max_tokens=4000
             )
-            answer = result["answer"]
-            
+
             if "No contradictions found" not in answer:
                 await self.emit({
                     "type": "contradiction_alert",

@@ -76,10 +76,10 @@ The latest intended product includes all of the following.
   - Spanish
 - Send the selected language with each question.
 - The UI language syncs automatically to the selected answer language.
-- Claude must answer in the selected language.
-- Claude must not expose internal retrieval steps or ask website users for permission to read files.
+- The active Cerebras or DeepSeek provider must answer in the selected language.
+- Public QA must not expose internal retrieval steps, use Claude Code, read `CLAUDE.md`, or search original source files.
 - Rate limiting applies on the QA page (10 req/min, 50 req/hour per IP).
-- Internal Claude errors (e.g. timeout, missing executable) are logged internally and a generic translated message is shown to users.
+- Internal provider errors are logged internally and a generic translated message is shown to users.
 
 ### Authentication
 
@@ -229,6 +229,11 @@ CONVERSATION_MAX_SESSIONS=1000
 ```
 
 The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees `wiki/index.md` plus at most 20 filename/path matches for the selected robot/topic when the index is stale, Python validates returned slugs and reads only those permitted pages, and a second provider call streams the answer. Cerebras is primary; any Cerebras API failure opens a five-minute circuit and retries the complete request through DeepSeek V4 Flash. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
+
+Public QA is API-only. It must not launch Claude Code, import a Claude Q&A
+runner, read `CLAUDE.md`, or fall back to `raw/sources/`. Terminology rewriting
+is an in-memory prompt/output boundary and must not mutate original uploads or
+generated Wiki files.
 
 Public QA output requirements:
 

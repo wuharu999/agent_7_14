@@ -34,6 +34,12 @@ paths are removed before display. Files in `agent_tests` are not imported,
 modified, packaged, or required at runtime. Keep both provider keys only in
 `worker/.env`.
 
+The public QA path does not start Claude Code, read `CLAUDE.md`, or search
+`raw/sources/`. Python opens only permitted Markdown under the selected
+project's `wiki/` directory. Legacy TianGong product names are canonicalized in
+memory before routing and generation and again at the streaming boundary; the
+original uploads and generated Wiki files are never rewritten by this feature.
+
 ### Updating the cloud computers for the chunking-error fix
 
 The recommended path is to merge the GitHub pull request into `main`, then
@@ -80,7 +86,7 @@ DEPLOY_BRANCH=agent/upload-token-notice ./scripts/pull_and_restart_worker.sh
 Use the equivalent ECS script on the ECS machine. Normal production updates
 should return to the default `main` branch after the pull request is merged.
 
-### Legacy Claude stream error: `Separator is found, but chunk is longer than limit`
+### Legacy non-QA Claude stream error: `Separator is found, but chunk is longer than limit`
 
 This message comes from Python's asynchronous subprocess stream reader, not
 from LLM Wiki splitting a Markdown document. The Worker reads Claude CLI's
@@ -91,8 +97,9 @@ content can all make a single transport line much larger than its source file.
 It appeared only sometimes because the failure depended on what Claude read for
 that request and the size of the resulting JSON event.
 
-The Worker now gives Claude's stream a bounded 32 MiB buffer, converts any larger
-event into a controlled `ClaudeProcessError`, and keeps a final manager-level
+Public QA no longer uses this Claude Code stream. Authenticated authoring and
+other separate maintenance workflows still give Claude's stream a bounded 32 MiB
+buffer, convert any larger event into a controlled `ClaudeProcessError`, and keep a final manager-level
 boundary that never exposes raw exceptions. Normal answer text streams through
 a short rolling safety buffer, while thinking-token progress remains live and
 raw chain-of-thought stays private. Old raw failures are omitted from later
@@ -328,14 +335,11 @@ connection. An explicit ZIP path may be passed as its only argument.
 
 ## Conversation-aware multilingual QA
 
-The public question page keeps a random conversation ID in the browser. Requests from that conversation are routed to the same QA lane and include a bounded recent history, so follow-up questions retain context without dedicating a permanent Claude process to one user. Selectable answer languages are Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
+The public question page keeps a random conversation ID in the browser. Requests from that conversation are routed to the same QA lane and include a bounded recent history, so follow-up questions retain context without dedicating a provider session to one user. Selectable answer languages are Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
 
-The Worker invokes every Claude path through the same safe-mode subprocess
-launcher. User content is sent through stdin; slash commands, session
-persistence, plugins, and MCP servers are disabled; and only `Read`, `Glob`, and
-`Grep` are exposed. The bundled service prompt and `CLAUDE.md` treat retrieved
-documents as untrusted evidence and prohibit asking website users for file-read
-permission.
+Public QA uses the provider-neutral API pipeline in `worker/qa_api.py`; it does
+not import a Claude Q&A runner or rely on `CLAUDE.md`. Separate authenticated
+Claude workflows continue to use the safe-mode subprocess launcher.
 
 Direct policy-override, secret-extraction, and tool-escalation attempts receive
 a generic localized refusal and are not retained in conversation storage or

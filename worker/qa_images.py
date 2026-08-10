@@ -9,8 +9,11 @@ MAX_QA_IMAGES = 3
 MAX_QA_IMAGE_BYTES = 8 * 1024**2
 MAX_QA_IMAGE_TOTAL_BYTES = 12 * 1024**2
 
-_IMAGE_MARKDOWN = re.compile(
-    r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<path>(?:wiki/media|raw/sources)/[^)>\n]+)>?\s*\)"
+_WIKI_IMAGE_MARKDOWN = re.compile(
+    r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<path>wiki/media/[^)>\n]+)>?\s*\)"
+)
+_LOCAL_IMAGE_MARKDOWN = re.compile(
+    r"!\[[^\]\n]{0,200}\]\(\s*<?(?:wiki/media|raw/sources)/[^)>\n]+>?\s*\)"
 )
 _IMAGE_MIME_TYPES = {
     ".gif": "image/gif",
@@ -22,7 +25,7 @@ _IMAGE_MIME_TYPES = {
 
 
 def strip_qa_image_markdown(answer: str) -> str:
-    cleaned_answer = _IMAGE_MARKDOWN.sub("", answer)
+    cleaned_answer = _LOCAL_IMAGE_MARKDOWN.sub("", answer)
     return re.sub(r"\n{3,}", "\n\n", cleaned_answer).strip()
 
 
@@ -39,17 +42,14 @@ def extract_qa_images(
     answer: str,
     project_root: Path,
 ) -> tuple[str, list[dict[str, str | int]]]:
-    """Extract bounded, local wiki images referenced by a Claude answer."""
+    """Extract bounded, local Wiki images referenced by a QA provider answer."""
     project_root = project_root.resolve()
-    image_roots = tuple(
-        (project_root / root).resolve()
-        for root in ("wiki/media", "raw/sources")
-    )
+    image_root = (project_root / "wiki/media").resolve()
     images: list[dict[str, str | int]] = []
     seen: set[Path] = set()
     total_bytes = 0
 
-    for match in _IMAGE_MARKDOWN.finditer(answer):
+    for match in _WIKI_IMAGE_MARKDOWN.finditer(answer):
         if len(images) >= MAX_QA_IMAGES:
             break
         raw_path = unquote(match.group("path").strip())
@@ -60,9 +60,7 @@ def extract_qa_images(
             continue
         try:
             image_path = (project_root / relative_path).resolve(strict=True)
-            if not any(
-                image_path.is_relative_to(image_root) for image_root in image_roots
-            ):
+            if not image_path.is_relative_to(image_root):
                 continue
         except (FileNotFoundError, OSError, ValueError):
             continue
