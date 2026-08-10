@@ -112,18 +112,22 @@ def test_main_qa_renders_safe_markdown_and_stream_replacements():
     assert "function appendInlineMarkdown" in template
     assert "answer-table-wrap" in template
     assert "container.replaceChildren()" in template
+    assert "function renderStreamingAnswerText" in template
+    assert "renderStreamingAnswerText(ensureTextContainer(botBubble), accumulatedText)" in template
+    assert 'if (event.status === "done")' in template
     assert "renderAnswerText(ensureTextContainer(botBubble), accumulatedText)" in template
     assert "textContainer.textContent += event.text" not in template
     assert "container.innerHTML" not in template
 
 
-def test_background_graph_has_varied_shapes_and_linked_cluster_motion():
+def test_background_graph_uses_original_floating_circles():
     root = Path(__file__).resolve().parents[1]
     template = (root / "ecs" / "app" / "templates" / "bg_graph.html").read_text(
         encoding="utf-8"
     )
 
-    assert "['circle', 'capsule', 'diamond', 'hexagon', 'organic']" in template
-    assert "preferredDistance" in template
-    assert "sharedVx" in template
-    assert "prefers-reduced-motion: reduce" in template
+    assert "ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2)" in template
+    assert "(Math.random() - 0.5) * 1.5" in template
+    assert "preferredDistance" not in template
+    assert "sharedVx" not in template
+    assert "nodePath" not in template
