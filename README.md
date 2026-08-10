@@ -227,9 +227,13 @@ password comes from `DEFAULT_ADMIN_PASSWORD`, or defaults to
 Create additional accounts from the ECS command line when needed:
 
 ```bash
-source .venv-ecs/bin/activate
-python3 scripts/create_user.py --username uploader --role editor
+.venv-ecs/bin/python scripts/create_user.py --username uploader --role editor
 ```
+
+Python dependencies are declared in `pyproject.toml`, resolved in the committed
+`uv.lock`, and installed with `uv`. Use `./scripts/uv_sync.sh ecs`,
+`./scripts/uv_sync.sh worker`, or `./scripts/uv_sync.sh dev`; do not install the
+runtime from ad-hoc requirements files.
 
 ## Important safety behavior
 

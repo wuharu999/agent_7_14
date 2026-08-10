@@ -38,10 +38,6 @@ ZIP_PATH="$(realpath "$ZIP_PATH")"
   echo "Missing protected Worker environment: $PROJECT_ROOT/worker/.env" >&2
   exit 1
 }
-[ -x "$PROJECT_ROOT/.venv-worker/bin/python" ] || {
-  echo "Missing protected Worker virtual environment: $PROJECT_ROOT/.venv-worker" >&2
-  exit 1
-}
 [ -d "$PROJECT_ROOT/agent1/agent" ] || {
   echo "Missing live LLM Wiki project: $PROJECT_ROOT/agent1/agent" >&2
   exit 1
@@ -94,14 +90,14 @@ rsync -a \
   --exclude='worker/teams.json' \
   --exclude='.venv-ecs/' \
   --exclude='.venv-worker/' \
+  --exclude='.venv-dev/' \
   --exclude='ecs-data/' \
   --exclude='agent1/agent/' \
   "$staging/" "$PROJECT_ROOT/"
 
 chmod +x "$PROJECT_ROOT/scripts/"*.sh
 chmod 600 "$PROJECT_ROOT/worker/.env"
-"$PROJECT_ROOT/.venv-worker/bin/python" -m pip install \
-  --disable-pip-version-check -r "$PROJECT_ROOT/worker/requirements.txt"
+"$PROJECT_ROOT/scripts/uv_sync.sh" worker
 "$PROJECT_ROOT/.venv-worker/bin/python" -m compileall -q \
   "$PROJECT_ROOT/worker" "$PROJECT_ROOT/shared" "$PROJECT_ROOT/scripts"
 "$PROJECT_ROOT/scripts/check_worker_machine.sh"

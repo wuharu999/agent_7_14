@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,6 +58,20 @@ class FakeCerebrasClient:
         self.calls.append((system, user))
         yield "平台名称是慧思"
         yield "开物平台。"
+
+
+@pytest.mark.anyio
+async def test_streaming_works_without_python_311_asyncio_timeout(monkeypatch) -> None:
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+    chunks: list[str] = []
+
+    async def on_token(token: str) -> None:
+        chunks.append(token)
+
+    answer = await qa_api._stream_in_thread(iter(("one", "two")), on_token)
+
+    assert answer == "onetwo"
+    assert chunks == ["one", "two"]
 
 
 @pytest.mark.anyio

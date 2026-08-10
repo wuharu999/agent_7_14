@@ -48,7 +48,8 @@ unzip -q "$REMOTE_TMP" -d "$staging"
 
 rsync -a --delete \
   --exclude='ecs/.env' --exclude='worker/.env' \
-  --exclude='.venv-ecs/' --exclude='.venv-worker/' --exclude='ecs-data/' \
+  --exclude='.venv-ecs/' --exclude='.venv-worker/' --exclude='.venv-dev/' \
+  --exclude='ecs-data/' \
   --exclude='agent1/agent/raw/' --exclude='agent1/agent/wiki/' \
   --exclude='agent1/agent/.llm-wiki/' --exclude='agent1/agent/.agent1-trash/' \
   --exclude='agent1/agent/.agent1-worker/' \
@@ -56,6 +57,10 @@ rsync -a --delete \
 
 chmod +x "$REMOTE_ROOT/scripts/"*.sh
 chmod 600 "$REMOTE_ROOT/worker/.env"
+"$REMOTE_ROOT/scripts/uv_sync.sh" worker
+"$REMOTE_ROOT/.venv-worker/bin/python" -m compileall -q \
+  "$REMOTE_ROOT/worker" "$REMOTE_ROOT/shared" "$REMOTE_ROOT/scripts"
+"$REMOTE_ROOT/scripts/check_worker_machine.sh"
 if [ "$START_WORKER" = true ]; then
   tmux new-session -d -s "$REMOTE_SESSION" \
     "cd $(printf '%q' "$REMOTE_ROOT") && ./scripts/run_worker.sh"

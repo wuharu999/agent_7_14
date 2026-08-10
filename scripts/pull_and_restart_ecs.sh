@@ -12,7 +12,6 @@ BACKUP_PARENT="${ECS_BACKUP_ROOT:-/root/agent_7_14-deploy-backups}"
 [ -d .git ] || { echo "Not a Git checkout: $PROJECT_ROOT" >&2; exit 1; }
 [ -f ecs/.env ] || { echo "Missing ecs/.env" >&2; exit 1; }
 [ -d ecs-data ] || { echo "Missing ecs-data" >&2; exit 1; }
-[ -x .venv-ecs/bin/python ] || { echo "Missing .venv-ecs" >&2; exit 1; }
 
 stamp="$(date +%Y%m%d-%H%M%S)"
 backup_dir="$BACKUP_PARENT/$stamp"
@@ -24,7 +23,7 @@ git rev-parse HEAD > "$backup_dir/previous-commit.txt"
 git fetch origin "$DEPLOY_BRANCH"
 git merge --ff-only FETCH_HEAD
 
-.venv-ecs/bin/python -m pip install -r ecs/requirements.txt
+./scripts/uv_sync.sh ecs
 .venv-ecs/bin/python -m compileall -q ecs shared scripts
 chmod 600 ecs/.env
 

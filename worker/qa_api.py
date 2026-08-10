@@ -271,19 +271,25 @@ async def _stream_in_thread(
 
     producer = asyncio.create_task(asyncio.to_thread(produce))
     answer_parts: list[str] = []
+
+    async def consume() -> None:
+        while True:
+            try:
+                kind, value = await asyncio.to_thread(events.get, True, 0.25)
+            except queue.Empty:
+                continue
+            if kind == "done":
+                break
+            if kind == "error":
+                raise QAAPIError("Cerebras streaming failed") from value
+            token = str(value)
+            answer_parts.append(token)
+            await on_token(token)
+
     try:
-        async with asyncio.timeout(CEREBRAS_TIMEOUT):
-            while True:
-                kind, value = await asyncio.to_thread(events.get)
-                if kind == "done":
-                    break
-                if kind == "error":
-                    raise QAAPIError("Cerebras streaming failed") from value
-                token = str(value)
-                answer_parts.append(token)
-                await on_token(token)
+        await asyncio.wait_for(consume(), timeout=CEREBRAS_TIMEOUT)
         await producer
-    except TimeoutError as exc:
+    except asyncio.TimeoutError as exc:
         raise QAAPIError("Cerebras streaming timed out") from exc
     finally:
         stop.set()

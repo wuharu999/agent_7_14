@@ -9,6 +9,7 @@ def pack_release():
     exclude_dirs = {
         ".venv-ecs",
         ".venv-worker",
+        ".venv-dev",
         "__pycache__",
         "ecs-data",
         ".git",

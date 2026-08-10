@@ -46,8 +46,13 @@ Install/update dependencies:
 ```bash
 cd /root/agent_7_14
 chmod +x scripts/*.sh scripts/create_user.py
+# Install uv first if `uv --version` is not available:
+# https://docs.astral.sh/uv/getting-started/installation/
 ./scripts/bootstrap_ecs.sh
 ```
+
+The bootstrap uses the committed `uv.lock` and keeps the ECS environment at
+`.venv-ecs`. It does not use `pip install` or a requirements file.
 
 The database migration runs automatically at ECS startup and adds the new authentication/audit tables without deleting old upload records. On a fresh database, startup creates the `admin` account using `DEFAULT_ADMIN_PASSWORD` or the default `Admin#2026!Secured89`. Change that password immediately at `/admin/users`.
 
@@ -86,7 +91,8 @@ WORKER_SSH_TARGET=user@worker-host ./scripts/deploy_worker.sh
 The script builds `release.zip`, uploads it, backs up `worker/.env` and the
 live project metadata, stops the existing Worker tmux session, replaces code
 while preserving virtualenvs and `raw/`, `wiki/`, `.llm-wiki/`, trash, and
-runtime state, then starts the Worker again. Set `WORKER_REMOTE_ROOT` when the
+runtime state, synchronizes the locked Worker dependencies with `uv`, then
+starts the Worker again. Set `WORKER_REMOTE_ROOT` when the
 remote project is not `$HOME/Documents/agent_7_14`; set `START_WORKER=false` to
 deploy without starting it.
 
@@ -141,8 +147,14 @@ Install/update dependencies:
 ```bash
 cd ~/Documents/agent_7_14
 chmod +x scripts/*.sh
+# Install uv first if `uv --version` is not available:
+# https://docs.astral.sh/uv/getting-started/installation/
 ./scripts/bootstrap_worker.sh
 ```
+
+The existing Python interpreter in `.venv-worker` is retained during upgrades,
+including Python 3.10 installations. `uv` synchronizes that environment from
+`uv.lock` without downloading or switching Python.
 
 Open LLM Wiki and select exactly:
 

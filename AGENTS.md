@@ -366,10 +366,9 @@ When uploading `release.zip` to a new cloud computer:
 mkdir -p /root/agent_7_14 && cd /root/agent_7_14
 unzip release.zip -d .
 
-# 2. Create Python virtual environment
-python3 -m venv .venv-ecs
-source .venv-ecs/bin/activate
-pip install -r ecs/requirements.txt
+# 2. Install locked ECS dependencies with uv
+# Install uv first: https://docs.astral.sh/uv/getting-started/installation/
+./scripts/uv_sync.sh ecs
 
 # 3. Create ecs/.env (copy from ecs/.env.example and fill in values)
 cp ecs/.env.example ecs/.env
@@ -397,10 +396,9 @@ curl -s http://127.0.0.1:8000/health | python3 -m json.tool
 mkdir -p $HOME/Documents/agent_7_14 && cd $HOME/Documents/agent_7_14
 unzip release.zip -d .
 
-# 2. Create Python virtual environment
-python3 -m venv .venv-worker
-source .venv-worker/bin/activate
-pip install -r worker/requirements.txt
+# 2. Install locked Worker dependencies with uv
+# Install uv first: https://docs.astral.sh/uv/getting-started/installation/
+./scripts/uv_sync.sh worker
 
 # 3. Create worker/.env (copy from worker/.env.example and fill in values)
 cp worker/.env.example worker/.env
@@ -632,18 +630,11 @@ From repository root:
 python3 -m compileall -q ecs worker scripts
 ```
 
-Install test/runtime dependencies in isolated environments:
+Install the locked test/runtime dependencies with uv:
 
 ```bash
-python3 -m venv .venv-ecs
-source .venv-ecs/bin/activate
-python3 -m pip install -r ecs/requirements.txt
-```
-
-```bash
-python3 -m venv .venv-worker
-source .venv-worker/bin/activate
-python3 -m pip install -r worker/requirements.txt
+./scripts/uv_sync.sh dev
+.venv-dev/bin/python -m pytest -q
 ```
 
 Start ECS:

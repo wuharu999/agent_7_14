@@ -2,6 +2,10 @@
 
 See [FINAL_SETUP.md](FINAL_SETUP.md), sections **Worker upgrade** and **Removal behavior**.
 
+Install `uv`, then run `./scripts/bootstrap_worker.sh`. Dependencies come from
+the root `pyproject.toml` and committed `uv.lock`; `.venv-worker` remains the
+runtime environment and its existing Python version is preserved on upgrades.
+
 The key new settings are:
 
 ```env

@@ -4,6 +4,7 @@
 
 ```bash
 cd /root/agent_7_14
+uv --version
 ./scripts/bootstrap_ecs.sh
 nvim ecs/.env
 tmux new -s agent-7-14-ecs
@@ -24,6 +25,7 @@ documented default) and change the password immediately at `/admin/users`.
 
 ```bash
 cd ~/Documents/agent_7_14
+uv --version
 ./scripts/bootstrap_worker.sh
 nvim worker/.env
 tmux new -s agent-7-14-worker

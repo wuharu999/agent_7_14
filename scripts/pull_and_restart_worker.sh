@@ -12,7 +12,6 @@ LIVE_PROJECT="$PROJECT_ROOT/agent1/agent"
 [ -d .git ] || { echo "Not a Git checkout: $PROJECT_ROOT" >&2; exit 1; }
 [ -f worker/.env ] || { echo "Missing worker/.env" >&2; exit 1; }
 [ -d "$LIVE_PROJECT" ] || { echo "Missing live LLM Wiki project: $LIVE_PROJECT" >&2; exit 1; }
-[ -x .venv-worker/bin/python ] || { echo "Missing .venv-worker" >&2; exit 1; }
 
 stamp="$(date +%Y%m%d-%H%M%S)"
 backup_dir="$BACKUP_PARENT/$stamp"
@@ -31,7 +30,7 @@ fi
 git fetch origin "$DEPLOY_BRANCH"
 git merge --ff-only FETCH_HEAD
 
-.venv-worker/bin/python -m pip install -r worker/requirements.txt
+./scripts/uv_sync.sh worker
 .venv-worker/bin/python -m compileall -q worker shared scripts
 chmod 600 worker/.env
 ./scripts/check_worker_machine.sh

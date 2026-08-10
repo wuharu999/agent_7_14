@@ -79,7 +79,8 @@ External integrations still require live validation on the deployment machines:
 ## Scenario clarification V2 validation
 
 ```bash
-PYTHONPATH=. .venv-ecs/bin/python -m pytest -q \
+./scripts/uv_sync.sh dev
+PYTHONPATH=. .venv-dev/bin/python -m pytest -q \
   tests/test_scenario_sessions.py \
   tests/test_capability_match.py \
   tests/test_capability_catalog.py \

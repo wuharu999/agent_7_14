@@ -5,6 +5,7 @@ env/
 ENV/
 .venv-ecs/
 .venv-worker/
+.venv-dev/
 __pycache__/
 *.py[cod]
 

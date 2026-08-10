@@ -15,7 +15,16 @@
 - Added file audit log.
 - Disabled automatic LLM Wiki rescan by default to prevent duplicate ingestion alongside Source Watch.
 - Added `scripts/create_user.py`.
-- Updated bootstrap scripts for the Tsinghua PyPI mirror and retry handling.
+- Replaced pip/requirements dependency installation with locked `uv` ECS,
+  Worker, and development environments.
+
+## Python 3.10 Worker compatibility
+
+- Replaced the Python 3.11-only `asyncio.timeout()` Cerebras streaming wrapper
+  with `asyncio.wait_for()` and bounded queue polling.
+- Added regression coverage for runtimes where `asyncio.timeout` is unavailable.
+- Added root `pyproject.toml` and `uv.lock`; deployment scripts now synchronize
+  `.venv-ecs` and `.venv-worker` with `uv` while retaining their interpreters.
 
 ## QA conversation and language update
 
