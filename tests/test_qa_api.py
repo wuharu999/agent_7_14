@@ -214,7 +214,7 @@ def test_reference_filter_removes_internal_refs_but_preserves_links_and_images(
     write(tmp_path / "concepts" / "rosa-2-0.md", "ROSA evidence")
     wiki = qa_api.Wiki(tmp_path)
     text = (
-        "Answer [rosa-2-0] [rosa-2-0 (concepts/rosa-2-0.md)]. "
+        "Answer [rosa-2-0] 【rosa-2-0】 [rosa-2-0 (concepts/rosa-2-0.md)]. "
         "Hide /home/worker/wiki/entities/rosa-2-0.md and README.md. "
         "Keep [official site](https://example.com), https://example.com/guide.md, "
         "and ![diagram](media/robot.png).\n\n"
@@ -226,6 +226,7 @@ def test_reference_filter_removes_internal_refs_but_preserves_links_and_images(
     assert "rosa-2-0.md" not in filtered
     assert "README.md" not in filtered
     assert "[rosa-2-0]" not in filtered
+    assert "【rosa-2-0】" not in filtered
     assert "参考资料" not in filtered
     assert "[official site](https://example.com)" in filtered
     assert "https://example.com/guide.md" in filtered
@@ -239,7 +240,8 @@ def test_stream_filter_hides_reference_split_across_chunks(tmp_path: Path) -> No
 
     chunks = [
         stream_filter.feed("A" * 600 + " [wal"),
-        stream_filter.feed("ker (concepts/walker.md)] conclusion.\nReferences:\n"),
+        stream_filter.feed("ker (concepts/walker.md)] 【wal"),
+        stream_filter.feed("ker】 conclusion.\nReferences:\n"),
         stream_filter.feed("- [walker]"),
         stream_filter.finish(),
     ]

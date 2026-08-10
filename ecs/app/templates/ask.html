@@ -21,10 +21,31 @@ body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#f5f7fb;colo
 .chat-history{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;background:#f8fafc;}
 .chat-input-area{padding:16px;background:#fff;border-top:1px solid #e2e8f0;display:flex;flex-direction:column;gap:12px;}
 
-.bubble{max-width:85%;padding:12px 16px;border-radius:18px;font-size:15px;line-height:1.5;word-wrap:break-word;white-space:pre-wrap;}
+.bubble{max-width:85%;padding:12px 16px;border-radius:18px;font-size:15px;line-height:1.58;overflow-wrap:anywhere;white-space:pre-wrap;}
 .bubble.user{align-self:flex-end;background:#2563eb;color:#fff;border-bottom-right-radius:4px;}
-.bubble.bot{align-self:flex-start;background:#fff;border:1px solid #cbd5e1;color:#1e293b;border-bottom-left-radius:4px;}
+.bubble.bot{align-self:flex-start;max-width:94%;background:#fff;border:1px solid #cbd5e1;color:#1e293b;border-bottom-left-radius:4px;white-space:normal;}
 .bubble.system{align-self:center;background:transparent;color:#64748b;font-size:13px;padding:4px 8px;border:none;}
+.text-content{display:block;min-width:0;}
+.text-content>:first-child{margin-top:0;}
+.text-content>:last-child{margin-bottom:0;}
+.text-content h2,.text-content h3,.text-content h4{margin:1.05em 0 .48em;color:#0f172a;line-height:1.3;}
+.text-content h2{font-size:1.2em;padding-bottom:.35em;border-bottom:1px solid #e2e8f0;}
+.text-content h3{font-size:1.08em;}
+.text-content h4{font-size:1em;}
+.text-content p{margin:.62em 0;}
+.text-content ul,.text-content ol{margin:.55em 0;padding-left:1.45em;}
+.text-content li{margin:.28em 0;padding-left:.12em;}
+.text-content strong{font-weight:750;color:#0f172a;}
+.text-content code{padding:.08em .32em;border-radius:4px;background:#eef2ff;color:#3730a3;font:0.9em ui-monospace,SFMono-Regular,Consolas,monospace;}
+.text-content a{color:#1d4ed8;text-decoration:underline;text-underline-offset:2px;}
+.text-content blockquote{margin:.7em 0;padding:.45em .8em;border-left:3px solid #93c5fd;background:#eff6ff;color:#334155;}
+.answer-table-wrap{max-width:100%;overflow-x:auto;margin:.75em 0;border:1px solid #dbe3ef;border-radius:10px;}
+.answer-table{width:100%;min-width:520px;border-collapse:collapse;background:#fff;font-size:.93em;line-height:1.48;}
+.answer-table th,.answer-table td{padding:9px 11px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top;}
+.answer-table th:last-child,.answer-table td:last-child{border-right:0;}
+.answer-table tr:last-child td{border-bottom:0;}
+.answer-table th{background:#eff6ff;color:#1e3a8a;font-weight:750;white-space:nowrap;}
+.answer-table tbody tr:nth-child(even){background:#f8fafc;}
 .answer-images{display:grid;gap:10px;margin-top:10px;}
 .answer-image{margin:0;}
 .answer-image img{display:block;max-width:min(100%,680px);max-height:520px;width:auto;height:auto;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;object-fit:contain;}
@@ -189,6 +210,163 @@ function saveHistory() {
   localStorage.setItem(historyKey, JSON.stringify(currentChat));
 }
 
+function appendInlineMarkdown(parent, source) {
+  const pattern = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))/g;
+  let cursor = 0;
+  for (const match of source.matchAll(pattern)) {
+    if (match.index > cursor) parent.appendChild(document.createTextNode(source.slice(cursor, match.index)));
+    const token = match[0];
+    if (token.startsWith('**')) {
+      const strong = document.createElement('strong');
+      strong.textContent = token.slice(2, -2);
+      parent.appendChild(strong);
+    } else if (token.startsWith('`')) {
+      const code = document.createElement('code');
+      code.textContent = token.slice(1, -1);
+      parent.appendChild(code);
+    } else {
+      const parts = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
+      const link = document.createElement('a');
+      link.textContent = parts[1];
+      link.href = parts[2];
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      parent.appendChild(link);
+    }
+    cursor = match.index + token.length;
+  }
+  if (cursor < source.length) parent.appendChild(document.createTextNode(source.slice(cursor)));
+}
+
+function tableCells(line) {
+  let value = line.trim();
+  if (value.startsWith('|')) value = value.slice(1);
+  if (value.endsWith('|')) value = value.slice(0, -1);
+  return value.split('|').map(cell => cell.trim());
+}
+
+function isTableSeparator(line) {
+  const cells = tableCells(line);
+  return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+}
+
+function renderAnswerText(container, source) {
+  container.replaceChildren();
+  const lines = String(source || '').replace(/\r\n?/g, '\n').split('\n');
+  let index = 0;
+
+  const appendParagraph = paragraphLines => {
+    const paragraph = document.createElement('p');
+    paragraphLines.forEach((line, lineIndex) => {
+      if (lineIndex) paragraph.appendChild(document.createElement('br'));
+      appendInlineMarkdown(paragraph, line.trim());
+    });
+    container.appendChild(paragraph);
+  };
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (!trimmed) { index += 1; continue; }
+
+    const markdownHeading = /^(#{1,4})\s+(.+)$/.exec(trimmed);
+    const boldHeading = /^\*\*([^*]+)\*\*$/.exec(trimmed);
+    if (markdownHeading || boldHeading) {
+      const level = markdownHeading ? Math.min(4, markdownHeading[1].length + 1) : 3;
+      const heading = document.createElement(`h${level}`);
+      appendInlineMarkdown(heading, markdownHeading ? markdownHeading[2] : boldHeading[1]);
+      container.appendChild(heading);
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+      const headers = tableCells(trimmed);
+      const wrapper = document.createElement('div');
+      wrapper.className = 'answer-table-wrap';
+      const table = document.createElement('table');
+      table.className = 'answer-table';
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      headers.forEach(cell => {
+        const th = document.createElement('th');
+        appendInlineMarkdown(th, cell);
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      index += 2;
+      while (index < lines.length && lines[index].trim() && lines[index].includes('|')) {
+        const row = document.createElement('tr');
+        const cells = tableCells(lines[index]);
+        headers.forEach((_, cellIndex) => {
+          const td = document.createElement('td');
+          appendInlineMarkdown(td, cells[cellIndex] || '');
+          row.appendChild(td);
+        });
+        tbody.appendChild(row);
+        index += 1;
+      }
+      table.appendChild(tbody);
+      wrapper.appendChild(table);
+      container.appendChild(wrapper);
+      continue;
+    }
+
+    const listMatch = /^(?:[-*+]\s+|(\d+)\.\s+)(.+)$/.exec(trimmed);
+    if (listMatch) {
+      const ordered = Boolean(listMatch[1]);
+      const list = document.createElement(ordered ? 'ol' : 'ul');
+      while (index < lines.length) {
+        const item = /^(?:[-*+]\s+|(\d+)\.\s+)(.+)$/.exec(lines[index].trim());
+        if (!item || Boolean(item[1]) !== ordered) break;
+        const li = document.createElement('li');
+        appendInlineMarkdown(li, item[2]);
+        list.appendChild(li);
+        index += 1;
+      }
+      container.appendChild(list);
+      continue;
+    }
+
+    if (trimmed.startsWith('> ')) {
+      const quote = document.createElement('blockquote');
+      appendInlineMarkdown(quote, trimmed.slice(2));
+      container.appendChild(quote);
+      index += 1;
+      continue;
+    }
+
+    const paragraphLines = [line];
+    index += 1;
+    while (index < lines.length && lines[index].trim()) {
+      const next = lines[index].trim();
+      if (/^(#{1,4})\s+/.test(next) || /^\*\*([^*]+)\*\*$/.test(next) ||
+          /^(?:[-*+]\s+|\d+\.\s+)/.test(next) || next.startsWith('> ') ||
+          (next.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1]))) break;
+      paragraphLines.push(lines[index]);
+      index += 1;
+    }
+    appendParagraph(paragraphLines);
+  }
+}
+
+function ensureTextContainer(bubble) {
+  let container = bubble.querySelector('.text-content');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'text-content';
+    bubble.appendChild(container);
+  }
+  return container;
+}
+
+function renderMessageContent(bubble, role, content) {
+  if (role === 'bot') renderAnswerText(ensureTextContainer(bubble), content);
+  else bubble.textContent = content;
+}
+
 function loadHistory() {
   const data = localStorage.getItem(historyKey);
   if (data) {
@@ -206,7 +384,7 @@ function renderChat() {
   currentChat.forEach(msg => {
     const d = document.createElement('div');
     d.className = 'bubble ' + msg.role;
-    d.textContent = msg.content;
+    renderMessageContent(d, msg.role, msg.content);
     chatHistory.appendChild(d);
   });
   scrollToBottom();
@@ -217,7 +395,7 @@ function addMessage(role, content) {
   saveHistory();
   const d = document.createElement('div');
   d.className = 'bubble ' + role;
-  d.textContent = content;
+  renderMessageContent(d, role, content);
   chatHistory.appendChild(d);
   scrollToBottom();
   return d;
@@ -383,7 +561,7 @@ async function submitQuestion(){
             }
 
             if (event.status === "error") {
-              botBubble.textContent = event.error;
+              renderAnswerText(ensureTextContainer(botBubble), event.error);
               accumulatedText = event.error;
               break;
             }
@@ -435,14 +613,8 @@ async function submitQuestion(){
             }
 
             if (typeof event.replace_text === 'string') {
-              let textContainer = botBubble.querySelector('.text-content');
-              if (!textContainer) {
-                textContainer = document.createElement('span');
-                textContainer.className = 'text-content';
-                botBubble.appendChild(textContainer);
-              }
-              textContainer.textContent = event.replace_text;
               accumulatedText = event.replace_text;
+              renderAnswerText(ensureTextContainer(botBubble), accumulatedText);
             }
 
             if (event.image && typeof event.image.data === 'string') {
@@ -473,14 +645,8 @@ async function submitQuestion(){
 
             if (event.text) {
               setCompanionMode('charging');
-              let textContainer = botBubble.querySelector('.text-content');
-              if (!textContainer) {
-                textContainer = document.createElement('span');
-                textContainer.className = 'text-content';
-                botBubble.appendChild(textContainer);
-              }
-              textContainer.textContent += event.text;
               accumulatedText += event.text;
+              renderAnswerText(ensureTextContainer(botBubble), accumulatedText);
             }
             scrollToBottom();
           } catch(e) {

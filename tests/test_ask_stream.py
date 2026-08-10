@@ -2,8 +2,10 @@ import asyncio
 from pathlib import Path
 
 import pytest
+
 from ecs.app.gateway import WorkerGateway
 from worker.conversation_store import ConversationTurn
+
 
 @pytest.mark.anyio
 async def test_gateway_ask_stream():
@@ -291,6 +293,33 @@ def test_qa_pages_render_validated_image_payloads():
         assert "event.image.mime_type" in template
         assert "answer-images" in template
         assert "event.replace_text" in template
+
+
+def test_main_qa_renders_safe_markdown_and_stream_replacements():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "ecs" / "app" / "templates" / "ask.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function renderAnswerText" in template
+    assert "function appendInlineMarkdown" in template
+    assert "answer-table-wrap" in template
+    assert "container.replaceChildren()" in template
+    assert "renderAnswerText(ensureTextContainer(botBubble), accumulatedText)" in template
+    assert "textContainer.textContent += event.text" not in template
+    assert "container.innerHTML" not in template
+
+
+def test_background_graph_has_varied_shapes_and_linked_cluster_motion():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "ecs" / "app" / "templates" / "bg_graph.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "['circle', 'capsule', 'diamond', 'hexagon', 'organic']" in template
+    assert "preferredDistance" in template
+    assert "sharedVx" in template
+    assert "prefers-reduced-motion: reduce" in template
 
 
 def test_claude_image_instruction_allows_relevant_uploaded_source_assets():

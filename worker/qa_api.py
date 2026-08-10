@@ -45,6 +45,7 @@ WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 BRACKET_REFERENCE_RE = re.compile(
     r"\[([^\]\n]{1,2048})\](?:\(([^)\n]{1,4096})\))?"
 )
+CJK_BRACKET_REFERENCE_RE = re.compile(r"【([^】\n]{1,2048})】")
 BARE_MARKDOWN_PATH_RE = re.compile(
     r"(?<![\w])((?:[A-Za-z]:[\\/]|/|\.{1,2}/)?"
     r"(?:[^\s\[\]()<>]+[\\/])*[^\s\[\]()<>]+\.md)(?![\w])",
@@ -301,6 +302,12 @@ def strip_retrieval_references(
 
     text = BRACKET_REFERENCE_RE.sub(replace, text)
 
+    def remove_cjk_reference(match: re.Match[str]) -> str:
+        label = match.group(1).strip().casefold()
+        return "" if label in known_slugs or ".md" in label else match.group(0)
+
+    text = CJK_BRACKET_REFERENCE_RE.sub(remove_cjk_reference, text)
+
     def remove_bare_markdown_path(match: re.Match[str]) -> str:
         path = match.group(1)
         if path.casefold().startswith(("http://", "https://")):
@@ -341,6 +348,9 @@ class RetrievalReferenceStreamFilter:
         unmatched_open = prefix.rfind("[")
         if unmatched_open > prefix.rfind("]"):
             cutoff = unmatched_open
+        unmatched_cjk_open = prefix.rfind("【")
+        if unmatched_cjk_open > prefix.rfind("】"):
+            cutoff = min(cutoff, unmatched_cjk_open)
         safe = strip_retrieval_references(
             self.buffer[:cutoff], self.wiki, self.allowed_slugs
         )
