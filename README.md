@@ -28,9 +28,12 @@ Public answers now use an Agent1-owned implementation based on the read-only
 pattern demonstrated in `$HOME/Documents/agent_tests`: a router sees the Wiki
 index plus a bounded set of filename-matched pages for the selected robot/topic,
 Python validates the selected slugs and reads those pages, and a second model call
-streams the answer. Cerebras is primary; any Cerebras API failure opens a
-five-minute circuit and retries through DeepSeek V4 Flash. Internal slugs and
-paths are removed before display. Files in `agent_tests` are not imported,
+streams the answer. Cerebras is primary only when the Worker's freshly verified outbound
+country is permitted; CN/TW/HK/SG or an unverifiable country uses DeepSeek
+directly. Any Cerebras API failure opens a five-minute circuit and retries through
+DeepSeek V4 Flash. If DeepSeek returns unusable router identifiers, Python safely
+normalizes path/case variants and otherwise selects bounded Wiki pages
+deterministically. Internal slugs and paths are removed before display. Files in `agent_tests` are not imported,
 modified, packaged, or required at runtime. Keep both provider keys only in
 `worker/.env`.
 

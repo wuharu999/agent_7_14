@@ -7,10 +7,12 @@ import queue
 import re
 import threading
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import unquote
 
 from worker.qa_response import (
     _STREAM_SAFETY_HOLDBACK,
@@ -22,7 +24,11 @@ from worker.qa_response import (
 )
 from worker.config import (
     CEREBRAS_API_KEY,
+    CEREBRAS_BLOCKED_COUNTRIES,
     CEREBRAS_MODEL,
+    CEREBRAS_REGION_CACHE_SECONDS,
+    CEREBRAS_REGION_CHECK_TIMEOUT,
+    CEREBRAS_REGION_CHECK_URL,
     CEREBRAS_TIMEOUT,
     DEEPSEEK_API_KEY,
     DEEPSEEK_BASE_URL,
@@ -34,6 +40,7 @@ from worker.config import (
     get_team_config,
 )
 from worker.conversation_store import ConversationTurn
+from worker.egress_region import EgressRegionGate
 from worker.prompt_security import GuardDecision, refusal_text
 from worker.qa_images import strip_qa_image_markdown
 from worker.terminology import (
@@ -198,6 +205,12 @@ class ProviderCircuitBreaker:
 
 
 _CEREBRAS_CIRCUIT = ProviderCircuitBreaker(QA_PROVIDER_COOLDOWN_SECONDS)
+_CEREBRAS_REGION_GATE = EgressRegionGate(
+    check_url=CEREBRAS_REGION_CHECK_URL,
+    timeout=CEREBRAS_REGION_CHECK_TIMEOUT,
+    cache_seconds=CEREBRAS_REGION_CACHE_SECONDS,
+    blocked_countries=CEREBRAS_BLOCKED_COUNTRIES,
+)
 
 
 @dataclass(frozen=True)
@@ -216,25 +229,45 @@ def links_in(markdown: str) -> set[str]:
     }
 
 
+def ordered_links_in(markdown: str) -> list[str]:
+    """Return normalized Obsidian targets in first-seen index order."""
+    return list(
+        dict.fromkeys(
+            target.strip()
+            for raw in WIKI_LINK_RE.findall(markdown)
+            if (target := raw.split("|", 1)[0].split("#", 1)[0].strip())
+        )
+    )
+
+
 class Wiki:
     """Index-constrained local Markdown reader based on the agent_tests prototype."""
 
     def __init__(self, root: Path):
-        self.root = root.expanduser().resolve()
+        expanded_root = root.expanduser()
+        if expanded_root.is_symlink():
+            raise ValueError("Wiki root cannot be a symlink")
+        self.root = expanded_root.resolve()
         self.index_path = self.root / "index.md"
         if not self.index_path.is_file():
             raise FileNotFoundError(f"Wiki index not found: {self.index_path}")
         raw_index_text = self.index_path.read_text(encoding="utf-8")
         self.index_text = canonicalize_product_names(raw_index_text)
         self.pages = self._build_page_map()
-        self.allowed_slugs = links_in(raw_index_text)
+        self.index_slugs = ordered_links_in(raw_index_text)
+        self.allowed_slugs = set(self.index_slugs)
         self.retrievable_slugs = self.allowed_slugs & self.pages.keys()
 
     def _build_page_map(self) -> dict[str, list[Path]]:
         paths_by_slug: dict[str, list[Path]] = {}
         for path in self.root.rglob("*.md"):
-            if path.name not in EXCLUDED_FILENAMES:
-                paths_by_slug.setdefault(path.stem, []).append(path)
+            if path.name in EXCLUDED_FILENAMES or path.is_symlink() or not path.is_file():
+                continue
+            try:
+                path.resolve().relative_to(self.root)
+            except ValueError:
+                continue
+            paths_by_slug.setdefault(path.stem, []).append(path)
         return {slug: sorted(paths) for slug, paths in paths_by_slug.items()}
 
     def candidate_slugs(self, team: str, question: str) -> set[str]:
@@ -257,6 +290,48 @@ class Wiki:
             if len(supplemental) == _MAX_TOPIC_SUPPLEMENTAL_PAGES:
                 break
         return set(self.retrievable_slugs) | set(supplemental)
+
+    def fallback_slugs(
+        self,
+        question: str,
+        team: str,
+        history: Sequence[ConversationTurn],
+        allowed_slugs: set[str],
+    ) -> list[str]:
+        """Select bounded Wiki pages locally when a provider router is unusable."""
+        ordered = [slug for slug in self.index_slugs if slug in allowed_slugs]
+        ordered.extend(sorted(allowed_slugs - set(ordered)))
+        if not ordered:
+            return []
+        history_text = " ".join(
+            f"{turn.question} {turn.answer}"
+            for turn in history
+            if not is_internal_processing_error(turn.answer)
+        )
+        query = canonicalize_product_names(f"{team} {question} {history_text}")
+        query_terms = _lexical_terms(query)
+        compact_query = _slug_identity(query)
+        ranked: list[tuple[int, int, str]] = []
+        for position, slug in enumerate(ordered):
+            paths = self.pages.get(slug, [])
+            metadata = " ".join([slug, *(str(path.relative_to(self.root)) for path in paths)])
+            metadata_terms = _lexical_terms(metadata)
+            score = 12 * len(query_terms & metadata_terms)
+            slug_identity = _slug_identity(slug)
+            if slug_identity and slug_identity in compact_query:
+                score += 100
+            if score < 100:
+                excerpts: list[str] = []
+                for path in paths[:2]:
+                    try:
+                        excerpts.append(path.read_text(encoding="utf-8")[:4000])
+                    except (OSError, UnicodeError):
+                        continue
+                score += len(query_terms & _lexical_terms(" ".join(excerpts)))
+            ranked.append((score, position, slug))
+        ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+        positive = [slug for score, _, slug in ranked if score > 0]
+        return (positive or [ranked[0][2]])[:WIKI_QA_MAX_PAGES]
 
     def load(
         self,
@@ -458,6 +533,38 @@ class DeepSeekClient:
                 yield str(content)
 
 
+def _slug_identity(value: str) -> str:
+    value = unicodedata.normalize("NFKC", unquote(value)).casefold()
+    return "".join(character for character in value if character.isalnum())
+
+
+def _slug_keys(value: str) -> set[str]:
+    value = unicodedata.normalize("NFKC", unquote(value)).strip().strip("`'\"")
+    if value.startswith("[[") and value.endswith("]]"):
+        value = value[2:-2].split("|", 1)[0]
+    markdown_link = re.fullmatch(r"\[[^\]]*\]\(([^)]+)\)", value)
+    if markdown_link:
+        value = markdown_link.group(1)
+    value = value.split("#", 1)[0].split("?", 1)[0].replace("\\", "/")
+
+    def without_markdown_suffix(item: str) -> str:
+        return item[:-3] if item.casefold().endswith(".md") else item
+
+    variants = {value, without_markdown_suffix(value)}
+    basename = value.rsplit("/", 1)[-1]
+    variants.update({basename, without_markdown_suffix(basename)})
+    return {key for item in variants if (key := _slug_identity(item))}
+
+
+def _lexical_terms(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    terms = set(re.findall(r"[a-z0-9][a-z0-9_.+-]+", normalized))
+    for chunk in re.findall(r"[\u3400-\u9fff]+", normalized):
+        terms.add(chunk)
+        terms.update(chunk[index : index + 2] for index in range(max(0, len(chunk) - 1)))
+    return {term for term in terms if term}
+
+
 def parse_router_response(response: str, allowed_slugs: set[str]) -> list[str]:
     """Discard malformed, unknown, duplicate, and excess model-selected slugs."""
     cleaned = response.strip()
@@ -467,13 +574,28 @@ def parse_router_response(response: str, allowed_slugs: set[str]) -> list[str]:
         payload = json.loads(cleaned)
     except json.JSONDecodeError as exc:
         raise QAAPIError("The retrieval model did not return valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise QAAPIError("The retrieval response was not a JSON object")
     pages = payload.get("pages")
     if not isinstance(pages, list) or not all(isinstance(page, str) for page in pages):
         raise QAAPIError("The retrieval response did not contain a page list")
+    key_map: dict[str, set[str]] = {}
+    for allowed in allowed_slugs:
+        for key in _slug_keys(allowed):
+            key_map.setdefault(key, set()).add(allowed)
     selected: list[str] = []
-    for slug in pages:
-        if slug in allowed_slugs and slug not in selected:
-            selected.append(slug)
+    for raw_slug in pages:
+        matched: str | None = raw_slug if raw_slug in allowed_slugs else None
+        if matched is None:
+            matches = {
+                candidate
+                for key in _slug_keys(raw_slug)
+                for candidate in key_map.get(key, set())
+            }
+            if len(matches) == 1:
+                matched = next(iter(matches))
+        if matched is not None and matched not in selected:
+            selected.append(matched)
         if len(selected) == WIKI_QA_MAX_PAGES:
             break
     if not selected:
@@ -640,7 +762,20 @@ async def _run_provider(
     try:
         selected_slugs = parse_router_response(router_response, candidate_slugs)
     except QAAPIError as exc:
-        raise ProviderCallError(provider, "retrieval response validation") from exc
+        if provider != "deepseek":
+            raise ProviderCallError(provider, "retrieval response validation") from exc
+        selected_slugs = await asyncio.to_thread(
+            wiki.fallback_slugs,
+            question,
+            team,
+            history,
+            candidate_slugs,
+        )
+        if not selected_slugs:
+            raise ProviderCallError(provider, "retrieval response validation") from exc
+        log.warning(
+            "DeepSeek retrieval response was unusable; selected Wiki pages deterministically"
+        )
 
     documents = await asyncio.to_thread(
         wiki.load,
@@ -694,6 +829,22 @@ async def _retrieve_and_stream(
     on_reset: Callable[[], Awaitable[None]],
 ) -> str:
     wiki = await asyncio.to_thread(Wiki, get_team_config(team).wiki_dir)
+    region = await asyncio.to_thread(_CEREBRAS_REGION_GATE.decision)
+    if not region.cerebras_allowed:
+        log.info(
+            "Skipping Cerebras region=%s reason=%s; using DeepSeek",
+            region.country_code or "unknown",
+            region.reason,
+        )
+        return await _run_provider(
+            "deepseek",
+            wiki,
+            question,
+            team=team,
+            language=language,
+            history=history,
+            on_token=on_token,
+        )
     decision = _CEREBRAS_CIRCUIT.select()
     if decision.provider == "deepseek":
         return await _run_provider(

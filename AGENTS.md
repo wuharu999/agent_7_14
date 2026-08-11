@@ -222,13 +222,17 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
 QA_PROVIDER_COOLDOWN_SECONDS=300
+CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
+CEREBRAS_REGION_CHECK_TIMEOUT=5
+CEREBRAS_REGION_CACHE_SECONDS=300
+CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
 
-The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees `wiki/index.md` plus at most 20 filename/path matches for the selected robot/topic when the index is stale, Python validates returned slugs and reads only those permitted pages, and a second provider call streams the answer. Cerebras is primary; any Cerebras API failure opens a five-minute circuit and retries the complete request through DeepSeek V4 Flash. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
+The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees `wiki/index.md` plus at most 20 filename/path matches for the selected robot/topic when the index is stale, Python validates returned slugs and reads only those permitted pages, and a second provider call streams the answer. Python safely normalizes path/case variants and uses deterministic Wiki-only selection if DeepSeek returns no usable slug. Cerebras is primary only after a fail-closed outbound-country check; permitted routes are rechecked before each Cerebras request, while CN/TW/HK/SG or an unverifiable region skips Cerebras and is cached briefly. Any Cerebras API failure opens a five-minute circuit and retries the complete request through DeepSeek V4 Flash. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
 
 Public QA is API-only. It must not launch local coding agents, import an agent
 runner, read local agent instruction files, or fall back to `raw/sources/`. Terminology rewriting
@@ -328,6 +332,10 @@ DEEPSEEK_TIMEOUT=240
 DEEPSEEK_STRUCTURED_RETRIES=1
 DEEPSEEK_TRANSPORT_RETRIES=1
 QA_PROVIDER_COOLDOWN_SECONDS=300
+CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
+CEREBRAS_REGION_CHECK_TIMEOUT=5
+CEREBRAS_REGION_CACHE_SECONDS=300
+CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 DOWNLOAD_TIMEOUT=1800

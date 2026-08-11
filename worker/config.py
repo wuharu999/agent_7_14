@@ -126,6 +126,23 @@ DEEPSEEK_TRANSPORT_RETRIES = max(
 QA_PROVIDER_COOLDOWN_SECONDS = max(
     1, int(os.environ.get("QA_PROVIDER_COOLDOWN_SECONDS", "300"))
 )
+CEREBRAS_REGION_CHECK_URL = (
+    os.environ.get(
+        "CEREBRAS_REGION_CHECK_URL", "https://www.cloudflare.com/cdn-cgi/trace"
+    ).strip()
+    or "https://www.cloudflare.com/cdn-cgi/trace"
+)
+CEREBRAS_REGION_CHECK_TIMEOUT = max(
+    1, min(30, int(os.environ.get("CEREBRAS_REGION_CHECK_TIMEOUT", "5")))
+)
+CEREBRAS_REGION_CACHE_SECONDS = max(
+    30, int(os.environ.get("CEREBRAS_REGION_CACHE_SECONDS", "300"))
+)
+CEREBRAS_BLOCKED_COUNTRIES = frozenset(
+    value.strip().upper()
+    for value in os.environ.get("CEREBRAS_BLOCKED_COUNTRIES", "CN,TW,HK,SG").split(",")
+    if value.strip()
+)
 WIKI_QA_MAX_PAGES = max(1, min(10, int(os.environ.get("WIKI_QA_MAX_PAGES", "5"))))
 WIKI_QA_MAX_PAGE_CHARS = max(
     1_000, int(os.environ.get("WIKI_QA_MAX_PAGE_CHARS", "24000"))

@@ -42,8 +42,9 @@ Existing LLM Wiki GUI
 - A bounded authoring queue runs separate sessions concurrently and serializes commands for the same session.
 - Public QA uses validated index retrieval plus bounded robot/topic filename
   discovery for stale indexes and sends only selected Wiki pages to the active
-  provider. Cerebras is primary and DeepSeek V4 Flash is the circuit-breaker
-  fallback. Public QA never launches local coding agents, reads local agent instruction files, or searches
+  provider. Cerebras is primary only when the outbound-country gate is
+  permitted; CN/TW/HK/SG or an unverifiable region uses DeepSeek directly.
+  DeepSeek V4 Flash is also the circuit-breaker fallback. Public QA never launches local coding agents, reads local agent instruction files, or searches
   original files under `raw/sources/`. Authoring treats editor messages and
   Wiki excerpts as untrusted data and uses stateless API calls with thinking disabled.
 - High-confidence prompt attacks are refused locally. Only ambiguous suspicious

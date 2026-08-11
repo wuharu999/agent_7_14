@@ -36,6 +36,10 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
 QA_PROVIDER_COOLDOWN_SECONDS=300
+CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
+CEREBRAS_REGION_CHECK_TIMEOUT=5
+CEREBRAS_REGION_CACHE_SECONDS=300
+CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 ```
@@ -43,8 +47,12 @@ WIKI_QA_MAX_PAGE_CHARS=24000
 The Worker reads `BASE_DIR/wiki/index.md`, supplements a stale index with at
 most 20 filename/path matches for the selected robot/topic (including Walker C1),
 validates router-selected slugs, and opens only those permitted Markdown pages.
-Cerebras remains primary; DeepSeek V4 Flash handles provider failures during the
-five-minute circuit cooldown. The browser continues
+Cerebras remains primary only after an outbound-country check succeeds.
+CN, TW, HK, SG, and unknown/unverifiable regions bypass Cerebras completely;
+DeepSeek V4 Flash also handles provider failures during the five-minute circuit
+cooldown. Permitted routes are rechecked before every Cerebras request, while
+blocked/unknown results are cached for five minutes. The check never stores or
+logs the public IP. The browser continues
 to receive streamed chunks through the authenticated Worker WebSocket and never
 receives a Worker file path. `$HOME/Documents/agent_tests` is reference material
 only and is not part of deployment.

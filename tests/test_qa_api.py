@@ -9,6 +9,7 @@ from typing import ClassVar
 import pytest
 
 from worker import qa_api
+from worker.egress_region import EgressRegionDecision
 from worker.qa_response import AI_NOTICE_RESPONSES, GENERIC_ERROR_RESPONSES
 from worker.conversation_store import ConversationTurn
 from worker.prompt_security import GuardDecision
@@ -19,9 +20,22 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+class StaticRegionGate:
+    def __init__(self, country_code: str | None = "US", allowed: bool = True) -> None:
+        self.result = EgressRegionDecision(
+            country_code,
+            allowed,
+            "allowed_country" if allowed else "blocked_country",
+        )
+
+    def decision(self) -> EgressRegionDecision:
+        return self.result
+
+
 @pytest.fixture(autouse=True)
-def reset_provider_circuit() -> Iterator[None]:
+def reset_provider_circuit(monkeypatch) -> Iterator[None]:
     qa_api._CEREBRAS_CIRCUIT.reset()
+    monkeypatch.setattr(qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate())
     yield
     qa_api._CEREBRAS_CIRCUIT.reset()
 
@@ -37,6 +51,22 @@ def test_wiki_reader_only_loads_indexed_pages_and_duplicate_slugs(tmp_path: Path
 
     assert wiki.retrievable_slugs == {"allowed", "same"}
     assert [document.text for document in wiki.load(["hidden", "same"])] == ["a", "b"]
+
+
+def test_wiki_reader_rejects_symlink_root_and_skips_symlink_pages(tmp_path: Path) -> None:
+    real_wiki = tmp_path / "wiki"
+    outside = tmp_path / "outside.md"
+    write(real_wiki / "index.md", "[[outside]]")
+    write(outside, "original source must remain unavailable")
+    (real_wiki / "outside.md").symlink_to(outside)
+
+    wiki = qa_api.Wiki(real_wiki)
+    assert wiki.retrievable_slugs == set()
+
+    linked_root = tmp_path / "linked-wiki"
+    linked_root.symlink_to(real_wiki, target_is_directory=True)
+    with pytest.raises(ValueError, match="Wiki root cannot be a symlink"):
+        qa_api.Wiki(linked_root)
 
 
 def test_wiki_reader_canonicalizes_in_memory_without_changing_files(tmp_path: Path) -> None:
@@ -91,6 +121,15 @@ def test_router_response_rejects_unknown_duplicate_and_excess_slugs() -> None:
         {"a", "b", "c", "d", "e", "f"},
     )
     assert result == ["a", "b", "c", "d", "e"]
+
+
+def test_router_response_safely_normalizes_paths_case_and_markdown() -> None:
+    result = qa_api.parse_router_response(
+        '{"pages":["wiki/entities/Walker-C1.MD", "[[TIANGONG_PLUS]]", "[S2](concepts/walker-s2.md)"]}',
+        {"walker-c1", "tiangong-plus", "walker-s2"},
+    )
+
+    assert result == ["walker-c1", "tiangong-plus", "walker-s2"]
 
 
 def test_walker_c1_topic_supplements_stale_index_without_exposing_unrelated_pages(
@@ -369,18 +408,20 @@ class FakeProvider:
         fail_complete: bool = False,
         fail_stream: bool = False,
         empty_stream: bool = False,
+        router_response: str = '{"pages":["walker"]}',
     ) -> None:
         self.name = name
         self.calls = calls
         self.fail_complete = fail_complete
         self.fail_stream = fail_stream
         self.empty_stream = empty_stream
+        self.router_response = router_response
 
     def complete(self, _system: str, _user: str) -> str:
         self.calls.append(f"{self.name}:complete")
         if self.fail_complete:
             raise RuntimeError("provider unavailable")
-        return '{"pages":["walker"]}'
+        return self.router_response
 
     def stream(self, _system: str, _user: str):
         self.calls.append(f"{self.name}:stream")
@@ -537,6 +578,86 @@ async def test_open_circuit_bypasses_cerebras(monkeypatch, tmp_path: Path) -> No
 
     assert answer == "deepseek answer"
     assert calls == ["deepseek:complete", "deepseek:stream"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("country_code", ["CN", "TW", "HK", "SG"])
+async def test_blocked_egress_region_never_initializes_cerebras(
+    monkeypatch, tmp_path: Path, country_code: str
+) -> None:
+    write(tmp_path / "index.md", "[[walker]]")
+    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
+    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
+    monkeypatch.setattr(
+        qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate(country_code, False)
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        qa_api,
+        "_provider_client",
+        lambda name: FakeProvider(name, calls),
+    )
+
+    async def discard(_text: str) -> None:
+        return None
+
+    answer = await qa_api._retrieve_and_stream(
+        "What is Walker?",
+        team="walker_s2",
+        language="en",
+        history=(),
+        on_token=discard,
+        on_reset=lambda: discard(""),
+    )
+
+    assert answer == "deepseek answer"
+    assert calls == ["deepseek:complete", "deepseek:stream"]
+
+
+@pytest.mark.anyio
+async def test_deepseek_router_mismatch_uses_deterministic_wiki_fallback(
+    monkeypatch, tmp_path: Path
+) -> None:
+    write(tmp_path / "index.md", "[[walker-s2]] [[unrelated]]")
+    write(tmp_path / "concepts" / "walker-s2.md", "Walker S2 navigation evidence")
+    write(tmp_path / "concepts" / "unrelated.md", "Unrelated product")
+    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
+    monkeypatch.setattr(
+        qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate("CN", False)
+    )
+    calls: list[str] = []
+    captured_prompts: list[str] = []
+
+    class CapturingProvider(FakeProvider):
+        def stream(self, _system: str, user: str):
+            captured_prompts.append(user)
+            yield "deepseek answer"
+
+    monkeypatch.setattr(
+        qa_api,
+        "_provider_client",
+        lambda name: CapturingProvider(
+            name,
+            calls,
+            router_response='{"pages":["invented-page-that-does-not-exist"]}',
+        ),
+    )
+
+    async def discard(_text: str) -> None:
+        return None
+
+    answer = await qa_api._retrieve_and_stream(
+        "What navigation capabilities does Walker S2 have?",
+        team="walker_s2",
+        language="en",
+        history=(),
+        on_token=discard,
+        on_reset=lambda: discard(""),
+    )
+
+    assert answer == "deepseek answer"
+    assert "Walker S2 navigation evidence" in captured_prompts[0]
+    assert "Unrelated product" not in captured_prompts[0]
 
 
 @pytest.mark.anyio

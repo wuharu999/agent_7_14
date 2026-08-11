@@ -32,6 +32,8 @@
   final answers while retaining ordinary links and approved Wiki images.
 - Added DeepSeek V4 Flash failover with a five-minute Cerebras circuit breaker
   and one half-open recovery probe.
+- Added a fail-closed Cerebras outbound-country gate for CN/TW/HK/SG and a
+  deterministic Wiki-only recovery when DeepSeek returns unusable router slugs.
 - Added bounded robot/topic filename discovery so stale `index.md` files do not
   hide existing Walker C1 pages; unrelated unindexed pages remain unavailable.
 

@@ -143,6 +143,10 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
 QA_PROVIDER_COOLDOWN_SECONDS=300
+CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
+CEREBRAS_REGION_CHECK_TIMEOUT=5
+CEREBRAS_REGION_CACHE_SECONDS=300
+CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 
 LLM_WIKI_QUEUE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
 LLM_WIKI_CACHE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
