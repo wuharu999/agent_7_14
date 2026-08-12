@@ -7,10 +7,7 @@ also receives the default `admin` account. Set `DEFAULT_ADMIN_PASSWORD` before
 the first startup, or use `Admin#2026!Secured89` once and change it immediately
 at `/admin/users`.
 
-Keep the ECS authoring timeout longer than the Worker DeepSeek timeout:
-
 ```env
 WORKER_TIMEOUT=240
 FILE_COMMAND_TIMEOUT=60
-AUTHORING_COMMAND_TIMEOUT=270
 ```

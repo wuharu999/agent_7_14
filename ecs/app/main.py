@@ -15,7 +15,6 @@ from ecs.app.routes import (
     admin_users,
     ask,
     auth,
-    authoring,
     capability_match,
     manage,
     pages,
@@ -58,7 +57,6 @@ app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(ask.router)
 app.include_router(uploads.router)
-app.include_router(authoring.router)
 app.include_router(manage.router)
 app.include_router(status.router)
 app.include_router(worker_socket.router)

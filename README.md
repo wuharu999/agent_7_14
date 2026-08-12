@@ -176,7 +176,7 @@ reasons.
 - Scenario feasibility workbench with deterministic L0 hard-gate enforcement.
 - SQLite-backed capability-gap analytics and admin draft-stub generation.
 - Shared capability-organization progress and source-manifest change tracking.
-- Prompt/command-injection hardening for browser QA, authoring, and
+- Prompt/command-injection hardening for browser QA and
   retrieved source content.
 - Non-blocking text-source security warnings on upload status pages.
 
@@ -320,7 +320,7 @@ connection. An explicit ZIP path may be passed as its only argument.
 The public question page keeps a random conversation ID in the browser. Requests from that conversation are routed to the same QA lane and include a bounded recent history, so follow-up questions retain context without dedicating a provider session to one user. Selectable answer languages are Simplified Chinese, Traditional Chinese, Korean, Japanese, English, Portuguese, Russian, and Spanish.
 
 Public QA uses the provider-neutral API pipeline in `worker/qa_api.py`. Scenario
-clarification, feasibility analysis, authoring, capability organization, prompt
+clarification, feasibility analysis, capability organization, prompt
 classification, and contradiction review use the shared tool-free DeepSeek API
 client. Python alone controls Wiki retrieval, schemas, state, and publication.
 
@@ -329,7 +329,3 @@ a generic localized refusal and are not retained in conversation storage or
 security logs. Text-based uploads are scanned before atomic publication. The
 status page shows relative filenames and warning categories only; suspicious
 documents continue into the normal LLM Wiki pipeline.
-
-Editors and admins can also use the AI documentation author on `/upload`. The authoring conversation is persisted by the Worker, can generate a Markdown article for review, and publishes only after an explicit confirmation. DeepSeek receives bounded Wiki excerpts only; the Worker performs the final atomic publication into `raw/sources/` for LLM Wiki Source Watch.
-
-Authoring uses a bounded, configurable Worker pool. Separate sessions may run concurrently, while each session is serialized so turns cannot overwrite one another. DeepSeek receives bounded recent history through the API and has no tools. The upload page polls the stored article status and displays LLM Wiki completion or the original ingestion error.

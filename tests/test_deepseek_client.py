@@ -103,11 +103,20 @@ def test_permanent_failure_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> No
     assert len(fake.chat.completions.calls) == 1
 
 
+def test_document_authoring_routes_are_not_registered() -> None:
+    from ecs.app.main import app
+
+    assert not any(
+        str(getattr(route, "path", "")).startswith("/api/authoring")
+        for route in app.routes
+    )
+
+
 def test_no_claude_subprocess_module_or_configuration_remains() -> None:
     root = Path(__file__).resolve().parents[1]
     assert not (root / "worker" / "claude_process.py").exists()
+    assert not (root / "worker" / "authoring.py").exists()
     migrated_modules = (
-        "authoring.py",
         "capability_catalog.py",
         "capability_matcher.py",
         "prompt_security.py",

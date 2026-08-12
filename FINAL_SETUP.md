@@ -34,7 +34,6 @@ Add these settings if they are not already present:
 
 ```env
 FILE_COMMAND_TIMEOUT=60
-AUTHORING_COMMAND_TIMEOUT=270
 SESSION_COOKIE_NAME=agent1_session
 SESSION_HOURS=8
 COOKIE_SECURE=false
@@ -115,19 +114,13 @@ Add or verify:
 BASE_DIR=/home/eason/Documents/agent_7_14/agent1/agent
 STAGING_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-worker/staging
 TRASH_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash
-AUTHORING_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-worker/authoring
 
 FILE_OPERATION_WORKERS=1
 FILE_MANAGER_MAX_ENTRIES=10000
-AUTHORING_WORKERS=2
-AUTHORING_QUEUE_MAX=8
-AUTHORING_LOCK_STRIPES=64
 CAPABILITY_MATCH_WORKERS=1
 CAPABILITY_MATCH_QUEUE_MAX=8
 CLARIFICATION_WORKERS=1
 CLARIFICATION_QUEUE_MAX=16
-AUTHORING_MAX_TURNS=100
-AUTHORING_MAX_CONTEXT_BYTES=768000
 PROMPT_GUARD_ENABLED=true
 PROMPT_GUARD_TIMEOUT=20
 PROMPT_GUARD_CONCURRENCY=2
@@ -301,7 +294,7 @@ CONVERSATION_MAX_SESSIONS=1000
 ```
 
 Public QA uses Cerebras with DeepSeek failover. Scenario clarification,
-feasibility analysis, authoring, catalog organization, prompt classification,
+feasibility analysis, catalog organization, prompt classification,
 and contradiction review call DeepSeek directly with thinking disabled and no
 tools. Existing obsolete command-line-agent variables are ignored and may be
 removed from deployed environment files.

@@ -53,10 +53,6 @@ STAGING_DIR = Path(
 TRASH_DIR = Path(
     os.environ.get("TRASH_DIR", str(WORKER_ROOT_DIR / ".agent1-trash"))
 ).expanduser().resolve()
-AUTHORING_DIR = Path(
-    os.environ.get("AUTHORING_DIR", str(WORKER_ROOT_DIR / ".agent1-worker" / "authoring"))
-).expanduser().resolve()
-
 @dataclass
 class TeamConfig:
     team_name: str
@@ -92,8 +88,6 @@ def get_team_config(team: str) -> TeamConfig:
 QA_WORKERS = int(os.environ.get("QA_WORKERS", "3"))
 DOWNLOAD_WORKERS = int(os.environ.get("DOWNLOAD_WORKERS", "2"))
 FILE_OPERATION_WORKERS = int(os.environ.get("FILE_OPERATION_WORKERS", "1"))
-AUTHORING_WORKERS = max(1, int(os.environ.get("AUTHORING_WORKERS", "2")))
-AUTHORING_QUEUE_MAX = max(1, int(os.environ.get("AUTHORING_QUEUE_MAX", "8")))
 CAPABILITY_MATCH_WORKERS = max(1, int(os.environ.get("CAPABILITY_MATCH_WORKERS", "1")))
 CAPABILITY_MATCH_QUEUE_MAX = max(1, int(os.environ.get("CAPABILITY_MATCH_QUEUE_MAX", "8")))
 CLARIFICATION_WORKERS = max(1, int(os.environ.get("CLARIFICATION_WORKERS", "1")))
@@ -102,7 +96,6 @@ CAPABILITY_CATALOG_WORKERS = 1
 CAPABILITY_CATALOG_QUEUE_MAX = max(
     1, int(os.environ.get("CAPABILITY_CATALOG_QUEUE_MAX", "2"))
 )
-AUTHORING_LOCK_STRIPES = max(1, int(os.environ.get("AUTHORING_LOCK_STRIPES", "64")))
 FILE_MANAGER_MAX_ENTRIES = int(os.environ.get("FILE_MANAGER_MAX_ENTRIES", "10000"))
 CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "").strip()
 CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "gpt-oss-120b").strip() or "gpt-oss-120b"
@@ -189,10 +182,6 @@ SCENARIO_RETRIEVAL_MAX_TOTAL_CHARS = max(
 )
 CONVERSATION_MAX_TURNS = int(os.environ.get("CONVERSATION_MAX_TURNS", "6"))
 CONVERSATION_MAX_SESSIONS = int(os.environ.get("CONVERSATION_MAX_SESSIONS", "1000"))
-AUTHORING_MAX_TURNS = int(os.environ.get("AUTHORING_MAX_TURNS", "100"))
-AUTHORING_MAX_MESSAGE_BYTES = int(os.environ.get("AUTHORING_MAX_MESSAGE_BYTES", str(200 * 1024)))
-AUTHORING_MAX_ARTICLE_BYTES = int(os.environ.get("AUTHORING_MAX_ARTICLE_BYTES", str(500 * 1024)))
-AUTHORING_MAX_CONTEXT_BYTES = int(os.environ.get("AUTHORING_MAX_CONTEXT_BYTES", str(750 * 1024)))
 PROMPT_GUARD_ENABLED = os.environ.get("PROMPT_GUARD_ENABLED", "true").strip().lower() in {
     "1", "true", "yes", "on"
 }
@@ -244,7 +233,6 @@ def http_base_url() -> str:
 def ensure_directories() -> None:
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
-    AUTHORING_DIR.mkdir(parents=True, exist_ok=True)
     (WORKER_ROOT_DIR / "raw" / "sources").mkdir(parents=True, exist_ok=True)
     (WORKER_ROOT_DIR / "wiki").mkdir(parents=True, exist_ok=True)
     LLM_WIKI_QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)

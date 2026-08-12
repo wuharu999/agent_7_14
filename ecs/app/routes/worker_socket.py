@@ -12,7 +12,6 @@ from ecs.app.database import (
     register_sources,
     update_upload,
     upsert_source,
-    update_authoring_article,
     reconcile_existing_uploads,
     update_capability_catalog_job,
 )
@@ -66,7 +65,6 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 "delete_source_result",
                 "create_robot_folder_result",
                 "delete_robot_folder_result",
-                "authoring_result",
                 "capability_match_result",
                 "grill_scenario_result",
                 "scenario_message_classification_result",
@@ -97,16 +95,6 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                             if isinstance(details, dict) and details
                             else None
                         ),
-                    )
-
-            elif message_type == "authoring_progress":
-                article_id = str(data.get("article_id") or data.get("upload_id") or "")
-                if article_id:
-                    status = str(data.get("source_status") or "waiting")
-                    update_authoring_article(
-                        article_id,
-                        status=status,
-                        error=data.get("error"),
                     )
 
             elif message_type == "contradiction_alert":

@@ -47,13 +47,21 @@ def test_settings_page_shows_an_inline_current_password_error() -> None:
     assert "aria-invalid" in page
 
 
-def test_login_page_uses_youbida_only_for_the_chinese_browser_title() -> None:
+def test_login_page_uses_youbida_for_the_chinese_branding() -> None:
     page = (TEMPLATE_ROOT / "login.html").read_text(encoding="utf-8")
     assert '<title data-i18n="title">优必答登录</title>' in page
     assert 'title: "优必答登录"' in page
-    assert '<h1 data-i18n="header">Uchat 登录</h1>' in page
-    assert 'header: "Uchat 登录"' in page
+    assert '<h1 data-i18n="header">优必答 登录</h1>' in page
+    assert 'header: "优必答 登录"' in page
+    assert 'header: "优必答 Sign In"' in page
     assert 'title: "Uchat Sign In"' in page
+
+
+def test_upload_page_has_no_document_authoring_feature() -> None:
+    page = (TEMPLATE_ROOT / "upload.html").read_text(encoding="utf-8")
+    assert "authoring" not in page.lower()
+    assert "/api/authoring" not in page
+    assert "发送给 Claude" not in page
 
 
 def test_account_actions_are_not_duplicated_in_page_templates() -> None:

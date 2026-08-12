@@ -616,7 +616,7 @@ The Worker must send a status update when any of these change, even if the broad
 
 ### DeepSeek scenario operations
 
-Scenario clarification, feasibility analysis, authoring, capability catalog
+Scenario clarification, feasibility analysis, capability catalog
 organization, prompt classification, and contradiction review use the shared
 tool-free DeepSeek API client. Python owns retrieval, validation, persistence,
 hard gates, and publication.

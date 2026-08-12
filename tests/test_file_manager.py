@@ -82,7 +82,6 @@ def test_worker_startup_does_not_recreate_removed_robot_folders(
     monkeypatch.setattr(worker_config, "WORKER_ROOT_DIR", tmp_path)
     monkeypatch.setattr(worker_config, "STAGING_DIR", tmp_path / ".staging")
     monkeypatch.setattr(worker_config, "TRASH_DIR", tmp_path / ".trash")
-    monkeypatch.setattr(worker_config, "AUTHORING_DIR", tmp_path / ".authoring")
     monkeypatch.setattr(
         worker_config,
         "LLM_WIKI_QUEUE_FILE",
