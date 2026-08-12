@@ -865,6 +865,11 @@ class WorkerManager:
                     snapshot_id=str(data.get("snapshot_id") or ""),
                     scan_mode=str(data.get("scan_mode") or "incremental"),
                     reuse_checkpoints=data.get("reuse_checkpoints") is not False,
+                    known_robot_ids=(
+                        [str(value) for value in data.get("known_robot_ids", [])]
+                        if isinstance(data.get("known_robot_ids"), list)
+                        else None
+                    ),
                     on_progress=progress,
                 )
                 await self.emit(

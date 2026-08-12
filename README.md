@@ -114,11 +114,12 @@ language, and selected robot. The main chat does not run scenario analysis itsel
 When no robot is selected or named, the scenario service selects one from the
 scenario and available robot metadata and shows the selected model to the customer.
 
-The deterministic matcher enforces four explicit capability layers:
-`L0_primitive_driver`, `L1_atomic_skill`, `L2_composite_skill`, and
-`L3_scenario_module`. L0 drivers cannot satisfy L1-L3 scenario requirements. A
-match backed only by L0 primitives is always rewritten to
-`R&D Gap (Composite Skill Missing)`, even if the LLM proposed a passing match.
+The canonical catalog has two capability types: `building_block` for reusable
+interface-level primitives and `operational_behavior` for end-to-end behavior
+with an observable operating envelope. Old L0/L1/L2 records are migrated at the
+read boundary for compatibility; L3 scenario modules are solution artifacts,
+not atomic capabilities. A building block cannot by itself prove an operational
+behavior, even if the LLM proposes a passing match.
 
 The scenario page explicitly distinguishes working, waiting, reconnecting, paused
 (Worker offline), and completed states. It also shows versioned reports, conditions,
@@ -126,17 +127,18 @@ evidence, unresolved boundaries, next actions, and Markdown/PDF exports. Assessm
 stored additively in `agent_jobs.db`; anonymous public assessments have no user
 owner. At `/admin/capabilities`, administrators can review aggregate requested
 gaps, create idempotent evidence-acquisition stubs, inspect added/modified/deleted
-source paths since the last successful organization, and start the atomic
+Wiki paths since the last successful organization, and start the repository-wide atomic
 capability organizer. Organization runs are persisted in SQLite so every admin
-sees the same progress after a refresh. The first run automatically scans all
-generated Wiki evidence; later runs are incremental. **Resume full scan** reuses
-matching content checkpoints, while **Force full re-extraction** ignores them and
-calls the LLM for every batch. The organizer excludes its own generated
+sees the same progress after a refresh. **Scan whole Wiki and replace catalog**
+first backs up the last successful catalog, performs fresh parallel extraction
+over every generated Wiki file, and replaces the live catalog only after complete
+validation. **Scan new Wiki files and append** processes added or modified Wiki
+files since the successful baseline and may only add new capability IDs and
+semantic keys; it never modifies existing entries. The organizer excludes its own generated
 `wiki/capabilities/` tree and does not send raw images directly through the
 text-only DeepSeek evidence pass. Incomplete coverage is reported as partial and
-does not advance the successful baseline. DeepSeek receives only bounded generated Wiki evidence; only
-schema-validated draft entries are atomically published by Python, with a backup.
-Deletion, deprecation, and overwriting reviewed/verified entries are rejected.
+does not publish or advance the successful baseline. DeepSeek receives only bounded generated Wiki evidence; only
+schema-validated draft entries are atomically published by Python.
 The persistent Worker WebSocket sends its shared secret in the
 `X-Worker-Secret` handshake header, not in the URL, so access logs do not record
 the credential. ECS temporarily accepts the older query parameter to support a
@@ -145,16 +147,24 @@ rolling Worker upgrade.
 Capability organization is a deterministic batched map/reduce pipeline. Python
 enumerates and reads every eligible generated Wiki text file, splits oversized
 files into UTF-8-safe evidence units, and creates stable content-hashed batches.
-DeepSeek runs without tools for each batch and receives only the relevant
+Up to four DeepSeek calls run concurrently without tools and receive only the relevant
 allowlisted catalog-policy sections, so it cannot choose or
 silently skip files and applies the same atomicity/evidence rules during extraction
 and reduction. Successful batch results are checkpointed under
 `.agent1-worker/capability-batch-cache/`; interrupted reruns reuse checkpoints.
-A final no-tools reduction merges and deduplicates candidates, after which Python
-constructs the coverage report and runs the existing hard-gate validator before
-atomic publication. Shared progress includes cumulative candidate, blocked, and
+A set of small parallel reduction calls handles at most two candidates each;
+Python then merges semantic duplicates and resolves ID collisions deterministically,
+avoiding one oversized final response. Python constructs the coverage report and
+runs the existing hard-gate validator before atomic publication. Shared progress includes cumulative candidate, blocked, and
 excluded counts; completed results include blocked filenames and grouped exclusion
 reasons.
+
+DeepSeek may propose a capability's robot scope only from the registered robot
+IDs supplied by ECS. Python normalizes known display aliases, rejects cross-robot
+catalog matches, and stores unknown or conflicting scopes as `unassigned` for
+review. Catalog organization never creates robot records; robot management or
+the deterministic source-onboarding reconciliation owns the registry. A later
+scan can assign capabilities only after the new robot appears in that registry.
 
 ## Included
 
@@ -173,7 +183,7 @@ reasons.
 - Safe ZIP extraction.
 - Existing LLM Wiki GUI used for Source Watch, Auto Ingest and wiki writing.
 - Browser-visible ingestion status through LLM Wiki queue/cache monitoring.
-- Scenario feasibility workbench with deterministic L0 hard-gate enforcement.
+- Scenario feasibility workbench with deterministic capability-type and evidence gates.
 - SQLite-backed capability-gap analytics and admin draft-stub generation.
 - Shared capability-organization progress and source-manifest change tracking.
 - Prompt/command-injection hardening for browser QA and
@@ -190,7 +200,7 @@ reasons.
 - `/health` — public service health
 - `/capability-match` — public scenario feasibility workbench
 - `/admin/capabilities` — admin-only atomic capability organizer, shared progress,
-  source changes, R&D gap analytics, and draft stubs
+  repository Wiki changes, R&D gap analytics, and draft stubs
 
 ## Roles
 
@@ -285,11 +295,21 @@ reduction limits:
 CAPABILITY_CATALOG_TIMEOUT=86400
 
 # Worker
+CAPABILITY_CATALOG_WORKERS=2
+CAPABILITY_CATALOG_QUEUE_MAX=8
+CAPABILITY_CATALOG_BATCH_CONCURRENCY=4
 CAPABILITY_CATALOG_BATCH_BYTES=98304
 CAPABILITY_CATALOG_UNIT_BYTES=65536
 CAPABILITY_CATALOG_BATCH_TIMEOUT=1800
 CAPABILITY_CATALOG_REDUCE_TIMEOUT=3600
 ```
+
+The ECS permits one repository catalog transaction at a time. Inside that job,
+Python runs up to four DeepSeek extraction batches concurrently, checkpoints
+each result, and performs the final consolidation deterministically. The second
+Worker consumer keeps the bounded command queue responsive; it does not create
+a second live catalog writer. Raise these bounds only after checking provider
+rate and token limits.
 
 These are enforced minimums during rolling upgrades: 30 minutes for each
 extraction batch, 60 minutes for the final reduction, and 24 hours for the

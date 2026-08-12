@@ -10,9 +10,14 @@ import pytest
 import worker.deepseek_client as deepseek
 
 
-def _response(content: str):
+def _response(content: str, *, finish_reason: str | None = None):
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+                finish_reason=finish_reason,
+            )
+        ]
     )
 
 
@@ -68,6 +73,34 @@ def test_structured_call_disables_thinking_and_repairs_invalid_json(
         for call in fake.chat.completions.calls
     )
     assert all(call["response_format"] == {"type": "json_object"} for call in fake.chat.completions.calls)
+
+
+def test_structured_call_retries_explicit_truncated_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeClient(
+        [
+            _response('{"value":"cut', finish_reason="length"),
+            _response('{"value":"ok"}', finish_reason="stop"),
+        ]
+    )
+    monkeypatch.setattr(deepseek, "DEEPSEEK_STRUCTURED_RETRIES", 1)
+    client = deepseek.DeepSeekClient(api_key="test-key", client=fake)
+    result = asyncio.run(
+        client.complete_json(
+            "policy",
+            "input",
+            schema={
+                "type": "object",
+                "required": ["value"],
+                "properties": {"value": {"const": "ok"}},
+                "additionalProperties": False,
+            },
+            stage="truncated structured operation",
+        )
+    )
+    assert result == {"value": "ok"}
+    assert len(fake.chat.completions.calls) == 2
 
 
 def test_transient_failure_retries_without_logging_secret(

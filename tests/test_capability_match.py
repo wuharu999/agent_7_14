@@ -5,6 +5,7 @@ import json
 import sqlite3
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from starlette.requests import Request
@@ -284,6 +285,40 @@ def test_relevant_evidence_retrieval_prioritizes_operating_envelope(
     assert unrelated == []
 
 
+def test_repository_catalog_loader_never_leaks_capabilities_between_robots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = tmp_path / "wiki" / "capabilities"
+    catalog.mkdir(parents=True)
+    for capability_id, model_id in (
+        ("CAP-WS2-ONLY", "walker_s2"),
+        ("CAP-WC1-ONLY", "walker_c1"),
+        ("CAP-UNASSIGNED", "unassigned"),
+    ):
+        (catalog / f"{capability_id}.json").write_text(
+            json.dumps(
+                {
+                    "capability_id": capability_id,
+                    "capability_type": "building_block",
+                    "scope": {"model_id": model_id},
+                    "verification_profiles": [],
+                    "migration_warnings": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(
+        capability_matcher,
+        "get_team_config",
+        lambda model_id: SimpleNamespace(base_dir=tmp_path),
+    )
+
+    entries = capability_matcher.load_model_capability_catalog("walker_s2")
+
+    assert [entry["capability_id"] for entry in entries] == ["CAP-WS2-ONLY"]
+
+
 def test_worker_analysis_embeds_policies_and_reapplies_hard_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -418,6 +453,25 @@ def test_assessment_migration_is_additive_and_idempotent(tmp_path: Path, monkeyp
         ) VALUES ('ASM-LEGACY', NULL, 'walker_s2', '{}', '{}', '2026-01-01T00:00:00+00:00')
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE capability_catalog_source_state (
+            model_id TEXT PRIMARY KEY,
+            changes_json TEXT NOT NULL DEFAULT '{}',
+            current_source_files INTEGER NOT NULL DEFAULT 0,
+            last_organized_manifest_files INTEGER NOT NULL DEFAULT 0,
+            checked_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO capability_catalog_source_state (
+            model_id, changes_json, current_source_files,
+            last_organized_manifest_files, checked_at
+        ) VALUES ('walker_s2', '{}', 17, 17, '2026-01-01T00:00:00+00:00')
+        """
+    )
     connection.commit()
     connection.close()
 
@@ -434,6 +488,12 @@ def test_assessment_migration_is_additive_and_idempotent(tmp_path: Path, monkeyp
     assert "capability_draft_stubs" in tables
     assert "capability_catalog_jobs" in tables
     assert "capability_catalog_source_state" in tables
+    legacy_source_state = database.get_capability_catalog_source_state("walker_s2")
+    assert legacy_source_state is not None
+    assert legacy_source_state["current_source_files"] == 17
+    assert legacy_source_state["current_wiki_files"] is None
+    assert legacy_source_state["last_organized_wiki_files"] is None
+    assert legacy_source_state["wiki_changes"] is None
     connection = sqlite3.connect(old_path)
     try:
         assessment_columns = {
@@ -638,7 +698,7 @@ def test_admin_gap_analytics_and_stub_generator_require_admin_and_csrf(
 def test_admin_catalog_start_and_source_change_snapshot_are_shared(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model_id = database.get_robot_options()[0]["name"]
+    model_id = capability_match_routes.CAPABILITY_CATALOG_SCOPE
     request, csrf = _admin_request()
     gateway.websocket = object()  # The API only needs the persistent Worker online signal here.
     started: list[tuple[str, str, str, str]] = []
@@ -652,9 +712,21 @@ def test_admin_catalog_start_and_source_change_snapshot_are_shared(
                 "model_id": model_id,
                 "current_source_files": 2,
                 "last_organized_manifest_files": 1,
+                "current_wiki_files": 7,
+                "last_organized_wiki_files": 5,
+                "baseline_exists": True,
+                "last_scan_mode": "full",
+                "catalog_revision": "rev-test",
                 "changes": {
                     "baseline_exists": True,
                     "added": ["upload/new.md"],
+                    "modified": [],
+                    "deleted": [],
+                    "counts": {"added": 1, "modified": 0, "deleted": 0, "total": 1},
+                },
+                "wiki_changes": {
+                    "baseline_exists": True,
+                    "added": ["entities/new.md"],
                     "modified": [],
                     "deleted": [],
                     "counts": {"added": 1, "modified": 0, "deleted": 0, "total": 1},
@@ -671,15 +743,22 @@ def test_admin_catalog_start_and_source_change_snapshot_are_shared(
         ),
     )
 
-    changes_response = asyncio.run(capability_source_changes(request, model_id=model_id))
+    changes_response = asyncio.run(capability_source_changes(request))
     changes = json.loads(changes_response.body)
     assert changes_response.status_code == 200
     assert changes["changes"]["added"] == ["upload/new.md"]
-    assert database.get_capability_catalog_source_state(model_id)["current_source_files"] == 2
+    assert changes["current_wiki_files"] == 7
+    assert changes["wiki_changes"]["added"] == ["entities/new.md"]
+    saved_state = database.get_capability_catalog_source_state(model_id)
+    assert saved_state["current_source_files"] == 2
+    assert saved_state["current_wiki_files"] == 7
+    assert saved_state["last_organized_wiki_files"] == 5
+    assert saved_state["baseline_exists"] is True
+    assert saved_state["catalog_revision"] == "rev-test"
 
     start_response = asyncio.run(
         start_capability_catalog_organization(
-            OrganizeCapabilitiesRequest(model_id=model_id),
+            OrganizeCapabilitiesRequest(scan_mode="incremental"),
             request,
             x_csrf_token=csrf,
         )
@@ -699,10 +778,53 @@ def test_admin_catalog_start_and_source_change_snapshot_are_shared(
     assert database.list_audit_log(limit=1)[0]["action"] == "organize_atomic_capabilities"
 
 
-def test_admin_can_force_full_reextraction_without_checkpoint_resume(
+def test_source_change_refresh_does_not_compete_with_active_catalog_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model_id = database.get_robot_options()[0]["name"]
+    model_id = capability_match_routes.CAPABILITY_CATALOG_SCOPE
+    request, _ = _admin_request()
+    user_id = database.create_user_record(
+        username="catalog-runner",
+        email="catalog-runner@example.com",
+        password_hash="hash",
+        password_salt="salt",
+        role="admin",
+        teams="",
+    )
+    database.upsert_capability_catalog_source_state(
+        model_id=model_id,
+        changes={"added": [], "modified": [], "deleted": []},
+        current_source_files=17,
+        last_organized_manifest_files=17,
+    )
+    database.create_capability_catalog_job(
+        job_id="CAT-ACTIVE",
+        created_by=user_id,
+        model_id=model_id,
+        snapshot_id="SRC-ACTIVE",
+        scan_mode="full",
+    )
+    gateway.websocket = object()
+
+    async def unexpected_command(*args, **kwargs):
+        raise AssertionError("source inspection must not enter the busy catalog queue")
+
+    monkeypatch.setattr(gateway, "command", unexpected_command)
+    response = asyncio.run(capability_source_changes(request))
+    body = json.loads(response.body)
+
+    assert response.status_code == 200
+    assert body["stale"] is True
+    assert body["stale_reason"] == "scan_in_progress"
+    assert body["active_job_id"] == "CAT-ACTIVE"
+    assert body["current_source_files"] == 17
+    assert body["current_wiki_files"] is None
+
+
+def test_admin_full_scan_is_repository_wide_and_disables_checkpoint_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_id = capability_match_routes.CAPABILITY_CATALOG_SCOPE
     request, csrf = _admin_request()
     gateway.websocket = object()
     started: list[tuple[str, str, str, str]] = []
@@ -717,8 +839,7 @@ def test_admin_can_force_full_reextraction_without_checkpoint_resume(
     response = asyncio.run(
         start_capability_catalog_organization(
             OrganizeCapabilitiesRequest(
-                model_id=model_id,
-                scan_mode="full_fresh",
+                scan_mode="full",
             ),
             request,
             x_csrf_token=csrf,
@@ -727,21 +848,21 @@ def test_admin_can_force_full_reextraction_without_checkpoint_resume(
     body = json.loads(response.body)
 
     assert response.status_code == 202
-    assert body["job"]["scan_mode"] == "full_fresh"
+    assert body["job"]["scan_mode"] == "full"
     assert started == [
         (
             body["job"]["job_id"],
             model_id,
             body["job"]["snapshot_id"],
-            "full_fresh",
+            "full",
         )
     ]
 
 
-def test_forced_catalog_job_sends_full_scope_and_disables_checkpoints(
+def test_full_catalog_job_sends_repository_scope_and_disables_checkpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model_id = database.get_robot_options()[0]["name"]
+    model_id = capability_match_routes.CAPABILITY_CATALOG_SCOPE
     user_id = database.create_user_record(
         username="force_catalog_admin",
         email="force_catalog_admin@example.com",
@@ -751,11 +872,11 @@ def test_forced_catalog_job_sends_full_scope_and_disables_checkpoints(
         teams="",
     )
     database.create_capability_catalog_job(
-        job_id="CAT-FORCE-FRESH",
+        job_id="CAT-FULL",
         created_by=user_id,
         model_id=model_id,
-        snapshot_id="SRC-FORCE-FRESH",
-        scan_mode="full_fresh",
+        snapshot_id="WIKISET-FULL",
+        scan_mode="full",
     )
     sent: list[tuple[str, dict]] = []
 
@@ -775,14 +896,20 @@ def test_forced_catalog_job_sends_full_scope_and_disables_checkpoints(
 
     asyncio.run(
         capability_match_routes._run_capability_catalog_job(
-            "CAT-FORCE-FRESH",
+            "CAT-FULL",
             model_id,
-            "SRC-FORCE-FRESH",
-            "full_fresh",
+            "WIKISET-FULL",
+            "full",
         )
     )
 
     assert sent[0][0] == "organize_capability_catalog"
     assert sent[0][1]["scan_mode"] == "full"
     assert sent[0][1]["reuse_checkpoints"] is False
-    assert database.get_capability_catalog_job("CAT-FORCE-FRESH")["status"] == "completed"
+    assert sent[0][1]["model_id"] == "repository"
+    assert set(sent[0][1]["known_robot_ids"]) >= {
+        "tian_gong",
+        "walker_s2",
+        "walker_c1",
+    }
+    assert database.get_capability_catalog_job("CAT-FULL")["status"] == "completed"

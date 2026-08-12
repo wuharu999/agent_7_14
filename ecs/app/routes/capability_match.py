@@ -45,6 +45,7 @@ router = APIRouter()
 log = logging.getLogger("ecs.capability_match")
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "templates"
 _PDF_FONT_LOCK = threading.Lock()
+CAPABILITY_CATALOG_SCOPE = "repository"
 
 
 class AnalyzeScenarioRequest(BaseModel):
@@ -60,8 +61,10 @@ class CreateDraftStubRequest(BaseModel):
 
 
 class OrganizeCapabilitiesRequest(BaseModel):
-    model_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
-    scan_mode: Literal["incremental", "full", "full_fresh"] = "incremental"
+    # Older pages may still send a robot name. It is ignored because catalog
+    # organization is one repository-wide operation.
+    model_id: str | None = Field(default=None, max_length=64)
+    scan_mode: Literal["incremental", "full"] = "incremental"
 
 
 class _AnalysisRateLimiter:
@@ -208,10 +211,6 @@ def _start_scenario_analysis(assessment_id: str, payload: AnalyzeScenarioRequest
     task.add_done_callback(forget)
 
 
-def _model_is_available(model_id: str) -> bool:
-    return model_id in {str(item["name"]) for item in get_robot_options()}
-
-
 def _source_state_from_worker(result: dict[str, Any]) -> dict[str, Any]:
     changes = result.get("source_changes")
     if not isinstance(changes, dict):
@@ -224,16 +223,35 @@ def _source_state_from_worker(result: dict[str, Any]) -> dict[str, Any]:
     manifest_files = result.get("last_organized_manifest_files")
     if manifest_files is None:
         manifest_files = result.get("manifest_file_count", 0)
+    wiki_changes = result.get("wiki_changes")
+    if not isinstance(wiki_changes, dict):
+        wiki_changes = None
+
+    def optional_count(name: str) -> int | None:
+        value = result.get(name)
+        return None if value is None else max(0, int(value))
+
+    baseline_exists = result.get("baseline_exists")
     return {
         "changes": changes,
         "current_source_files": int(current_files or 0),
         "last_organized_manifest_files": int(manifest_files or 0),
+        "wiki_changes": wiki_changes,
+        "current_wiki_files": optional_count("current_wiki_files"),
+        "last_organized_wiki_files": optional_count(
+            "last_organized_wiki_files"
+        ),
+        "baseline_exists": (
+            bool(baseline_exists) if baseline_exists is not None else None
+        ),
+        "last_scan_mode": str(result.get("last_scan_mode") or "") or None,
+        "catalog_revision": str(result.get("catalog_revision") or "") or None,
     }
 
 
-async def _save_source_state(model_id: str, result: dict[str, Any]) -> None:
+async def _save_source_state(model_id: str, result: dict[str, Any]) -> dict[str, Any]:
     state = _source_state_from_worker(result)
-    await asyncio.to_thread(
+    return await asyncio.to_thread(
         upsert_capability_catalog_source_state,
         model_id=model_id,
         **state,
@@ -246,18 +264,24 @@ async def _run_capability_catalog_job(
     snapshot_id: str,
     scan_mode: str,
 ) -> None:
-    force_reextract = scan_mode == "full_fresh"
-    worker_scan_mode = "full" if force_reextract else scan_mode
+    full_replace = scan_mode == "full"
+    worker_scan_mode = "full" if full_replace else "incremental"
     try:
+        robot_options = await asyncio.to_thread(get_robot_options)
+        known_robot_ids = [
+            str(robot.get("name") or "").strip()
+            for robot in robot_options
+            if str(robot.get("name") or "").strip()
+        ]
         await asyncio.to_thread(
             update_capability_catalog_job,
             job_id,
             status="processing",
             stage="dispatching",
             message=(
-                "Sending a forced full re-extraction to the Worker without checkpoints."
-                if force_reextract
-                else "Sending the source snapshot to the Worker with checkpoint resume enabled."
+                "Backing up the successful catalog, then scanning every generated Wiki file."
+                if full_replace
+                else "Scanning Wiki files changed since the successful repository baseline."
             ),
         )
         worker_result = await gateway.command(
@@ -267,7 +291,8 @@ async def _run_capability_catalog_job(
             model_id=model_id,
             snapshot_id=snapshot_id,
             scan_mode=worker_scan_mode,
-            reuse_checkpoints=not force_reextract,
+            reuse_checkpoints=not full_replace,
+            known_robot_ids=known_robot_ids,
         )
         result = worker_result.get("result")
         if worker_result.get("status") != "ok" or not isinstance(result, dict):
@@ -798,7 +823,11 @@ async def capability_gap_analytics(request: Request) -> JSONResponse:
             "status": "ok",
             "gaps": aggregate_capability_gaps(),
             "draft_stubs": list_capability_draft_stubs(),
-            "catalog_jobs": list_capability_catalog_jobs(),
+            "catalog_jobs": [
+                job
+                for job in list_capability_catalog_jobs()
+                if job.get("model_id") == CAPABILITY_CATALOG_SCOPE
+            ],
         }
     )
 
@@ -806,11 +835,24 @@ async def capability_gap_analytics(request: Request) -> JSONResponse:
 @router.get("/api/admin/capabilities/source-changes")
 async def capability_source_changes(
     request: Request,
-    model_id: str = Query(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$"),
+    model_id: str | None = Query(default=None, max_length=64),
 ) -> JSONResponse:
     require_roles(request, {"admin"})
-    if not _model_is_available(model_id):
-        return JSONResponse({"error": "Robot model not found"}, status_code=404)
+    del model_id
+    model_id = CAPABILITY_CATALOG_SCOPE
+    active_job = await asyncio.to_thread(get_active_capability_catalog_job, model_id)
+    if active_job is not None:
+        cached = await asyncio.to_thread(get_capability_catalog_source_state, model_id)
+        return JSONResponse(
+            {
+                "status": "ok",
+                "stale": True,
+                "stale_reason": "scan_in_progress",
+                "model_id": model_id,
+                "active_job_id": active_job["job_id"],
+                **(cached or {}),
+            }
+        )
     if gateway.online:
         try:
             worker_result = await gateway.command(
@@ -821,15 +863,51 @@ async def capability_source_changes(
             result = worker_result.get("result")
             if worker_result.get("status") != "ok" or not isinstance(result, dict):
                 raise RuntimeError(str(worker_result.get("error") or "Worker inspection failed"))
-            await _save_source_state(model_id, result)
-            return JSONResponse({"status": "ok", "stale": False, **result})
-        except (ConnectionError, TimeoutError, asyncio.TimeoutError, RuntimeError, ValueError):
-            log.exception("Could not refresh capability source changes for %s", model_id)
+            saved = await _save_source_state(model_id, result)
+            return JSONResponse(
+                {
+                    "status": "ok",
+                    "stale": False,
+                    **result,
+                    "checked_at": saved["checked_at"],
+                }
+            )
+        except (
+            ConnectionError,
+            TimeoutError,
+            asyncio.TimeoutError,
+            RuntimeError,
+            ValueError,
+        ) as exc:
+            detail = str(exc).lower()
+            stale_reason = (
+                "worker_busy" if "queue is full" in detail else "refresh_failed"
+            )
+            if stale_reason == "worker_busy":
+                log.warning("Capability source refresh busy for %s", model_id)
+            else:
+                log.exception(
+                    "Could not refresh capability source changes for %s", model_id
+                )
+    else:
+        stale_reason = "worker_offline"
     cached = await asyncio.to_thread(get_capability_catalog_source_state, model_id)
     if cached is not None:
-        return JSONResponse({"status": "ok", "stale": True, **cached})
+        return JSONResponse(
+            {
+                "status": "ok",
+                "stale": True,
+                "stale_reason": stale_reason,
+                **cached,
+            }
+        )
+    error_message = {
+        "worker_offline": "Worker is offline and no source-change snapshot is available.",
+        "worker_busy": "Worker is busy and no source-change snapshot is available.",
+        "refresh_failed": "The source inventory could not be refreshed and no snapshot is available.",
+    }.get(stale_reason, "The source inventory is unavailable.")
     return JSONResponse(
-        {"error": "Worker is offline and no source-change snapshot is available."},
+        {"error": error_message, "reason": stale_reason},
         status_code=503,
     )
 
@@ -851,22 +929,22 @@ async def start_capability_catalog_organization(
 ) -> JSONResponse:
     session = require_roles(request, {"admin"})
     verify_csrf(session, x_csrf_token)
-    if not _model_is_available(payload.model_id):
-        return JSONResponse({"error": "Robot model not found"}, status_code=404)
-    active = await asyncio.to_thread(get_active_capability_catalog_job, payload.model_id)
+    model_id = CAPABILITY_CATALOG_SCOPE
+    scan_mode = payload.scan_mode
+    active = await asyncio.to_thread(get_active_capability_catalog_job, model_id)
     if active is not None:
         return JSONResponse({"status": "already_running", "job": active}, status_code=409)
     if not gateway.online:
         return JSONResponse({"error": "Worker is offline"}, status_code=503)
     job_id = f"CAT-{uuid.uuid4().hex[:16].upper()}"
-    snapshot_id = f"SRCSET-{payload.model_id.upper()}-{uuid.uuid4().hex[:12].upper()}"
+    snapshot_id = f"WIKISET-{uuid.uuid4().hex[:12].upper()}"
     job = await asyncio.to_thread(
         create_capability_catalog_job,
         job_id=job_id,
         created_by=int(session["user_id"]),
-        model_id=payload.model_id,
+        model_id=model_id,
         snapshot_id=snapshot_id,
-        scan_mode=payload.scan_mode,
+        scan_mode=scan_mode,
     )
     if job["job_id"] != job_id:
         return JSONResponse({"status": "already_running", "job": job}, status_code=409)
@@ -875,14 +953,14 @@ async def start_capability_catalog_organization(
         user_id=int(session["user_id"]),
         username=str(session.get("username") or ""),
         action="organize_atomic_capabilities",
-        source_path=payload.model_id,
+        source_path=model_id,
         result="queued",
         details=json.dumps(
-            {"job_id": job_id, "snapshot_id": snapshot_id, "scan_mode": payload.scan_mode}
+            {"job_id": job_id, "snapshot_id": snapshot_id, "scan_mode": scan_mode}
         ),
     )
     _start_capability_catalog_job(
-        job_id, payload.model_id, snapshot_id, payload.scan_mode
+        job_id, model_id, snapshot_id, scan_mode
     )
     return JSONResponse({"status": "queued", "job": job}, status_code=202)
 

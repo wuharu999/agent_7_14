@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -118,6 +117,13 @@ def _changeset(action: str = "create") -> dict:
     }
 
 
+def _repository_changeset(action: str = "create") -> dict:
+    changeset = _changeset(action)
+    changeset["model_id"] = "repository"
+    changeset["target"]["section_id"] = "capabilities"
+    return changeset
+
+
 def test_source_manifest_reports_added_modified_and_deleted(tmp_path: Path) -> None:
     source = tmp_path / "sources"
     source.mkdir()
@@ -159,6 +165,63 @@ def test_first_run_is_full_then_normal_runs_are_incremental() -> None:
     baseline = {"wiki_files": {"sources/manual.md": {}}}
     assert capability_catalog._effective_scan_mode("incremental", baseline) == "incremental"
     assert capability_catalog._effective_scan_mode("full", baseline) == "full"
+
+
+def test_robot_scope_is_limited_to_registered_robots_and_normalizes_aliases() -> None:
+    entry = _draft_entry("Walker C1")
+    capability_catalog._enforce_configured_robot_scope(
+        entry,
+        ("tian_gong", "walker_s2", "walker_c1"),
+    )
+    assert entry["scope"]["model_id"] == "walker_c1"
+    assert entry["scope"]["resolution_status"] == "resolved"
+
+    unknown = _draft_entry("walker_s9")
+    capability_catalog._enforce_configured_robot_scope(
+        unknown,
+        ("tian_gong", "walker_s2", "walker_c1"),
+    )
+    assert unknown["scope"]["model_id"] == "unassigned"
+    assert unknown["scope"]["resolution_status"] == "ambiguous"
+    assert "walker_s9" in unknown["scope"]["source_model_names"]
+
+
+def test_incremental_reduction_is_deterministically_append_only() -> None:
+    existing = _draft_entry("walker_s2")
+    duplicate = _draft_entry("walker_s2")
+    new_entry = _draft_entry("walker_s2")
+    new_entry["capability_id"] = "CAP-WALK-TURN"
+    new_entry["semantic_key"] = "walk_turn"
+    reduction = {
+        "reducer_id": "CR-APPEND",
+        "decisions": [
+            {
+                "candidate_ids": ["CB-1"],
+                "action": "update",
+                "target_entry_id": existing["capability_id"],
+                "reason": "Provider proposed an update",
+                "after_entry": duplicate,
+            },
+            {
+                "candidate_ids": ["CB-2"],
+                "action": "create",
+                "target_entry_id": new_entry["capability_id"],
+                "reason": "New evidence-backed capability",
+                "after_entry": new_entry,
+            },
+        ],
+    }
+
+    result = capability_catalog._enforce_incremental_append_only(
+        reduction,
+        [existing],
+    )
+
+    assert result is not None
+    assert result["decisions"][0]["action"] == "skip"
+    assert result["decisions"][0]["after_entry"] is None
+    assert result["decisions"][1]["action"] == "create"
+    assert result["decisions"][1]["after_entry"]["capability_id"] == "CAP-WALK-TURN"
 
 
 def test_capability_organization_enforces_long_running_timeout_floors() -> None:
@@ -598,49 +661,163 @@ def test_python_orders_reduction_decisions_by_candidate_id() -> None:
     ]
 
 
+def test_truncated_reduction_is_split_and_consolidated_by_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    async def fake_reduce(*, reducer_id: str, candidates: list[dict], **kwargs):
+        candidate_ids = [str(candidate["candidate_id"]) for candidate in candidates]
+        calls.append(candidate_ids)
+        if len(candidates) > 1:
+            raise capability_catalog.DeepSeekError(
+                "capability catalog reduction",
+                retryable=True,
+                category="structured_validation",
+            )
+        entry = _draft_entry()
+        suffix = candidate_ids[0][-1]
+        entry["capability_id"] = f"CAP-WALK-TEST-{suffix}"
+        entry["semantic_key"] = f"walker-test-{suffix}"
+        return {
+            "reducer_id": reducer_id,
+            "decisions": [
+                {
+                    "candidate_ids": candidate_ids,
+                    "action": "create",
+                    "target_entry_id": entry["capability_id"],
+                    "reason": "Evidence-backed test capability",
+                    "after_entry": entry,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(capability_catalog, "_reduce_candidate_chunk", fake_reduce)
+    reduction = asyncio.run(
+        capability_catalog._reduce_candidates(
+            model="repository",
+            reducer_id="CR-TRUNCATED",
+            candidates=[
+                {"candidate_id": "CB-ONE-C0001"},
+                {"candidate_id": "CB-TWO-C0002"},
+            ],
+            existing_entries=[],
+            reuse_checkpoints=False,
+        )
+    )
+
+    assert calls[0] == ["CB-ONE-C0001", "CB-TWO-C0002"]
+    assert sorted(calls[1:]) == [["CB-ONE-C0001"], ["CB-TWO-C0002"]]
+    assert len(reduction["decisions"]) == 2
+
+
+def test_truncated_extraction_is_split_and_merged_by_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    units = [
+        capability_batch.EvidenceUnit(
+            unit_id=f"wiki/test-{index}.md",
+            source_id=f"wiki/test-{index}.md",
+            part_index=1,
+            part_count=1,
+            content=f"content {index}",
+            content_sha256=str(index) * 64,
+            size_bytes=16,
+        )
+        for index in (1, 2)
+    ]
+    calls: list[list[str]] = []
+
+    async def fake_extract(*, identifier: str, units: list, **kwargs):
+        calls.append([unit.unit_id for unit in units])
+        if len(units) > 1:
+            raise capability_catalog.DeepSeekError(
+                "capability catalog extraction",
+                retryable=True,
+                category="truncated_output",
+            )
+        unit = units[0]
+        return {
+            "batch_id": identifier,
+            "sources": [
+                {
+                    "unit_id": unit.unit_id,
+                    "source_id": unit.source_id,
+                    "status": "processed",
+                    "reason": "Technical evidence processed",
+                    "extracted_claims": 1,
+                }
+            ],
+            "candidates": [
+                {
+                    "candidate_id": f"{identifier}-C0001",
+                    "name": f"Capability {unit.unit_id}",
+                }
+            ],
+            "non_capability_candidates": 0,
+        }
+
+    monkeypatch.setattr(capability_catalog, "_extract_batch", fake_extract)
+    result = asyncio.run(
+        capability_catalog._extract_batch_resilient(
+            model="repository",
+            identifier="CB-ROOT",
+            units=units,
+        )
+    )
+
+    assert calls[0] == ["wiki/test-1.md", "wiki/test-2.md"]
+    assert sorted(calls[1:]) == [["wiki/test-1.md"], ["wiki/test-2.md"]]
+    assert [candidate["candidate_id"] for candidate in result["candidates"]] == [
+        "CB-ROOT-C0001",
+        "CB-ROOT-C0002",
+    ]
+
+
 def test_full_organization_batches_every_file_without_agent_tools(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    raw_sources = tmp_path / "raw" / "sources" / "fangan"
     wiki = tmp_path / "wiki"
-    raw_sources.mkdir(parents=True)
     wiki.mkdir()
-    (raw_sources / "source.txt").write_text("source", encoding="utf-8")
     (wiki / "a.md").write_text("A" * 180, encoding="utf-8")
     (wiki / "b.md").write_text("B" * 180, encoding="utf-8")
-    config = SimpleNamespace(
-        base_dir=tmp_path,
-        raw_sources_dir=raw_sources,
-        wiki_dir=wiki,
-    )
     calls: list[dict] = []
     progress: list[tuple[str, str]] = []
+    active_calls = 0
+    max_active_calls = 0
 
     async def fake_run(prompt: str, **kwargs):
+        nonlocal active_calls, max_active_calls
+        active_calls += 1
+        max_active_calls = max(max_active_calls, active_calls)
         calls.append(kwargs)
-        identifier = re.search(r"Batch ID: (CB-[A-Z0-9]+)", prompt).group(1)
-        encoded = prompt.split("<untrusted_wiki_evidence>", 1)[1].split(
-            "</untrusted_wiki_evidence>", 1
-        )[0]
-        units = json.loads(encoded)
-        return json.dumps(
-            {
-                "batch_id": identifier,
-                "sources": [
-                    {
-                        "unit_id": unit["unit_id"],
-                        "source_id": unit["source_id"],
-                        "status": "processed",
-                        "reason": "Content was examined and has no atomic capability",
-                        "extracted_claims": 0,
-                    }
-                    for unit in units
-                ],
-                "candidates": [],
-                "non_capability_candidates": 0,
-            }
-        )
+        try:
+            await asyncio.sleep(0.01)
+            identifier = re.search(r"Batch ID: (CB-[A-Z0-9]+)", prompt).group(1)
+            encoded = prompt.split("<untrusted_wiki_evidence>", 1)[1].split(
+                "</untrusted_wiki_evidence>", 1
+            )[0]
+            units = json.loads(encoded)
+            return json.dumps(
+                {
+                    "batch_id": identifier,
+                    "sources": [
+                        {
+                            "unit_id": unit["unit_id"],
+                            "source_id": unit["source_id"],
+                            "status": "processed",
+                            "reason": "Content was examined and has no atomic capability",
+                            "extracted_claims": 0,
+                        }
+                        for unit in units
+                    ],
+                    "candidates": [],
+                    "non_capability_candidates": 0,
+                }
+            )
+        finally:
+            active_calls -= 1
 
     async def capture_progress(
         stage: str,
@@ -649,7 +826,12 @@ def test_full_organization_batches_every_file_without_agent_tools(
     ) -> None:
         progress.append((stage, message))
 
-    monkeypatch.setattr(capability_catalog, "get_team_config", lambda _model: config)
+    monkeypatch.setattr(capability_catalog, "WORKER_ROOT_DIR", tmp_path)
+    monkeypatch.setattr(
+        capability_catalog,
+        "_collect_source_manifest",
+        lambda *_args, **_kwargs: pytest.fail("catalog scan must not read raw sources"),
+    )
     class FakeClient:
         async def complete_json(self, system: str, prompt: str, **kwargs):
             output = await fake_run(
@@ -674,7 +856,7 @@ def test_full_organization_batches_every_file_without_agent_tools(
     result = asyncio.run(
         capability_catalog.organize_capability_catalog(
             job_id="CAT-BATCHED",
-            model_id="fangan",
+            model_id="repository",
             snapshot_id="SRC-BATCHED",
             scan_mode="full",
             reuse_checkpoints=False,
@@ -691,6 +873,7 @@ def test_full_organization_batches_every_file_without_agent_tools(
         "excluded_reasons": [],
     }
     assert len(calls) == 2
+    assert max_active_calls == 2
     assert all(call["tools"] == () for call in calls)
     assert all(
         "Extract triggerable actions and observable effects" in call["system_prompt"]
@@ -702,6 +885,13 @@ def test_full_organization_batches_every_file_without_agent_tools(
 def test_generated_changeset_passes_the_bundled_hard_gate(tmp_path: Path) -> None:
     path = tmp_path / "changeset.json"
     path.write_text(json.dumps(_changeset()), encoding="utf-8")
+
+    asyncio.run(capability_catalog._validate_changeset(path))
+
+
+def test_repository_changeset_keeps_each_capability_model_scope(tmp_path: Path) -> None:
+    path = tmp_path / "repository-changeset.json"
+    path.write_text(json.dumps(_repository_changeset()), encoding="utf-8")
 
     asyncio.run(capability_catalog._validate_changeset(path))
 
@@ -735,11 +925,13 @@ def test_changeset_parser_accepts_fenced_fallback_and_reports_retry_exhaustion()
         )
 
 
-def test_publish_is_atomic_saves_manifest_and_protects_verified_entries(tmp_path: Path) -> None:
+def test_full_publish_backs_up_then_atomically_replaces_the_repository_catalog(
+    tmp_path: Path,
+) -> None:
     manifest = {"upload/manual.md": {"size_bytes": 12, "mtime_ns": 34}}
     result = capability_catalog._publish_drafts(
-        _changeset(),
-        model="walker_s2",
+        _repository_changeset(),
+        model="repository",
         job_id="CAT-FIRST",
         worker_root=tmp_path,
         snapshot_id="SRC-1",
@@ -748,7 +940,7 @@ def test_publish_is_atomic_saves_manifest_and_protects_verified_entries(tmp_path
         wiki_manifest={"sources/manual.md": {"size_bytes": 6, "mtime_ns": 1}},
         scan_mode="full",
     )
-    target = tmp_path / "wiki" / "capabilities" / "walker_s2"
+    target = tmp_path / "wiki" / "capabilities"
     assert result["entries_written"] == ["CAP-WALK-FORWARD"]
     assert json.loads((target / "_source-manifest.json").read_text())["files"] == manifest
     organization_manifest = json.loads(
@@ -764,28 +956,86 @@ def test_publish_is_atomic_saves_manifest_and_protects_verified_entries(tmp_path
     verified = json.loads((target / "CAP-WALK-FORWARD.json").read_text())
     verified["lifecycle"]["status"] = "verified"
     (target / "CAP-WALK-FORWARD.json").write_text(json.dumps(verified), encoding="utf-8")
-    with pytest.raises(ValueError, match="cannot overwrite non-draft"):
-        capability_catalog._publish_drafts(
-            _changeset("update"),
-            model="walker_s2",
-            job_id="CAT-SECOND",
-            worker_root=tmp_path,
-            snapshot_id="SRC-2",
-            source_manifest=manifest,
-            source_changes={"counts": {"total": 0}},
-        )
+    obsolete = json.loads(json.dumps(verified))
+    obsolete["capability_id"] = "CAP-OBSOLETE"
+    obsolete["semantic_key"] = "obsolete-capability"
+    (target / "CAP-OBSOLETE.json").write_text(json.dumps(obsolete), encoding="utf-8")
+    pre_scan_backup = capability_catalog._backup_catalog_before_scan(
+        target,
+        worker_root=tmp_path,
+        job_id="CAT-SECOND",
+    )
+    assert pre_scan_backup is not None
+    result = capability_catalog._publish_drafts(
+        _repository_changeset("update"),
+        model="repository",
+        job_id="CAT-SECOND",
+        worker_root=tmp_path,
+        snapshot_id="SRC-2",
+        source_manifest=manifest,
+        source_changes={"counts": {"total": 0}},
+        wiki_manifest={"sources/manual.md": {"size_bytes": 6, "mtime_ns": 1}},
+        scan_mode="full",
+        pre_scan_backup_path=pre_scan_backup,
+    )
+    assert json.loads((target / "CAP-WALK-FORWARD.json").read_text())["lifecycle"]["status"] == "draft"
+    assert not (target / "CAP-OBSOLETE.json").exists()
+    assert (pre_scan_backup / "CAP-WALK-FORWARD.json").is_file()
+    assert result["pre_scan_backup_path"].endswith("-pre-scan")
+
+
+def test_incremental_publish_only_appends_new_capabilities(tmp_path: Path) -> None:
+    capability_catalog._publish_drafts(
+        _repository_changeset(),
+        model="repository",
+        job_id="CAT-BASELINE",
+        worker_root=tmp_path,
+        snapshot_id="SRC-BASELINE",
+        source_manifest={},
+        source_changes={"counts": {"total": 0}},
+        wiki_manifest={"manual.md": {"size_bytes": 1, "mtime_ns": 1}},
+        scan_mode="full",
+    )
+    target = tmp_path / "wiki" / "capabilities"
+    original = json.loads((target / "CAP-WALK-FORWARD.json").read_text())
+    original["lifecycle"]["status"] = "verified"
+    (target / "CAP-WALK-FORWARD.json").write_text(json.dumps(original), encoding="utf-8")
+
+    appended = _repository_changeset()
+    new_entry = appended["operations"][0]["after_entry"]
+    new_entry["capability_id"] = "CAP-WALK-TURN"
+    new_entry["semantic_key"] = "walker-turn"
+    new_entry["name"] = "Turn robot base"
+    appended["operations"][0]["target_entry_id"] = "CAP-WALK-TURN"
+    result = capability_catalog._publish_drafts(
+        appended,
+        model="repository",
+        job_id="CAT-APPEND",
+        worker_root=tmp_path,
+        snapshot_id="SRC-APPEND",
+        source_manifest={},
+        source_changes={"counts": {"total": 0}},
+        wiki_manifest={
+            "manual.md": {"size_bytes": 1, "mtime_ns": 1},
+            "new.md": {"size_bytes": 2, "mtime_ns": 2},
+        },
+        scan_mode="incremental",
+    )
+
+    assert result["entries_written"] == ["CAP-WALK-TURN"]
+    assert (target / "CAP-WALK-TURN.json").is_file()
     assert json.loads((target / "CAP-WALK-FORWARD.json").read_text())["lifecycle"]["status"] == "verified"
 
 
-def test_incomplete_scan_publishes_drafts_without_advancing_baseline(tmp_path: Path) -> None:
-    changeset = _changeset()
+def test_incomplete_scan_preserves_live_catalog_without_publishing(tmp_path: Path) -> None:
+    changeset = _repository_changeset()
     changeset["coverage_report"]["blocked_sources"] = 1
     changeset["coverage_report"]["processed_sources"] = 0
     changeset["coverage_report"]["is_complete"] = False
 
     result = capability_catalog._publish_drafts(
         changeset,
-        model="walker_s2",
+        model="repository",
         job_id="CAT-PARTIAL",
         worker_root=tmp_path,
         snapshot_id="SRC-PARTIAL",
@@ -794,13 +1044,13 @@ def test_incomplete_scan_publishes_drafts_without_advancing_baseline(tmp_path: P
         wiki_manifest={"sources/image.md": {"size_bytes": 20, "mtime_ns": 2}},
         scan_mode="full",
     )
-    target = tmp_path / "wiki" / "capabilities" / "walker_s2"
+    target = tmp_path / "wiki" / "capabilities"
 
     assert result["completion_status"] == "partial"
     assert result["baseline_advanced"] is False
     assert not (target / "_source-manifest.json").exists()
     assert not (target / "_organization-manifest.json").exists()
-    assert (target / "CAP-WALK-FORWARD.json").is_file()
+    assert not (target / "CAP-WALK-FORWARD.json").is_file()
 
 
 def test_publish_rejects_browser_triggered_deletion(tmp_path: Path) -> None:
@@ -855,6 +1105,12 @@ def test_catalog_jobs_and_source_changes_are_persisted_globally(
         changes={"added": ["upload/manual.md"], "modified": [], "deleted": []},
         current_source_files=1,
         last_organized_manifest_files=0,
+        wiki_changes={"added": ["entities/manual.md"], "modified": [], "deleted": []},
+        current_wiki_files=9,
+        last_organized_wiki_files=8,
+        baseline_exists=True,
+        last_scan_mode="full",
+        catalog_revision="revision-9",
     )
 
     database.initialize_database()
@@ -872,6 +1128,12 @@ def test_catalog_jobs_and_source_changes_are_persisted_globally(
     state = database.get_capability_catalog_source_state("walker_s2")
     assert state is not None
     assert state["changes"]["added"] == ["upload/manual.md"]
+    assert state["wiki_changes"]["added"] == ["entities/manual.md"]
+    assert state["current_wiki_files"] == 9
+    assert state["last_organized_wiki_files"] == 8
+    assert state["baseline_exists"] is True
+    assert state["last_scan_mode"] == "full"
+    assert state["catalog_revision"] == "revision-9"
 
 
 def test_admin_page_has_shared_progress_change_window_and_chinese_translation() -> None:
@@ -883,13 +1145,20 @@ def test_admin_page_has_shared_progress_change_window_and_chinese_translation() 
         / "admin_capabilities.html"
     ).read_text(encoding="utf-8")
     assert "Shared organization progress" in page
-    assert "Raw file changes since the last successful organization" in page
-    assert "自上次成功整理以来的原始文件变更" in page
-    assert "整理新增变更" in page
-    assert "Resume full scan" in page
-    assert "恢复全量扫描" in page
-    assert "Force full re-extraction" in page
-    assert "强制全量重新提取" in page
+    assert "Wiki changes since the last successful scan" in page
+    assert "自上次成功扫描以来的 Wiki 变更" in page
+    assert 'id="full-rescan"' in page
+    assert 'id="incremental-scan"' in page
+    assert 'id="refresh-changes"' in page
+    assert 'id="force-reextract"' not in page
+    assert 'id="organize"' not in page
+    assert "displayInventoryValue(data.current_wiki_files)" in page
+    assert "staleBusy" in page
+    assert "if(current)await loadChanges()" not in page
+    assert "Scan whole Wiki and replace catalog" in page
+    assert "扫描整个 Wiki 并替换能力目录" in page
+    assert "Scan new Wiki files and append" in page
+    assert "扫描新增 Wiki 文件并追加" in page
     assert "progress_snapshot" in page
     assert "Blocked evidence files" in page
     assert "被阻塞的证据文件" in page
@@ -912,8 +1181,8 @@ def test_save_and_delete_capability_entry(tmp_path: Path) -> None:
     assert saved["status"] == "ok"
     assert saved["capability_id"] == "CAP-TG-UNITTEST-001"
 
-    json_file = tmp_path / "wiki" / "capabilities" / "tian_gong" / "CAP-TG-UNITTEST-001.json"
-    md_file = tmp_path / "wiki" / "capabilities" / "tian_gong" / "CAP-TG-UNITTEST-001.md"
+    json_file = tmp_path / "wiki" / "capabilities" / "CAP-TG-UNITTEST-001.json"
+    md_file = tmp_path / "wiki" / "capabilities" / "CAP-TG-UNITTEST-001.md"
     assert json_file.exists()
     assert md_file.exists()
 
@@ -921,3 +1190,23 @@ def test_save_and_delete_capability_entry(tmp_path: Path) -> None:
     assert deleted["status"] == "ok"
     assert not json_file.exists()
     assert not md_file.exists()
+
+
+def test_save_capability_uses_configured_worker_root_without_legacy_base_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(capability_catalog, "WORKER_ROOT_DIR", tmp_path)
+    entry = _draft_entry("walker_c1")
+    entry["capability_id"] = "CAP-WC1-SAVE-TEST"
+    entry["semantic_key"] = "walker-c1-save-test"
+
+    result = capability_catalog.save_capability_entry(
+        model_id="walker_c1",
+        entry=entry,
+    )
+
+    assert result["status"] == "ok"
+    assert (
+        tmp_path / "wiki" / "capabilities" / "CAP-WC1-SAVE-TEST.json"
+    ).is_file()

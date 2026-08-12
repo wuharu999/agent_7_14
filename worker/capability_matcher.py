@@ -375,6 +375,10 @@ def load_model_capability_catalog(model_id: str) -> list[dict[str, Any]]:
                     data = json.loads(path.read_text(encoding="utf-8"))
                     if isinstance(data, dict):
                         cap_id = str(data.get("capability_id") or path.stem)
+                        scope = data.get("scope") if isinstance(data.get("scope"), dict) else {}
+                        scoped_model = str(scope.get("model_id") or "").strip()
+                        if d == base_target and scoped_model != model_id:
+                            continue
                         if cap_id not in seen_ids:
                             seen_ids.add(cap_id)
                             migrated = migrate_legacy_capability(data)

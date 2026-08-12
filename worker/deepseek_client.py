@@ -127,7 +127,14 @@ class DeepSeekClient:
                     self._client.chat.completions.create(**request),
                     timeout=remaining,
                 )
-                content = response.choices[0].message.content if response.choices else None
+                choice = response.choices[0] if response.choices else None
+                if choice is not None and str(getattr(choice, "finish_reason", "")) == "length":
+                    raise DeepSeekError(
+                        stage,
+                        retryable=True,
+                        category="truncated_output",
+                    )
+                content = choice.message.content if choice is not None else None
                 if not content or not str(content).strip():
                     raise DeepSeekError(stage, retryable=True, category="empty_response")
                 return DeepSeekResult(str(content), self.model)
@@ -218,7 +225,7 @@ class DeepSeekClient:
                 raise
             except DeepSeekError as exc:
                 last_error = exc
-                if exc.category not in {"empty_response"} or structured_attempt >= DEEPSEEK_STRUCTURED_RETRIES:
+                if exc.category not in {"empty_response", "truncated_output"} or structured_attempt >= DEEPSEEK_STRUCTURED_RETRIES:
                     raise
             except Exception as exc:
                 last_error = exc

@@ -189,7 +189,10 @@ def validate_changeset(data: Any) -> list[str]:
             else:
                 for entry_error in validate_entry(after_entry):
                     errors.append(f"{path}.after_entry{entry_error[1:]}")
-                if after_entry.get("scope", {}).get("model_id") != data["model_id"]:
+                if (
+                    data["model_id"] != "repository"
+                    and after_entry.get("scope", {}).get("model_id") != data["model_id"]
+                ):
                     errors.append(f"{path}.after_entry.scope.model_id: changeset model mismatch")
                 if target_entry_id and after_entry.get("capability_id") != target_entry_id:
                     errors.append(f"{path}.after_entry.capability_id: target entry id mismatch")

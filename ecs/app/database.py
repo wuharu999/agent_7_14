@@ -171,6 +171,12 @@ def initialize_database() -> None:
                 changes_json TEXT NOT NULL DEFAULT '{}',
                 current_source_files INTEGER NOT NULL DEFAULT 0,
                 last_organized_manifest_files INTEGER NOT NULL DEFAULT 0,
+                wiki_changes_json TEXT,
+                current_wiki_files INTEGER,
+                last_organized_wiki_files INTEGER,
+                baseline_exists INTEGER,
+                last_scan_mode TEXT,
+                catalog_revision TEXT,
                 checked_at TEXT NOT NULL
             );
 
@@ -353,6 +359,22 @@ def initialize_database() -> None:
                 "ALTER TABLE capability_catalog_jobs ADD COLUMN scan_mode "
                 "TEXT NOT NULL DEFAULT 'incremental'"
             )
+        capability_source_columns = _columns(
+            connection, "capability_catalog_source_state"
+        )
+        for column, definition in (
+            ("wiki_changes_json", "TEXT"),
+            ("current_wiki_files", "INTEGER"),
+            ("last_organized_wiki_files", "INTEGER"),
+            ("baseline_exists", "INTEGER"),
+            ("last_scan_mode", "TEXT"),
+            ("catalog_revision", "TEXT"),
+        ):
+            if column not in capability_source_columns:
+                connection.execute(
+                    f"ALTER TABLE capability_catalog_source_state "
+                    f"ADD COLUMN {column} {definition}"
+                )
         if "pending_reanalysis_state_version" not in _columns(
             connection, "scenario_sessions"
         ):
@@ -2094,6 +2116,12 @@ def upsert_capability_catalog_source_state(
     changes: dict[str, Any],
     current_source_files: int,
     last_organized_manifest_files: int,
+    wiki_changes: dict[str, Any] | None = None,
+    current_wiki_files: int | None = None,
+    last_organized_wiki_files: int | None = None,
+    baseline_exists: bool | None = None,
+    last_scan_mode: str | None = None,
+    catalog_revision: str | None = None,
 ) -> dict[str, Any]:
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
@@ -2101,12 +2129,20 @@ def upsert_capability_catalog_source_state(
             """
             INSERT INTO capability_catalog_source_state (
                 model_id, changes_json, current_source_files,
-                last_organized_manifest_files, checked_at
-            ) VALUES (?, ?, ?, ?, ?)
+                last_organized_manifest_files, wiki_changes_json,
+                current_wiki_files, last_organized_wiki_files,
+                baseline_exists, last_scan_mode, catalog_revision, checked_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(model_id) DO UPDATE SET
                 changes_json = excluded.changes_json,
                 current_source_files = excluded.current_source_files,
                 last_organized_manifest_files = excluded.last_organized_manifest_files,
+                wiki_changes_json = excluded.wiki_changes_json,
+                current_wiki_files = excluded.current_wiki_files,
+                last_organized_wiki_files = excluded.last_organized_wiki_files,
+                baseline_exists = excluded.baseline_exists,
+                last_scan_mode = excluded.last_scan_mode,
+                catalog_revision = excluded.catalog_revision,
                 checked_at = excluded.checked_at
             """,
             (
@@ -2114,6 +2150,18 @@ def upsert_capability_catalog_source_state(
                 json.dumps(changes, ensure_ascii=False),
                 max(0, int(current_source_files)),
                 max(0, int(last_organized_manifest_files)),
+                json.dumps(wiki_changes, ensure_ascii=False)
+                if wiki_changes is not None
+                else None,
+                max(0, int(current_wiki_files))
+                if current_wiki_files is not None
+                else None,
+                max(0, int(last_organized_wiki_files))
+                if last_organized_wiki_files is not None
+                else None,
+                int(baseline_exists) if baseline_exists is not None else None,
+                last_scan_mode,
+                catalog_revision,
                 now,
             ),
         )
@@ -2132,6 +2180,16 @@ def _catalog_source_state_from_row(row: sqlite3.Row) -> dict[str, Any]:
         item["changes"] = json.loads(str(item.pop("changes_json")))
     except (TypeError, ValueError, json.JSONDecodeError):
         item["changes"] = {}
+    raw_wiki_changes = item.pop("wiki_changes_json", None)
+    if raw_wiki_changes is None:
+        item["wiki_changes"] = None
+    else:
+        try:
+            item["wiki_changes"] = json.loads(str(raw_wiki_changes))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            item["wiki_changes"] = None
+    if item.get("baseline_exists") is not None:
+        item["baseline_exists"] = bool(item["baseline_exists"])
     return item
 
 

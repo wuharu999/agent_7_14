@@ -16,6 +16,9 @@ CAPABILITY_MATCH_WORKERS=1
 CAPABILITY_MATCH_QUEUE_MAX=8
 CLARIFICATION_WORKERS=1
 CLARIFICATION_QUEUE_MAX=16
+CAPABILITY_CATALOG_WORKERS=2
+CAPABILITY_CATALOG_QUEUE_MAX=8
+CAPABILITY_CATALOG_BATCH_CONCURRENCY=4
 PROMPT_GUARD_ENABLED=true
 PROMPT_GUARD_TIMEOUT=20
 PROMPT_GUARD_CONCURRENCY=2
@@ -38,6 +41,16 @@ CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 ```
+
+Capability organization is repository-wide and reads only generated `wiki/`
+text evidence. One catalog transaction runs at a time. A full scan creates a
+pre-scan backup and publishes a complete replacement only after validation; an
+incremental scan appends new capabilities without changing existing entries.
+Four bounded asynchronous extraction calls are used because provider requests
+are network-bound; separate operating-system processes are unnecessary.
+The ECS command supplies the registered robot IDs. DeepSeek can propose one of
+those IDs, but Python normalizes aliases and rewrites unknown robots to
+`unassigned`; capability scans never create robot records.
 
 The Worker reads `BASE_DIR/wiki/index.md`, supplements a stale index with at
 most 20 filename/path matches for the selected robot/topic (including Walker C1),
