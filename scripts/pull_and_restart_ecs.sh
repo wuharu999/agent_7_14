@@ -30,11 +30,13 @@ with sqlite3.connect(f"file:{source_path}?mode=ro", uri=True) as source:
     with sqlite3.connect(backup_path) as destination:
         source.backup(destination)
 PY
-tar \
-  --exclude='ecs-data/agent_jobs.db' \
-  --exclude='ecs-data/agent_jobs.db-shm' \
-  --exclude='ecs-data/agent_jobs.db-wal' \
-  -czf "$backup_dir/ecs-data-files.tgz" ecs-data
+find ecs-data -type f \
+  ! -path 'ecs-data/agent_jobs.db' \
+  ! -path 'ecs-data/agent_jobs.db-shm' \
+  ! -path 'ecs-data/agent_jobs.db-wal' \
+  -print0 \
+  | tar --null --no-recursion --files-from=- \
+      -czf "$backup_dir/ecs-data-files.tgz"
 git rev-parse HEAD > "$backup_dir/previous-commit.txt"
 
 git fetch origin "$DEPLOY_BRANCH"
