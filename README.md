@@ -306,10 +306,19 @@ CAPABILITY_CATALOG_REDUCE_TIMEOUT=3600
 
 The ECS permits one repository catalog transaction at a time. Inside that job,
 Python runs up to four DeepSeek extraction batches concurrently, checkpoints
-each result, and performs the final consolidation deterministically. The second
-Worker consumer keeps the bounded command queue responsive; it does not create
-a second live catalog writer. Raise these bounds only after checking provider
-rate and token limits.
+each result, and reduces candidates in groups of up to 16 with the same bounded
+concurrency. Schema-valid but semantically incomplete reduction output is split
+into smaller groups automatically; an irreparable single candidate is retried
+once and recorded as blocked for manual review. Adaptive recovery is capped at
+eight provider calls per original group, so persistent invalid output cannot
+expand into an unbounded retry tree. Any candidate still blocked after recovery
+makes the scan partial, preserving the last successful catalog and baseline
+instead of publishing incomplete replacement data. If a non-recoverable request
+fails, outstanding sibling requests are cancelled before the job reports its
+failure. Final consolidation and publication remain deterministic Python operations.
+The second Worker consumer keeps the bounded command queue responsive; it does
+not create a second live catalog writer. Raise these bounds only after checking
+provider rate and token limits.
 
 These are enforced minimums during rolling upgrades: 30 minutes for each
 extraction batch, 60 minutes for the final reduction, and 24 hours for the

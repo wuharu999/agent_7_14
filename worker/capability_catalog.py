@@ -21,6 +21,7 @@ from worker.capability_batch import (
     BATCH_EXTRACTION_SCHEMA,
     REDUCTION_SCHEMA,
     EvidenceUnit,
+    ReductionOutputError,
     aggregate_source_reports,
     batch_id,
     batch_prompt_payload,
@@ -63,6 +64,21 @@ _ROBOT_SCOPE_ALIASES: dict[str, tuple[str, ...]] = {
     "walker_s2": ("Walker S2", "WalkerS2", "walker-s2", "行者 S2"),
     "tian_gong": ("Tian Gong", "Tiangong", "天工行者"),
 }
+
+
+async def _gather_cancel_on_error(*coroutines: Awaitable[Any]) -> list[Any]:
+    """Gather coroutines and stop sibling provider calls after the first failure."""
+    tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+    if not tasks:
+        return []
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 def _catalog_target(worker_root: Path, scope: str = CATALOG_SCOPE) -> Path:
@@ -792,7 +808,7 @@ async def _extract_batch_resilient(
             identifier,
             len(units),
         )
-        left, right = await asyncio.gather(
+        left, right = await _gather_cancel_on_error(
             _extract_batch_resilient(
                 model=model,
                 identifier=f"{identifier}-a",
@@ -835,7 +851,9 @@ def _existing_catalog_payload(target: Path) -> list[dict[str, Any]]:
     return entries
 
 
-REDUCE_CHUNK_SIZE = 2
+REDUCE_CHUNK_SIZE = 16
+REDUCE_SINGLE_CANDIDATE_ATTEMPTS = 2
+REDUCE_CALLS_PER_GROUP_BUDGET = 8
 
 
 def _compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -926,61 +944,57 @@ async def _reduce_candidates(
 ) -> dict[str, Any]:
     if not candidates:
         return {"reducer_id": reducer_id, "decisions": []}
-    if len(candidates) == 1:
-        if on_progress:
-            await on_progress(
-                "batch_reducing",
-                f"Merging and validating {len(candidates)} extracted candidates...",
-                progress_snapshot,
-            )
-        candidate_ids = {str(candidate["candidate_id"]) for candidate in candidates}
-        chunk_reduction = None
-        if reuse_checkpoints and base_dir is not None:
-            chunk_reduction = await asyncio.to_thread(
-                load_reduction_checkpoint,
-                base_dir,
-                model,
-                reducer_id,
-                candidate_ids,
-            )
-        if chunk_reduction is None:
-            chunk_reduction = await _reduce_candidate_chunk(
-                model=model,
-                reducer_id=reducer_id,
-                candidates=candidates,
-                existing_entries=existing_entries,
-                configured_robot_ids=configured_robot_ids,
-            )
-            if base_dir is not None:
-                await asyncio.to_thread(
-                    save_checkpoint,
-                    base_dir,
-                    model,
-                    reducer_id,
-                    chunk_reduction,
-                )
-        decisions = chunk_reduction.get("decisions", [])
-        return {
-            "reducer_id": reducer_id,
-            "decisions": _consolidate_reduction_decisions(
-                decisions if isinstance(decisions, list) else []
-            ),
-        }
-
     chunks = [
         candidates[i : i + REDUCE_CHUNK_SIZE]
         for i in range(0, len(candidates), REDUCE_CHUNK_SIZE)
     ]
     decisions_by_chunk: list[list[dict[str, Any]]] = [[] for _ in chunks]
-    sem = asyncio.Semaphore(3)
+    sem = asyncio.Semaphore(CAPABILITY_CATALOG_BATCH_CONCURRENCY)
     completed_chunks = [0]
     completed_candidates = [0]
+    adaptive_splits = [0]
+    blocked_candidates = [0]
+    provider_calls = [0]
+    provider_call_budget = max(
+        REDUCE_CALLS_PER_GROUP_BUDGET,
+        len(chunks) * REDUCE_CALLS_PER_GROUP_BUDGET,
+    )
+    provider_call_lock = asyncio.Lock()
+
+    def _retryable_provider_output(exc: BaseException) -> bool:
+        return isinstance(exc, ReductionOutputError) or (
+            isinstance(exc, DeepSeekError)
+            and exc.category in {"structured_validation", "truncated_output"}
+        )
+
+    def blocked_decision(candidate: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "candidate_ids": [str(candidate["candidate_id"])],
+            "action": "blocked",
+            "target_entry_id": None,
+            "reason": (
+                "Automated reduction could not produce a complete validated decision "
+                "after bounded retries; manual review is required."
+            ),
+            "after_entry": None,
+        }
+
+    def block_candidates(chunk: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        blocked_candidates[0] += len(chunk)
+        return [blocked_decision(candidate) for candidate in chunk]
+
+    async def reserve_provider_call() -> bool:
+        async with provider_call_lock:
+            if provider_calls[0] >= provider_call_budget:
+                return False
+            provider_calls[0] += 1
+            return True
 
     async def reduce_resilient(
         chunk: list[dict[str, Any]], chunk_id: str
     ) -> list[dict[str, Any]]:
         candidate_ids = {str(candidate["candidate_id"]) for candidate in chunk}
-        checkpoint = None
+        checkpoint: dict[str, Any] | None = None
         if reuse_checkpoints and base_dir is not None:
             checkpoint = await asyncio.to_thread(
                 load_reduction_checkpoint,
@@ -989,15 +1003,32 @@ async def _reduce_candidates(
                 chunk_id,
                 candidate_ids,
             )
-        try:
-            if checkpoint is None:
-                checkpoint = await _reduce_candidate_chunk(
-                    model=model,
-                    reducer_id=chunk_id,
-                    candidates=chunk,
-                    existing_entries=existing_entries,
-                    configured_robot_ids=configured_robot_ids,
+        if checkpoint is not None:
+            decisions = checkpoint.get("decisions", [])
+            return decisions if isinstance(decisions, list) else []
+
+        attempts = REDUCE_SINGLE_CANDIDATE_ATTEMPTS if len(chunk) == 1 else 1
+        last_output_error: BaseException | None = None
+        for attempt in range(1, attempts + 1):
+            if not await reserve_provider_call():
+                log.error(
+                    "Capability reduction call budget exhausted chunk=%s candidates=%d "
+                    "calls=%d budget=%d",
+                    chunk_id,
+                    len(chunk),
+                    provider_calls[0],
+                    provider_call_budget,
                 )
+                return block_candidates(chunk)
+            try:
+                async with sem:
+                    checkpoint = await _reduce_candidate_chunk(
+                        model=model,
+                        reducer_id=chunk_id,
+                        candidates=chunk,
+                        existing_entries=existing_entries,
+                        configured_robot_ids=configured_robot_ids,
+                    )
                 if base_dir is not None:
                     await asyncio.to_thread(
                         save_checkpoint,
@@ -1006,48 +1037,70 @@ async def _reduce_candidates(
                         chunk_id,
                         checkpoint,
                     )
-            decisions = checkpoint.get("decisions", [])
-            return decisions if isinstance(decisions, list) else []
-        except DeepSeekError as exc:
-            if len(chunk) <= 1 or exc.category not in {
-                "structured_validation",
-                "truncated_output",
-            }:
-                raise
-            midpoint = len(chunk) // 2
-            log.warning(
-                "Splitting truncated capability reduction chunk=%s candidates=%d",
+                decisions = checkpoint.get("decisions", [])
+                return decisions if isinstance(decisions, list) else []
+            except (ReductionOutputError, DeepSeekError) as exc:
+                if not _retryable_provider_output(exc):
+                    raise
+                last_output_error = exc
+                if len(chunk) > 1:
+                    break
+                if attempt < attempts:
+                    log.warning(
+                        "Retrying incomplete single-candidate reduction chunk=%s attempt=%d/%d",
+                        chunk_id,
+                        attempt + 1,
+                        attempts,
+                    )
+
+        if len(chunk) == 1:
+            log.error(
+                "Blocking candidate after incomplete reduction chunk=%s error_type=%s",
                 chunk_id,
-                len(chunk),
+                type(last_output_error).__name__,
             )
-            left, right = await asyncio.gather(
-                reduce_resilient(chunk[:midpoint], f"{chunk_id}-a"),
-                reduce_resilient(chunk[midpoint:], f"{chunk_id}-b"),
-            )
-            return [*left, *right]
+            return block_candidates(chunk)
+
+        midpoint = len(chunk) // 2
+        adaptive_splits[0] += 1
+        log.warning(
+            "Splitting incomplete capability reduction chunk=%s candidates=%d error_type=%s",
+            chunk_id,
+            len(chunk),
+            type(last_output_error).__name__,
+        )
+        left, right = await _gather_cancel_on_error(
+            reduce_resilient(chunk[:midpoint], f"{chunk_id}-a"),
+            reduce_resilient(chunk[midpoint:], f"{chunk_id}-b"),
+        )
+        return [*left, *right]
 
     async def process_chunk(chunk_index: int, chunk: list[dict[str, Any]]) -> None:
-        async with sem:
-            sub_reducer_id = f"{reducer_id}-chunk{chunk_index}"
-            decisions = await reduce_resilient(chunk, sub_reducer_id)
-            decisions_by_chunk[chunk_index - 1] = decisions
-            completed_candidates[0] += sum(
-                len(decision.get("candidate_ids") or [])
-                for decision in decisions
-                if isinstance(decision, dict)
+        sub_reducer_id = (
+            reducer_id if len(chunks) == 1 else f"{reducer_id}-chunk{chunk_index}"
+        )
+        decisions = await reduce_resilient(chunk, sub_reducer_id)
+        decisions_by_chunk[chunk_index - 1] = decisions
+        completed_candidates[0] += sum(
+            len(decision.get("candidate_ids") or [])
+            for decision in decisions
+            if isinstance(decision, dict)
+        )
+        completed_chunks[0] += 1
+        if on_progress:
+            await on_progress(
+                "batch_reducing",
+                (
+                    f"Merging candidate capabilities (group {completed_chunks[0]}/{len(chunks)}, "
+                    f"{completed_candidates[0]}/{len(candidates)} complete; "
+                    f"{adaptive_splits[0]} adaptive splits, "
+                    f"{blocked_candidates[0]} blocked, "
+                    f"{provider_calls[0]}/{provider_call_budget} provider calls)..."
+                ),
+                progress_snapshot,
             )
-            completed_chunks[0] += 1
-            if on_progress:
-                await on_progress(
-                    "batch_reducing",
-                    (
-                        f"Merging candidate capabilities (chunk {completed_chunks[0]}/{len(chunks)}, "
-                        f"{completed_candidates[0]}/{len(candidates)} complete)..."
-                    ),
-                    progress_snapshot,
-                )
 
-    await asyncio.gather(
+    await _gather_cancel_on_error(
         *(process_chunk(idx, chunk) for idx, chunk in enumerate(chunks, start=1))
     )
 
@@ -1250,6 +1303,7 @@ def _build_changeset_from_reduction(
     write_count = sum(operation_counts[action] for action in _WRITE_ACTIONS)
     blocked = source_counts["blocked"]
     unprocessed = source_counts["unprocessed"]
+    blocked_operations = operation_counts["blocked"]
     return {
         "schema_version": "1.0",
         "changeset_id": (
@@ -1281,7 +1335,11 @@ def _build_changeset_from_reduction(
             )
             + operation_counts["skip"],
             "operation_counts": dict(sorted(operation_counts.items())),
-            "is_complete": blocked == 0 and unprocessed == 0,
+            "is_complete": (
+                blocked == 0
+                and unprocessed == 0
+                and blocked_operations == 0
+            ),
         },
     }
 
@@ -1517,7 +1575,7 @@ async def organize_capability_catalog(
                     progress_details,
                 )
 
-    await asyncio.gather(
+    await _gather_cancel_on_error(
         *(
             process_batch(batch_index, batch)
             for batch_index, batch in enumerate(batches, start=1)

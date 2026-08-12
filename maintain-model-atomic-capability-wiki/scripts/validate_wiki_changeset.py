@@ -269,10 +269,12 @@ def validate_changeset(data: Any) -> list[str]:
         expected_complete = (
             source_statuses["blocked"] == 0
             and source_statuses["unprocessed"] == 0
+            and operation_counts["blocked"] == 0
         )
         if coverage.get("is_complete") is not expected_complete:
             errors.append(
-                "$.coverage_report.is_complete: must be false when blocked or unprocessed sources exist"
+                "$.coverage_report.is_complete: must be false when blocked or "
+                "unprocessed sources or blocked operations exist"
             )
 
     return errors

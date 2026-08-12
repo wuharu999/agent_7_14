@@ -618,6 +618,59 @@ def test_python_builds_final_coverage_and_valid_changeset(tmp_path: Path) -> Non
     assert changeset["coverage_report"]["atomic_entries"] == 1
 
 
+def test_blocked_reduction_keeps_coverage_incomplete_and_preserves_catalog(
+    tmp_path: Path,
+) -> None:
+    reduction = {
+        "decisions": [
+            {
+                "candidate_ids": ["CB-BLOCKED-C0001"],
+                "action": "blocked",
+                "target_entry_id": None,
+                "reason": "Automated reduction requires manual review",
+                "after_entry": None,
+            }
+        ]
+    }
+    changeset = capability_catalog._build_changeset_from_reduction(
+        job_id="CAT-BLOCKED",
+        model="repository",
+        snapshot_id="SRC-BLOCKED",
+        base_revision="empty",
+        source_snapshot=[
+            {
+                "source_id": "wiki/manual.md",
+                "version": None,
+                "hash_or_revision": "a" * 64,
+                "status": "processed",
+            }
+        ],
+        source_totals={"extracted_claims": 1, "non_capability_candidates": 0},
+        reduction=reduction,
+    )
+    path = tmp_path / "blocked-changeset.json"
+    path.write_text(json.dumps(changeset), encoding="utf-8")
+
+    asyncio.run(capability_catalog._validate_changeset(path))
+    assert changeset["coverage_report"]["operation_counts"]["blocked"] == 1
+    assert changeset["coverage_report"]["is_complete"] is False
+
+    published = capability_catalog._publish_drafts(
+        changeset,
+        model="repository",
+        job_id="CAT-BLOCKED",
+        worker_root=tmp_path,
+        snapshot_id="SRC-BLOCKED",
+        source_manifest={},
+        source_changes={"counts": {"total": 1}},
+        wiki_manifest={"manual.md": {"size_bytes": 1, "mtime_ns": 1}},
+        scan_mode="full",
+    )
+    assert published["completion_status"] == "partial"
+    assert published["baseline_advanced"] is False
+    assert published["entries_written"] == []
+
+
 def test_python_orders_reduction_decisions_by_candidate_id() -> None:
     reduction = {
         "decisions": [
@@ -709,6 +762,201 @@ def test_truncated_reduction_is_split_and_consolidated_by_python(
     assert calls[0] == ["CB-ONE-C0001", "CB-TWO-C0002"]
     assert sorted(calls[1:]) == [["CB-ONE-C0001"], ["CB-TWO-C0002"]]
     assert len(reduction["decisions"]) == 2
+
+
+def test_semantically_incomplete_reduction_is_split_and_recovered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    async def fake_reduce(*, reducer_id: str, candidates: list[dict], **kwargs):
+        candidate_ids = [str(candidate["candidate_id"]) for candidate in candidates]
+        calls.append(candidate_ids)
+        if len(candidates) > 1:
+            raise capability_batch.ReductionOutputError(
+                "Capability reduction did not decide every extracted candidate exactly once"
+            )
+        return {
+            "reducer_id": reducer_id,
+            "decisions": [
+                {
+                    "candidate_ids": candidate_ids,
+                    "action": "skip",
+                    "target_entry_id": None,
+                    "reason": "Candidate requires no catalog write",
+                    "after_entry": None,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(capability_catalog, "_reduce_candidate_chunk", fake_reduce)
+    reduction = asyncio.run(
+        capability_catalog._reduce_candidates(
+            model="repository",
+            reducer_id="CR-INCOMPLETE",
+            candidates=[
+                {"candidate_id": "CB-ONE-C0001"},
+                {"candidate_id": "CB-TWO-C0002"},
+            ],
+            existing_entries=[],
+            reuse_checkpoints=False,
+        )
+    )
+
+    assert calls[0] == ["CB-ONE-C0001", "CB-TWO-C0002"]
+    assert sorted(calls[1:]) == [["CB-ONE-C0001"], ["CB-TWO-C0002"]]
+    assert len(reduction["decisions"]) == 2
+
+
+def test_single_incomplete_reduction_is_bounded_and_marked_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_reduce(**kwargs):
+        nonlocal calls
+        calls += 1
+        raise capability_batch.ReductionOutputError(
+            "Capability reduction did not decide every extracted candidate exactly once"
+        )
+
+    monkeypatch.setattr(capability_catalog, "_reduce_candidate_chunk", fake_reduce)
+    reduction = asyncio.run(
+        capability_catalog._reduce_candidates(
+            model="repository",
+            reducer_id="CR-SINGLE-INCOMPLETE",
+            candidates=[{"candidate_id": "CB-ONE-C0001"}],
+            existing_entries=[],
+            reuse_checkpoints=False,
+        )
+    )
+
+    assert calls == capability_catalog.REDUCE_SINGLE_CANDIDATE_ATTEMPTS
+    assert reduction["decisions"] == [
+        {
+            "candidate_ids": ["CB-ONE-C0001"],
+            "action": "blocked",
+            "target_entry_id": None,
+            "reason": (
+                "Automated reduction could not produce a complete validated decision "
+                "after bounded retries; manual review is required."
+            ),
+            "after_entry": None,
+        }
+    ]
+
+
+def test_successful_reduction_uses_larger_bounded_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    group_sizes: list[int] = []
+
+    async def fake_reduce(*, reducer_id: str, candidates: list[dict], **kwargs):
+        group_sizes.append(len(candidates))
+        return {
+            "reducer_id": reducer_id,
+            "decisions": [
+                {
+                    "candidate_ids": [str(candidate["candidate_id"])],
+                    "action": "skip",
+                    "target_entry_id": None,
+                    "reason": "Candidate requires no catalog write",
+                    "after_entry": None,
+                }
+                for candidate in candidates
+            ],
+        }
+
+    monkeypatch.setattr(capability_catalog, "_reduce_candidate_chunk", fake_reduce)
+    candidates = [
+        {"candidate_id": f"CB-LARGE-C{index:04d}"}
+        for index in range(capability_catalog.REDUCE_CHUNK_SIZE * 4)
+    ]
+    reduction = asyncio.run(
+        capability_catalog._reduce_candidates(
+            model="repository",
+            reducer_id="CR-LARGE",
+            candidates=candidates,
+            existing_entries=[],
+            reuse_checkpoints=False,
+        )
+    )
+
+    assert sorted(group_sizes) == [capability_catalog.REDUCE_CHUNK_SIZE] * 4
+    assert len(reduction["decisions"]) == len(candidates)
+
+
+def test_systemic_incomplete_output_honors_the_reduction_call_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_reduce(**kwargs):
+        nonlocal calls
+        calls += 1
+        raise capability_batch.ReductionOutputError("Incomplete reduction")
+
+    monkeypatch.setattr(capability_catalog, "_reduce_candidate_chunk", fake_reduce)
+    candidates = [
+        {"candidate_id": f"CB-BUDGET-C{index:04d}"}
+        for index in range(capability_catalog.REDUCE_CHUNK_SIZE * 2)
+    ]
+    reduction = asyncio.run(
+        capability_catalog._reduce_candidates(
+            model="repository",
+            reducer_id="CR-BUDGET",
+            candidates=candidates,
+            existing_entries=[],
+            reuse_checkpoints=False,
+        )
+    )
+
+    expected_budget = 2 * capability_catalog.REDUCE_CALLS_PER_GROUP_BUDGET
+    assert calls == expected_budget
+    assert sum(
+        len(decision["candidate_ids"]) for decision in reduction["decisions"]
+    ) == len(candidates)
+    assert all(decision["action"] == "blocked" for decision in reduction["decisions"])
+
+
+def test_reduction_cancels_sibling_calls_after_nonrecoverable_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def run() -> None:
+        sibling_started = asyncio.Event()
+        sibling_cancelled = asyncio.Event()
+
+        async def fake_reduce(*, reducer_id: str, **kwargs):
+            if reducer_id.endswith("chunk1"):
+                await sibling_started.wait()
+                raise capability_catalog.DeepSeekError(
+                    "capability catalog reduction",
+                    retryable=False,
+                    category="authentication",
+                )
+            sibling_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                sibling_cancelled.set()
+                raise
+
+        monkeypatch.setattr(capability_catalog, "_reduce_candidate_chunk", fake_reduce)
+        candidates = [
+            {"candidate_id": f"CB-CANCEL-C{index:04d}"}
+            for index in range(capability_catalog.REDUCE_CHUNK_SIZE + 1)
+        ]
+        with pytest.raises(capability_catalog.DeepSeekError):
+            await capability_catalog._reduce_candidates(
+                model="repository",
+                reducer_id="CR-CANCEL",
+                candidates=candidates,
+                existing_entries=[],
+                reuse_checkpoints=False,
+            )
+        assert sibling_cancelled.is_set()
+
+    asyncio.run(run())
 
 
 def test_truncated_extraction_is_split_and_merged_by_python(

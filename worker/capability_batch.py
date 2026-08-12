@@ -14,6 +14,10 @@ log = logging.getLogger("worker.capability_batch")
 PIPELINE_VERSION = "capability-batch-v2-full-skill"
 
 
+class ReductionOutputError(ValueError):
+    """A schema-shaped provider reduction failed deterministic validation."""
+
+
 @dataclass(frozen=True)
 class EvidenceUnit:
     unit_id: str
@@ -623,19 +627,19 @@ def parse_reduction(
 ) -> dict[str, Any]:
     payload = _find_payload(raw, {"reducer_id", "decisions"})
     if payload is None:
-        raise ValueError("Provider returned no complete capability reduction")
+        raise ReductionOutputError("Provider returned no complete capability reduction")
     if payload.get("reducer_id") != expected_reducer_id:
-        raise ValueError("Capability reduction ID does not match the request")
+        raise ReductionOutputError("Capability reduction ID does not match the request")
     decisions = payload.get("decisions")
     if not isinstance(decisions, list):
-        raise ValueError("Capability reduction decisions are invalid")
+        raise ReductionOutputError("Capability reduction decisions are invalid")
     reported: list[str] = []
     for decision in decisions:
         if not isinstance(decision, dict):
-            raise ValueError("Capability reduction decision is invalid")
+            raise ReductionOutputError("Capability reduction decision is invalid")
         identifiers = decision.get("candidate_ids")
         if not isinstance(identifiers, list) or not identifiers:
-            raise ValueError("Capability reduction decision requires candidate IDs")
+            raise ReductionOutputError("Capability reduction decision requires candidate IDs")
         reported.extend(str(identifier) for identifier in identifiers)
         action = decision.get("action")
         if action not in {
@@ -645,23 +649,25 @@ def parse_reduction(
             "skip",
             "blocked",
         }:
-            raise ValueError("Capability reduction action is invalid")
+            raise ReductionOutputError("Capability reduction action is invalid")
         if not isinstance(decision.get("reason"), str) or not decision["reason"].strip():
-            raise ValueError("Capability reduction reason is invalid")
+            raise ReductionOutputError("Capability reduction reason is invalid")
         target_entry_id = decision.get("target_entry_id")
         if target_entry_id is not None and not isinstance(target_entry_id, str):
-            raise ValueError("Capability reduction target entry ID is invalid")
+            raise ReductionOutputError("Capability reduction target entry ID is invalid")
         after_entry = decision.get("after_entry")
         if action in {"create", "update", "implementation-instance"}:
             if not isinstance(after_entry, dict):
-                raise ValueError("Writable capability reduction requires an entry")
+                raise ReductionOutputError("Writable capability reduction requires an entry")
             _sanitize_after_entry(after_entry)
         elif after_entry is not None:
-            raise ValueError("Non-writing capability reduction must not include an entry")
+            raise ReductionOutputError("Non-writing capability reduction must not include an entry")
         if action == "update" and not str(target_entry_id or ""):
-            raise ValueError("Capability update requires a target entry ID")
+            raise ReductionOutputError("Capability update requires a target entry ID")
     if len(reported) != len(set(reported)) or set(reported) != candidate_ids:
-        raise ValueError("Capability reduction did not decide every extracted candidate exactly once")
+        raise ReductionOutputError(
+            "Capability reduction did not decide every extracted candidate exactly once"
+        )
     return payload
 
 
