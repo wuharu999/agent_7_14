@@ -12,12 +12,29 @@ BACKUP_PARENT="${ECS_BACKUP_ROOT:-/root/agent_7_14-deploy-backups}"
 [ -d .git ] || { echo "Not a Git checkout: $PROJECT_ROOT" >&2; exit 1; }
 [ -f ecs/.env ] || { echo "Missing ecs/.env" >&2; exit 1; }
 [ -d ecs-data ] || { echo "Missing ecs-data" >&2; exit 1; }
+[ -f ecs-data/agent_jobs.db ] || { echo "Missing ecs-data/agent_jobs.db" >&2; exit 1; }
 
 stamp="$(date +%Y%m%d-%H%M%S)"
 backup_dir="$BACKUP_PARENT/$stamp"
 mkdir -p "$backup_dir"
 cp ecs/.env "$backup_dir/ecs.env"
-tar -czf "$backup_dir/ecs-data.tgz" ecs-data
+# The live WAL database changes whenever the ECS receives Worker/status traffic.
+# Use SQLite's online backup API for a consistent database snapshot, then archive
+# the remaining data separately so tar cannot fail on the changing database.
+python3 - "ecs-data/agent_jobs.db" "$backup_dir/agent_jobs.db" <<'PY'
+import sqlite3
+import sys
+
+source_path, backup_path = sys.argv[1:]
+with sqlite3.connect(f"file:{source_path}?mode=ro", uri=True) as source:
+    with sqlite3.connect(backup_path) as destination:
+        source.backup(destination)
+PY
+tar \
+  --exclude='ecs-data/agent_jobs.db' \
+  --exclude='ecs-data/agent_jobs.db-shm' \
+  --exclude='ecs-data/agent_jobs.db-wal' \
+  -czf "$backup_dir/ecs-data-files.tgz" ecs-data
 git rev-parse HEAD > "$backup_dir/previous-commit.txt"
 
 git fetch origin "$DEPLOY_BRANCH"
