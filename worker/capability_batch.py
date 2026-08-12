@@ -601,7 +601,33 @@ def _sanitize_after_entry(entry: dict[str, Any], target_model_id: str | None = N
                         clean_list.append(val)
             entry[field] = clean_list
 
-    # 5. Sanitize lifecycle status
+    # The reducer's generation schema intentionally keeps after_entry generic
+    # so large responses remain within DeepSeek's structured-output limits.
+    # Complete required contract containers deterministically before the full
+    # bundled hard gate runs. Empty constraint sets make no technical claim,
+    # and a zero confidence score explicitly records that the reducer omitted
+    # its confidence assessment instead of inventing one.
+    constraints = entry.get("constraints")
+    if not isinstance(constraints, dict):
+        constraints = {}
+        entry["constraints"] = constraints
+    for field in ("time", "space", "information", "energy"):
+        if not isinstance(constraints.get(field), list):
+            constraints[field] = []
+
+    confidence = entry.get("confidence")
+    if not isinstance(confidence, dict):
+        confidence = {}
+        entry["confidence"] = confidence
+    score = confidence.get("extraction_score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        confidence["extraction_score"] = 0.0
+    else:
+        confidence["extraction_score"] = min(1.0, max(0.0, float(score)))
+    if not isinstance(confidence.get("basis"), str) or not confidence["basis"].strip():
+        confidence["basis"] = "Reducer supplied no confidence basis; requires review"
+
+    # 6. Sanitize lifecycle status
     lifecycle = entry.get("lifecycle")
     if not isinstance(lifecycle, dict):
         entry["lifecycle"] = {

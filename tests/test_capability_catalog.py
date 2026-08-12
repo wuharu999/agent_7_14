@@ -618,6 +618,57 @@ def test_python_builds_final_coverage_and_valid_changeset(tmp_path: Path) -> Non
     assert changeset["coverage_report"]["atomic_entries"] == 1
 
 
+def test_changeset_normalizes_missing_constraints_and_confidence_before_validation(
+    tmp_path: Path,
+) -> None:
+    entry = _draft_entry()
+    entry.pop("constraints")
+    entry.pop("confidence")
+    reduction = {
+        "decisions": [
+            {
+                "candidate_ids": ["CB-MISSING-FIELDS-C0001"],
+                "action": "create",
+                "target_entry_id": entry["capability_id"],
+                "reason": "Reducer omitted required non-claim containers",
+                "after_entry": entry,
+            }
+        ]
+    }
+
+    changeset = capability_catalog._build_changeset_from_reduction(
+        job_id="CAT-MISSING-FIELDS",
+        model="walker_s2",
+        snapshot_id="SRC-MISSING-FIELDS",
+        base_revision="empty",
+        source_snapshot=[
+            {
+                "source_id": "wiki/manual.md",
+                "version": None,
+                "hash_or_revision": "a" * 64,
+                "status": "processed",
+            }
+        ],
+        source_totals={"extracted_claims": 1, "non_capability_candidates": 0},
+        reduction=reduction,
+    )
+    normalized = changeset["operations"][0]["after_entry"]
+    assert normalized["constraints"] == {
+        "time": [],
+        "space": [],
+        "information": [],
+        "energy": [],
+    }
+    assert normalized["confidence"] == {
+        "extraction_score": 0.0,
+        "basis": "Reducer supplied no confidence basis; requires review",
+    }
+
+    path = tmp_path / "normalized-changeset.json"
+    path.write_text(json.dumps(changeset), encoding="utf-8")
+    asyncio.run(capability_catalog._validate_changeset(path))
+
+
 def test_blocked_reduction_keeps_coverage_incomplete_and_preserves_catalog(
     tmp_path: Path,
 ) -> None:
