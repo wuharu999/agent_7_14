@@ -11,7 +11,7 @@ from typing import Any
 
 log = logging.getLogger("worker.capability_batch")
 
-PIPELINE_VERSION = "capability-batch-v2-full-skill"
+PIPELINE_VERSION = "capability-batch-v3-validated-drafts"
 
 
 class ReductionOutputError(ValueError):
@@ -168,7 +168,52 @@ REDUCTION_SCHEMA: dict[str, Any] = {
                     "target_entry_id": {"type": ["string", "null"]},
                     "reason": {"type": "string", "minLength": 3},
                     "after_entry": {
-                        "oneOf": [{"type": "object"}, {"type": "null"}]
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "required": [
+                                    "capability_id",
+                                    "semantic_key",
+                                    "name",
+                                    "capability_type",
+                                    "effect",
+                                    "scope",
+                                    "trigger",
+                                    "interfaces",
+                                    "evidence",
+                                    "lifecycle",
+                                ],
+                                "properties": {
+                                    "capability_id": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"},
+                                    "semantic_key": {"type": "string", "minLength": 1},
+                                    "name": {"type": "string", "pattern": ".+_.+"},
+                                    "capability_type": {
+                                        "enum": ["building_block", "operational_behavior"]
+                                    },
+                                    "effect": {"type": "object"},
+                                    "scope": {"type": "object"},
+                                    "trigger": {"type": "string", "minLength": 1},
+                                    "interfaces": {"type": "array", "minItems": 1},
+                                    "evidence": {"type": "array", "minItems": 1},
+                                    "lifecycle": {
+                                        "type": "object",
+                                        "required": [
+                                            "status",
+                                            "supersedes",
+                                            "replaced_by",
+                                            "deprecation_reason",
+                                        ],
+                                        "properties": {
+                                            "status": {"const": "draft"},
+                                            "supersedes": {"type": "array"},
+                                            "replaced_by": {"type": "array"},
+                                            "deprecation_reason": {"type": "null"},
+                                        },
+                                    },
+                                },
+                            },
+                            {"type": "null"},
+                        ]
                     },
                 },
                 "additionalProperties": False,
@@ -432,6 +477,28 @@ def _sanitize_after_entry(entry: dict[str, Any], target_model_id: str | None = N
     if not isinstance(entry.get("migration_warnings"), list):
         entry["migration_warnings"] = []
 
+    name = entry.get("name")
+    effect = entry.get("effect")
+    if (not isinstance(name, str) or "_" not in name) and isinstance(effect, dict):
+        action = str(effect.get("action") or "").strip()
+        object_name = str(effect.get("object") or "").strip()
+        if action and object_name:
+            action_token = re.sub(r"\s+", "_", action)
+            object_token = re.sub(r"\s+", "_", object_name)
+            entry["name"] = f"{action_token}_{object_token}"
+            warnings = entry.get("migration_warnings")
+            if isinstance(warnings, list) and "name_normalized_from_effect" not in warnings:
+                warnings.append("name_normalized_from_effect")
+
+    semantic_key = entry.get("semantic_key")
+    if not isinstance(semantic_key, str) or not re.fullmatch(
+        r"[a-z0-9]+(?:[._-][a-z0-9]+)*", semantic_key
+    ):
+        capability_id = str(entry.get("capability_id") or "").strip().lower()
+        normalized_key = capability_id.removeprefix("cap-").replace("-", ".")
+        if normalized_key and re.fullmatch(r"[a-z0-9]+(?:[._-][a-z0-9]+)*", normalized_key):
+            entry["semantic_key"] = normalized_key
+
     # 1. Sanitize scope
     scope = entry.get("scope")
     if not isinstance(scope, dict):
@@ -637,12 +704,14 @@ def _sanitize_after_entry(entry: dict[str, Any], target_model_id: str | None = N
             "deprecation_reason": None,
         }
     else:
-        if lifecycle.get("status") not in {"draft", "reviewed", "verified", "deprecated"}:
-            lifecycle["status"] = "draft"
+        # Catalog organization only publishes drafts. Provider-supplied higher
+        # lifecycle states are not accepted without a separate review action.
+        lifecycle["status"] = "draft"
         if not isinstance(lifecycle.get("supersedes"), list):
             lifecycle["supersedes"] = []
         if not isinstance(lifecycle.get("replaced_by"), list):
             lifecycle["replaced_by"] = []
+        lifecycle["deprecation_reason"] = None
 
 
 def parse_reduction(

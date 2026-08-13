@@ -248,7 +248,7 @@ def test_worker_websocket_url_never_contains_shared_secret(
 def test_evidence_units_and_batches_are_deterministic_and_byte_bounded(
     tmp_path: Path,
 ) -> None:
-    assert capability_batch.PIPELINE_VERSION == "capability-batch-v2-full-skill"
+    assert capability_batch.PIPELINE_VERSION == "capability-batch-v3-validated-drafts"
     wiki = tmp_path / "wiki"
     wiki.mkdir()
     (wiki / "a.md").write_text("机器人向前移动。" * 20, encoding="utf-8")
@@ -669,6 +669,40 @@ def test_changeset_normalizes_missing_constraints_and_confidence_before_validati
     asyncio.run(capability_catalog._validate_changeset(path))
 
 
+def test_reduction_draft_normalizes_safe_fields_but_rejects_unknown_type() -> None:
+    entry = _draft_entry()
+    entry["name"] = "Forward locomotion"
+    entry["capability_type"] = "L1_atomic_skill"
+    entry["lifecycle"] = {"status": "reviewed"}
+    reduction = {
+        "decisions": [
+            {
+                "candidate_ids": ["CB-INVALID-DRAFT-C0001"],
+                "action": "create",
+                "target_entry_id": entry["capability_id"],
+                "reason": "Provider returned an incomplete contract draft",
+                "after_entry": entry,
+            }
+        ]
+    }
+
+    with pytest.raises(
+        capability_batch.ReductionOutputError,
+        match="invalid writable drafts",
+    ):
+        capability_catalog._validate_reduction_drafts(reduction)
+
+    assert entry["name"] == "move_robot_base"
+    assert entry["capability_type"] == "review_required"
+    assert entry["lifecycle"] == {
+        "status": "draft",
+        "supersedes": [],
+        "replaced_by": [],
+        "deprecation_reason": None,
+    }
+    assert "name_normalized_from_effect" in entry["migration_warnings"]
+
+
 def test_blocked_reduction_keeps_coverage_incomplete_and_preserves_catalog(
     tmp_path: Path,
 ) -> None:
@@ -895,6 +929,45 @@ def test_single_incomplete_reduction_is_bounded_and_marked_blocked(
             "after_entry": None,
         }
     ]
+
+
+def test_single_invalid_writable_draft_is_retried_then_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_reduce(*, reducer_id: str, candidates: list[dict], **kwargs):
+        nonlocal calls
+        calls += 1
+        entry = _draft_entry()
+        entry["capability_type"] = "L1_atomic_skill"
+        return {
+            "reducer_id": reducer_id,
+            "decisions": [
+                {
+                    "candidate_ids": [str(candidates[0]["candidate_id"])],
+                    "action": "create",
+                    "target_entry_id": entry["capability_id"],
+                    "reason": "Provider returned an invalid capability type",
+                    "after_entry": entry,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(capability_catalog, "_reduce_candidate_chunk", fake_reduce)
+    reduction = asyncio.run(
+        capability_catalog._reduce_candidates(
+            model="repository",
+            reducer_id="CR-SINGLE-INVALID-DRAFT",
+            candidates=[{"candidate_id": "CB-INVALID-C0001"}],
+            existing_entries=[],
+            reuse_checkpoints=False,
+        )
+    )
+
+    assert calls == capability_catalog.REDUCE_SINGLE_CANDIDATE_ATTEMPTS
+    assert reduction["decisions"][0]["action"] == "blocked"
+    assert reduction["decisions"][0]["candidate_ids"] == ["CB-INVALID-C0001"]
 
 
 def test_successful_reduction_uses_larger_bounded_groups(
@@ -1463,6 +1536,14 @@ def test_admin_page_has_shared_progress_change_window_and_chinese_translation() 
     assert "被阻塞的证据文件" in page
     assert "Organized atomic capabilities" in page
     assert "已整理的原子能力" in page
+    assert 'class="panel changes-panel"' in page
+    assert 'id="added-list-count"' in page
+    assert "details.open=paths.length>0&&paths.length<=12" in page
+    assert "➕ 新增原子能力" in page
+    assert "证据主张与原文摘录" in page
+    assert "🚀 保存能力" in page
+    assert "Add New Atomic Capability" not in page
+    assert "Save Capability" not in page
     assert "localStorage.getItem('catalog" not in page
 
 

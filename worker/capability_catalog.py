@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import runpy
 import shutil
 import sys
 import time
@@ -59,11 +60,49 @@ _FORBIDDEN_ACTIONS = {"deprecate", "delete-proposal"}
 _SKILL_ROOT = PROJECT_ROOT / "maintain-model-atomic-capability-wiki"
 _WIKI_EVIDENCE_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml", ".csv"}
 CATALOG_SCOPE = "repository"
+_ENTRY_VALIDATOR: Callable[[Any], list[str]] | None = None
 _ROBOT_SCOPE_ALIASES: dict[str, tuple[str, ...]] = {
     "walker_c1": ("Walker C1", "WalkerC1", "walker-c1", "行者 C1"),
     "walker_s2": ("Walker S2", "WalkerS2", "walker-s2", "行者 S2"),
     "tian_gong": ("Tian Gong", "Tiangong", "天工行者"),
 }
+
+
+def _entry_validator() -> Callable[[Any], list[str]]:
+    """Load the bundled dependency-free hard gate for in-memory drafts."""
+    global _ENTRY_VALIDATOR
+    if _ENTRY_VALIDATOR is None:
+        validator_path = _SKILL_ROOT / "scripts" / "validate_capability_entry.py"
+        namespace = runpy.run_path(str(validator_path))
+        validator = namespace.get("validate_entry")
+        if not callable(validator):
+            raise RuntimeError("Bundled capability entry validator is unavailable")
+        _ENTRY_VALIDATOR = validator
+    return _ENTRY_VALIDATOR
+
+
+def _validate_reduction_drafts(reduction: dict[str, Any]) -> None:
+    """Reject invalid writable drafts early enough for bounded retry/splitting."""
+    validate_entry = _entry_validator()
+    failures: list[str] = []
+    for decision_index, decision in enumerate(reduction.get("decisions") or []):
+        if decision.get("action") not in _WRITE_ACTIONS:
+            continue
+        after_entry = decision.get("after_entry")
+        if not isinstance(after_entry, dict):
+            failures.append(f"decision {decision_index}: writable action requires after_entry")
+            continue
+        _sanitize_after_entry(after_entry)
+        errors = validate_entry(after_entry)
+        if errors:
+            failures.append(
+                f"decision {decision_index}: " + "; ".join(errors[:4])
+            )
+    if failures:
+        raise ReductionOutputError(
+            "Capability reduction produced invalid writable drafts: "
+            + " | ".join(failures[:4])
+        )
 
 
 async def _gather_cancel_on_error(*coroutines: Awaitable[Any]) -> list[Any]:
@@ -1004,8 +1043,18 @@ async def _reduce_candidates(
                 candidate_ids,
             )
         if checkpoint is not None:
-            decisions = checkpoint.get("decisions", [])
-            return decisions if isinstance(decisions, list) else []
+            try:
+                _validate_reduction_drafts(checkpoint)
+            except ReductionOutputError as exc:
+                log.warning(
+                    "Ignoring invalid capability reduction checkpoint chunk=%s error=%s",
+                    chunk_id,
+                    exc,
+                )
+                checkpoint = None
+            else:
+                decisions = checkpoint.get("decisions", [])
+                return decisions if isinstance(decisions, list) else []
 
         attempts = REDUCE_SINGLE_CANDIDATE_ATTEMPTS if len(chunk) == 1 else 1
         last_output_error: BaseException | None = None
@@ -1029,6 +1078,7 @@ async def _reduce_candidates(
                         existing_entries=existing_entries,
                         configured_robot_ids=configured_robot_ids,
                     )
+                _validate_reduction_drafts(checkpoint)
                 if base_dir is not None:
                     await asyncio.to_thread(
                         save_checkpoint,
