@@ -141,7 +141,7 @@ CEREBRAS_BLOCKED_COUNTRIES = frozenset(
     for value in os.environ.get("CEREBRAS_BLOCKED_COUNTRIES", "CN,TW,HK,SG").split(",")
     if value.strip()
 )
-WIKI_QA_MAX_PAGES = max(1, min(10, int(os.environ.get("WIKI_QA_MAX_PAGES", "5"))))
+WIKI_QA_MAX_PAGES = max(1, min(10, int(os.environ.get("WIKI_QA_MAX_PAGES", "8"))))
 WIKI_QA_MAX_PAGE_CHARS = max(
     1_000, int(os.environ.get("WIKI_QA_MAX_PAGE_CHARS", "24000"))
 )

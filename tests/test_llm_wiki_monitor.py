@@ -115,6 +115,64 @@ async def test_monitor_source_marks_retryable_failed_task_as_retrying(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("task_status", ["pending", "processing"])
+async def test_monitor_window_never_marks_live_queue_work_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    task_status: str,
+) -> None:
+    queue_file = tmp_path / "ingest-queue.json"
+    cache_file = tmp_path / "ingest-cache.json"
+    queue_file.write_text(
+        json.dumps(
+            [
+                {
+                    "sourcePath": "raw/sources/walker_s2/upload-1/manual.pdf",
+                    "status": task_status,
+                    "retryCount": 0,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    cache_file.write_text("{}", encoding="utf-8")
+    config = SimpleNamespace(
+        llm_wiki_queue_file=queue_file,
+        llm_wiki_cache_file=cache_file,
+    )
+    monkeypatch.setattr(llm_wiki_monitor, "get_team_config", lambda _team: config)
+    monkeypatch.setattr(llm_wiki_monitor, "LLM_WIKI_MONITOR_TIMEOUT", 1)
+
+    monotonic_values = iter((0.0, 2.0, 2.0, 2.0))
+    monkeypatch.setattr(llm_wiki_monitor, "_monotonic", lambda: next(monotonic_values))
+
+    class StopMonitor(Exception):
+        pass
+
+    async def stop_after_first_window(_seconds: float) -> None:
+        raise StopMonitor
+
+    monkeypatch.setattr(llm_wiki_monitor.asyncio, "sleep", stop_after_first_window)
+    events: list[dict[str, object]] = []
+
+    async def emit(event: dict[str, object]) -> None:
+        events.append(event)
+
+    with pytest.raises(StopMonitor):
+        await llm_wiki_monitor.monitor_source(
+            team="walker_s2",
+            upload_id="upload-1",
+            source_identity="walker_s2/upload-1/manual.pdf",
+            published_at_ms=1,
+            emit=emit,
+        )
+
+    expected = "queued" if task_status == "pending" else "processing"
+    assert events[0]["source_status"] == expected
+    assert all(event["source_status"] != "failed" for event in events)
+
+
+@pytest.mark.anyio
 async def test_global_snapshot_counts_shared_queue_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

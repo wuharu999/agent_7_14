@@ -1370,6 +1370,7 @@ def refresh_upload_aggregate(upload_id: str) -> None:
     completed = counts.get("completed", 0)
     failed = counts.get("failed", 0)
     processing = counts.get("processing", 0)
+    retrying = counts.get("retrying", 0)
     queued = counts.get("queued", 0)
     waiting = counts.get("waiting", 0)
     terminal = completed + failed
@@ -1392,6 +1393,10 @@ def refresh_upload_aggregate(upload_id: str) -> None:
         status = "ingesting"
         stage = "llm_wiki_ingestion"
         message = f"LLM Wiki ingesting: {completed}/{active_total} completed, {processing} processing"
+    elif retrying:
+        status = "ingesting"
+        stage = "llm_wiki_ingestion"
+        message = f"LLM Wiki retrying: {retrying} retrying, {completed}/{active_total} completed"
     elif queued:
         status = "queued_in_llm_wiki"
         stage = "queued_in_llm_wiki"
@@ -1447,6 +1452,7 @@ def get_upload(upload_id: str) -> dict[str, Any] | None:
         "waiting": 0,
         "queued": 0,
         "processing": 0,
+        "retrying": 0,
         "completed": 0,
         "failed": 0,
         "deleted": 0,
@@ -1594,6 +1600,131 @@ def get_recent_llm_wiki_source_counts(hours: int = 24) -> dict[str, int]:
         else:
             counts["waiting"] += 1
     return counts
+
+
+def _normalize_llm_wiki_identity(value: Any) -> str:
+    normalized = str(value or "").replace("\\", "/").strip().strip("/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    prefix = "raw/sources/"
+    return normalized[len(prefix):] if normalized.startswith(prefix) else normalized
+
+
+def _nonnegative_integer(value: Any, default: int = 0) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def reconcile_llm_wiki_snapshot(snapshot: dict[str, Any]) -> int:
+    """Refresh persisted upload-source rows from the Worker's live Wiki state."""
+    raw_tasks = snapshot.get("tasks")
+    raw_receipts = snapshot.get("completion_receipts")
+    tasks = raw_tasks if isinstance(raw_tasks, list) else []
+    receipts = raw_receipts if isinstance(raw_receipts, list) else []
+    state_priority = {"failed": 1, "queued": 2, "retrying": 3, "processing": 4}
+    task_states: dict[str, dict[str, Any]] = {}
+
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        identity = _normalize_llm_wiki_identity(task.get("sourcePath"))
+        state = str(task.get("sourceStatus") or "")
+        if not identity or state not in state_priority:
+            continue
+        current = task_states.get(identity)
+        if current is None or state_priority[state] > state_priority.get(
+            str(current.get("sourceStatus") or ""), 0
+        ):
+            task_states[identity] = task
+
+    completion_states: dict[str, dict[str, Any]] = {}
+    for receipt in receipts:
+        if not isinstance(receipt, dict):
+            continue
+        identity = _normalize_llm_wiki_identity(receipt.get("sourceIdentity"))
+        if not identity:
+            continue
+        timestamp = _nonnegative_integer(receipt.get("timestamp"))
+        current = completion_states.get(identity)
+        if current is None or timestamp > int(current.get("timestamp") or 0):
+            completion_states[identity] = receipt
+
+    changed_upload_ids: set[str] = set()
+    changed = 0
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT s.upload_id, s.source_identity, s.status, u.published_at_ms
+            FROM upload_sources AS s
+            INNER JOIN uploads AS u ON u.upload_id = s.upload_id
+            WHERE s.status != 'deleted'
+            """
+        ).fetchall()
+        for row in rows:
+            identity = _normalize_llm_wiki_identity(row["source_identity"])
+            receipt = completion_states.get(identity)
+            task = task_states.get(identity)
+            status = str(row["status"] or "waiting")
+            error: str | None = None
+            files_written: list[str] = []
+            retry_count = 0
+            max_retries = 0
+            active_queue_count = 0
+
+            if receipt is not None and _nonnegative_integer(
+                receipt.get("timestamp")
+            ) >= _nonnegative_integer(row["published_at_ms"]):
+                status = "completed"
+                receipt_files = receipt.get("filesWritten")
+                files_written = [
+                    str(path)
+                    for path in (
+                        receipt_files[:100] if isinstance(receipt_files, list) else []
+                    )
+                ]
+            elif task is not None:
+                status = str(task.get("sourceStatus"))
+                error = str(task.get("error") or "") or None
+                retry_count = _nonnegative_integer(task.get("retryCount"))
+                max_retries = _nonnegative_integer(task.get("maxRetries"), 3)
+                active_queue_count = sum(
+                    1
+                    for candidate in tasks
+                    if isinstance(candidate, dict)
+                    and _normalize_llm_wiki_identity(candidate.get("sourcePath"))
+                    == identity
+                )
+            else:
+                continue
+
+            connection.execute(
+                """
+                UPDATE upload_sources
+                SET status = ?, error = ?, files_written = ?, retry_count = ?,
+                    max_retries = ?, active_queue_count = ?, updated_at = ?
+                WHERE upload_id = ? AND source_identity = ?
+                """,
+                (
+                    status,
+                    error,
+                    json.dumps(files_written, ensure_ascii=False),
+                    retry_count,
+                    max_retries,
+                    active_queue_count,
+                    now,
+                    row["upload_id"],
+                    row["source_identity"],
+                ),
+            )
+            changed += 1
+            changed_upload_ids.add(str(row["upload_id"]))
+
+    for upload_id in changed_upload_ids:
+        refresh_upload_aggregate(upload_id)
+    return changed
 
 
 def list_dispatchable_uploads() -> list[dict[str, Any]]:

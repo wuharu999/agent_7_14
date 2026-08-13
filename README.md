@@ -91,12 +91,27 @@ should return to the default `main` branch after the pull request is merged.
 
 ### Knowledge-base images in QA answers
 
-The answer model may include up to three relevant images referenced by retrieved
-`wiki/media/`. The Worker accepts only project-relative Markdown references,
-rejects traversal and symlinks, permits PNG, JPEG, GIF, and WebP, and limits each
-image to 8 MiB and the total answer images to 12 MiB. Validated images are sent
-through the existing authenticated Worker connection and rendered by the QA
-page; the private Worker filesystem is never exposed as a public path.
+The Worker deterministically associates images with the Wiki pages already
+selected for an answer. It prefers Markdown, Obsidian, and HTML image references
+inside the best-matching section. Some LLM Wiki versions extract PDF images into
+`wiki/media/<page-stem>/` without adding Markdown references; for an explicit
+image request, the Worker can conservatively use that retrieved page's media
+folder instead. The answer model never selects paths.
+
+At most three images are attached. The Worker rejects traversal and symlinks,
+permits PNG, JPEG, GIF, and WebP, and limits each image to 8 MiB and the total
+answer images to 12 MiB. Validated images are sent through the existing
+authenticated Worker connection and rendered by the QA page; the private Worker
+filesystem is never exposed as a public path.
+
+The Worker treats `LLM_WIKI_MONITOR_TIMEOUT` as a status-heartbeat interval,
+not an ingestion deadline. A source remains queued, retrying, or processing as
+long as LLM Wiki's persistent queue says it is active; only a current cache
+receipt or terminal queue failure completes the per-source monitor.
+
+QA retrieval uses the router's selected pages, then adds a bounded one-hop set
+of their generated-Wiki links and lexically related generated pages. The total
+is limited by `WIKI_QA_MAX_PAGES` (default 8); it never reads `raw/sources`.
 
 QA answers must preserve product, project, platform, SDK, API, company, and brand
 names exactly as written in the knowledge base. The Worker also corrects known

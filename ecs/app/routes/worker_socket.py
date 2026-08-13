@@ -13,6 +13,7 @@ from ecs.app.database import (
     update_upload,
     upsert_source,
     reconcile_existing_uploads,
+    reconcile_llm_wiki_snapshot,
     update_capability_catalog_job,
 )
 from ecs.app.gateway import gateway
@@ -120,6 +121,7 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
 
             elif message_type == "llm_wiki_snapshot":
                 gateway.latest_snapshot = data
+                await asyncio.to_thread(reconcile_llm_wiki_snapshot, data)
 
             elif message_type == "sync_existing_uploads":
                 uploads_on_disk = data.get("uploads") or []

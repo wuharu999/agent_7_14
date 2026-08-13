@@ -16,6 +16,10 @@ from worker.config import (
 
 EventCallback = Callable[[dict[str, Any]], Awaitable[None]]
 _LLM_WIKI_DEFAULT_MAX_RETRIES = 3
+_monotonic = time.monotonic
+_MAX_SNAPSHOT_TASKS = 2_000
+_MAX_SNAPSHOT_COMPLETION_RECEIPTS = 2_000
+_MAX_SNAPSHOT_FILES_WRITTEN = 50
 
 
 def _read_json(path: Path) -> Any:
@@ -91,7 +95,7 @@ async def monitor_source(
 ) -> None:
     cache_candidates, queue_candidates = _identity_candidates(team, source_identity)
     last_state = ()
-    started = time.monotonic()
+    monitoring_window_started = _monotonic()
     tc = get_team_config(team)
 
     while True:
@@ -175,6 +179,15 @@ async def monitor_source(
                     retry_count = task_retries
                     max_retries = task_max_retries
                     error = task_error or "LLM Wiki ingestion failed"
+                elif task_status == "cancelled" and state not in {
+                    "processing",
+                    "retrying",
+                    "queued",
+                }:
+                    state = "failed"
+                    retry_count = task_retries
+                    max_retries = task_max_retries
+                    error = task_error or "LLM Wiki ingestion was cancelled"
 
             event = {
                 "type": "job_progress",
@@ -194,17 +207,15 @@ async def monitor_source(
 
         if state in {"completed", "failed"}:
             return
-        if time.monotonic() - started > LLM_WIKI_MONITOR_TIMEOUT:
-            await emit(
-                {
-                    "type": "job_progress",
-                    "upload_id": upload_id,
-                    "source_identity": source_identity,
-                    "source_status": "failed",
-                    "error": "Timed out waiting for LLM Wiki ingestion completion",
-                }
-            )
-            return
+        if _monotonic() - monitoring_window_started > LLM_WIKI_MONITOR_TIMEOUT:
+            # This limit is an observation/heartbeat interval, not evidence that
+            # LLM Wiki failed. Its persistent queue can legitimately remain
+            # pending or processing for longer (large documents, provider rate
+            # limits, or a paused backlog). Keep following queue/cache truth and
+            # resend the current state during the next window so ECS can recover
+            # from a missed/stale update.
+            monitoring_window_started = _monotonic()
+            last_state = ()
         await asyncio.sleep(LLM_WIKI_POLL_SECONDS)
 
 
@@ -223,6 +234,7 @@ async def monitor_global_queue(
             "total": 0,
         }
         all_tasks: list[dict[str, Any]] = []
+        completion_receipts: list[dict[str, Any]] = []
         allowed_teams = get_allowed_teams()
         queue_configs: dict[Path, tuple[str, Any]] = {}
         for team in allowed_teams:
@@ -237,7 +249,10 @@ async def monitor_global_queue(
             if not tc.llm_wiki_queue_file.exists():
                 continue
 
-            queue_data = await asyncio.to_thread(_read_json, tc.llm_wiki_queue_file)
+            queue_data, cache_data = await asyncio.gather(
+                asyncio.to_thread(_read_json, tc.llm_wiki_queue_file),
+                asyncio.to_thread(_read_json, tc.llm_wiki_cache_file),
+            )
             queue_tasks = queue_data if isinstance(queue_data, list) else []
             counts["total"] += len(queue_tasks)
 
@@ -267,21 +282,63 @@ async def monitor_global_queue(
                     max_retries <= 0 or retries >= max_retries
                 )
                 if status == "processing":
+                    task["sourceStatus"] = "processing"
                     counts["processing"] += 1
                 elif permanently_failed:
+                    task["sourceStatus"] = "failed"
                     counts["failed"] += 1
                 elif error and retries > 0:
+                    task["sourceStatus"] = "retrying"
                     counts["retrying"] += 1
                 elif status == "pending":
+                    task["sourceStatus"] = "queued"
                     counts["queued"] += 1
                 elif status == "failed":
+                    task["sourceStatus"] = "failed"
+                    counts["failed"] += 1
+                elif status == "cancelled":
+                    task["sourceStatus"] = "failed"
+                    task["error"] = str(error or "LLM Wiki ingestion was cancelled")
                     counts["failed"] += 1
                     
                 all_tasks.append(task)
+
+            cache_entries = (
+                cache_data.get("entries", {}) if isinstance(cache_data, dict) else {}
+            )
+            for source_identity, entry in cache_entries.items():
+                if not isinstance(source_identity, str) or not isinstance(entry, dict):
+                    continue
+                raw_files_written = entry.get("filesWritten")
+                completion_receipts.append(
+                    {
+                        "sourceIdentity": _without_sources_prefix(source_identity),
+                        "timestamp": max(0, _integer(entry.get("timestamp"))),
+                        "filesWritten": [
+                            str(path)
+                            for path in (
+                                raw_files_written[:_MAX_SNAPSHOT_FILES_WRITTEN]
+                                if isinstance(raw_files_written, list)
+                                else []
+                            )
+                        ],
+                    }
+                )
+
+        completion_receipts.sort(
+            key=lambda receipt: (
+                -int(receipt["timestamp"]),
+                str(receipt["sourceIdentity"]),
+            )
+        )
+        completion_receipts = completion_receipts[
+            :_MAX_SNAPSHOT_COMPLETION_RECEIPTS
+        ]
                 
         snapshot_state = {
             "counts": counts,
-            "tasks": all_tasks[:100],
+            "tasks": all_tasks[:_MAX_SNAPSHOT_TASKS],
+            "completion_receipts": completion_receipts,
         }
         
         snapshot_str = json.dumps(snapshot_state, ensure_ascii=False, sort_keys=True)

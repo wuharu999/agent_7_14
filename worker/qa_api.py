@@ -42,7 +42,7 @@ from worker.config import (
 from worker.conversation_store import ConversationTurn
 from worker.egress_region import EgressRegionGate
 from worker.prompt_security import GuardDecision, refusal_text
-from worker.qa_images import strip_qa_image_markdown
+from worker.qa_images import attach_relevant_qa_images, strip_qa_image_markdown
 from worker.terminology import (
     CANONICAL_TERMINOLOGY_PROMPT,
     canonicalize_product_names,
@@ -70,6 +70,7 @@ SOURCE_SECTION_RE = re.compile(
 )
 _STREAM_QUEUE_SIZE = 100
 _MAX_TOPIC_SUPPLEMENTAL_PAGES = 20
+_ROUTER_MAX_PAGES = 5
 _STREAM_BOUNDARY_RE = re.compile(r"(?:\r?\n|[。！？；，!?]|[.,;:](?=\s))")
 
 LANGUAGE_NAMES = {
@@ -116,8 +117,7 @@ Output requirements:
   and cautions when the supplied evidence supports those sections.
 - If the supplied pages are insufficient, put [KNOWLEDGE_GAP] on the first line and briefly state what is missing.
 - Never include citations, source lists, Wiki page names, slugs, local file paths, or retrieval references.
-- You may include at most three existing project-relative Markdown image references found in the supplied pages.
-  Never invent a path or use an external URL.
+- Do not output image paths or image Markdown. The Worker attaches validated relevant Wiki images separately.
 """ + "\n\n" + CANONICAL_TERMINOLOGY_PROMPT
 
 
@@ -332,6 +332,81 @@ class Wiki:
         ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
         positive = [slug for score, _, slug in ranked if score > 0]
         return (positive or [ranked[0][2]])[:WIKI_QA_MAX_PAGES]
+
+    def expand_slugs(
+        self,
+        selected_slugs: Sequence[str],
+        *,
+        question: str,
+        team: str,
+        history: Sequence[ConversationTurn],
+        allowed_slugs: set[str],
+    ) -> list[str]:
+        """Add one-hop and lexical Wiki-only context within the page budget."""
+        selected = list(dict.fromkeys(slug for slug in selected_slugs if slug in allowed_slugs))
+        if len(selected) >= WIKI_QA_MAX_PAGES:
+            return selected[:WIKI_QA_MAX_PAGES]
+
+        link_candidates: list[str] = []
+        for slug in selected:
+            for path in self.pages.get(slug, []):
+                try:
+                    linked = ordered_links_in(path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError):
+                    continue
+                for linked_slug in linked:
+                    if (
+                        linked_slug in allowed_slugs
+                        and linked_slug not in selected
+                        and linked_slug not in link_candidates
+                    ):
+                        link_candidates.append(linked_slug)
+
+        history_text = " ".join(
+            f"{turn.question} {turn.answer}"
+            for turn in history
+            if not is_internal_processing_error(turn.answer)
+        )
+        query_terms = _lexical_terms(
+            canonicalize_product_names(f"{team} {question} {history_text}")
+        )
+
+        relevance_scores: dict[str, int] = {}
+
+        def relevance(slug: str) -> int:
+            if slug in relevance_scores:
+                return relevance_scores[slug]
+            paths = self.pages.get(slug, [])
+            metadata = " ".join(
+                [slug, *(str(path.relative_to(self.root)) for path in paths)]
+            )
+            score = 12 * len(query_terms & _lexical_terms(metadata))
+            for path in paths[:2]:
+                try:
+                    text = path.read_text(encoding="utf-8")[:6000]
+                except (OSError, UnicodeError):
+                    continue
+                score += len(query_terms & _lexical_terms(text))
+            relevance_scores[slug] = score
+            return score
+
+        linked_ranked = sorted(
+            link_candidates,
+            key=lambda slug: (-relevance(slug), link_candidates.index(slug), slug),
+        )
+        for slug in linked_ranked:
+            if len(selected) == WIKI_QA_MAX_PAGES:
+                return selected
+            selected.append(slug)
+
+        related = [
+            slug
+            for slug in allowed_slugs
+            if slug not in selected and relevance(slug) > 0
+        ]
+        related.sort(key=lambda slug: (-relevance(slug), slug))
+        selected.extend(related[: WIKI_QA_MAX_PAGES - len(selected)])
+        return selected
 
     def load(
         self,
@@ -596,7 +671,7 @@ def parse_router_response(response: str, allowed_slugs: set[str]) -> list[str]:
                 matched = next(iter(matches))
         if matched is not None and matched not in selected:
             selected.append(matched)
-        if len(selected) == WIKI_QA_MAX_PAGES:
+        if len(selected) == min(_ROUTER_MAX_PAGES, WIKI_QA_MAX_PAGES):
             break
     if not selected:
         raise QAAPIError("The retrieval model selected no valid indexed page")
@@ -777,6 +852,15 @@ async def _run_provider(
             "DeepSeek retrieval response was unusable; selected Wiki pages deterministically"
         )
 
+    selected_slugs = await asyncio.to_thread(
+        wiki.expand_slugs,
+        selected_slugs,
+        question=question,
+        team=team,
+        history=history,
+        allowed_slugs=candidate_slugs,
+    )
+
     documents = await asyncio.to_thread(
         wiki.load,
         selected_slugs,
@@ -807,8 +891,8 @@ async def _run_provider(
     except Exception as exc:
         raise ProviderCallError(provider, "answer streaming") from exc
 
-    sanitized_answer = strip_retrieval_references(
-        raw_answer, wiki, candidate_slugs
+    sanitized_answer = strip_qa_image_markdown(
+        strip_retrieval_references(raw_answer, wiki, candidate_slugs)
     ).strip()
     if not sanitized_answer:
         raise ProviderCallError(provider, "answer response validation")
@@ -816,7 +900,14 @@ async def _run_provider(
     tail = reference_filter.finish()
     if tail:
         await on_token(tail)
-    return sanitized_answer
+    return await asyncio.to_thread(
+        attach_relevant_qa_images,
+        sanitized_answer,
+        question,
+        wiki.root,
+        documents,
+        language=language,
+    )
 
 
 async def _retrieve_and_stream(

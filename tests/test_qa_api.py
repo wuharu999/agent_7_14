@@ -151,6 +151,55 @@ def test_walker_c1_topic_supplements_stale_index_without_exposing_unrelated_page
     assert wiki.load(["private-notes"], allowed_slugs=candidates) == []
 
 
+def test_retrieval_expands_selected_page_with_links_and_related_wiki_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "index.md", "[[walker-overview]] [[battery]] [[charging]] [[unrelated]]")
+    write(
+        tmp_path / "entities" / "walker-overview.md",
+        "# Walker overview\nBattery system [[battery]] and [[charging]].",
+    )
+    write(tmp_path / "concepts" / "battery.md", "Battery quick-swap details.")
+    write(tmp_path / "concepts" / "charging.md", "Charging time and charger details.")
+    write(tmp_path / "concepts" / "unrelated.md", "Catering workflow.")
+    wiki = qa_api.Wiki(tmp_path)
+    monkeypatch.setattr(qa_api, "WIKI_QA_MAX_PAGES", 3)
+
+    expanded = wiki.expand_slugs(
+        ["walker-overview"],
+        question="Tell me all battery and charging details",
+        team="walker_s2",
+        history=(),
+        allowed_slugs=wiki.retrievable_slugs,
+    )
+
+    assert expanded[0] == "walker-overview"
+    assert set(expanded[1:]) == {"battery", "charging"}
+    assert "unrelated" not in expanded
+
+
+def test_retrieval_expansion_never_adds_unindexed_or_raw_source_pages(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "index.md", "[[primary]] [[indexed]]")
+    write(tmp_path / "concepts" / "primary.md", "# Primary\n[[hidden]] [[indexed]]")
+    write(tmp_path / "concepts" / "indexed.md", "Indexed evidence")
+    write(tmp_path / "concepts" / "hidden.md", "Hidden evidence")
+    wiki = qa_api.Wiki(tmp_path)
+
+    expanded = wiki.expand_slugs(
+        ["primary"],
+        question="evidence",
+        team="walker_s2",
+        history=(),
+        allowed_slugs=wiki.retrievable_slugs,
+    )
+
+    assert expanded == ["primary", "indexed"]
+    assert "hidden" not in expanded
+
+
 @dataclass
 class FakeTeamConfig:
     wiki_dir: Path
@@ -285,6 +334,7 @@ def test_answer_system_preserves_existing_prompt_contract() -> None:
     assert "[KNOWLEDGE_GAP]" in qa_api.ANSWER_SYSTEM
     assert "Do not mention tools" in qa_api.ANSWER_SYSTEM
     assert "Never include citations" in qa_api.ANSWER_SYSTEM
+    assert "Do not output image paths or image Markdown" in qa_api.ANSWER_SYSTEM
     assert "Cite factual statements" not in qa_api.ANSWER_SYSTEM
     assert qa_api.DeepSeekClient._options() == {
         "temperature": 0,
