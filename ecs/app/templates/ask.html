@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Uchat Knowledge Base</title>
-<link rel="stylesheet" href="/petdex/styles.css">
 <link rel="stylesheet" href="/static/account_menu.css">
 <script src="/static/account_menu.js?v=20260804-1" defer></script>
 <style>
@@ -84,7 +83,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
 <div class="chat-section">
   <div class="header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
     <div style="display: flex; align-items: center; gap: 14px;">
-      <div id="coding-companion" class="petdex-companion" data-mode="sleeping" style="--petdex-scale: 2;"></div>
       <div class="header-titles">
         <h1 data-i18n="title">Uchat Knowledge Base</h1>
         <p data-i18n="subtitle">Ask questions against the local wiki.</p>
@@ -177,32 +175,6 @@ const scenarioButtonI18n={
 };
 
 let currentLang = 'zh-CN';
-
-const companionEl = document.getElementById('coding-companion');
-function setCompanionMode(mode) {
-  if (companionEl) {
-    companionEl.dataset.mode = mode;
-    companionEl.setAttribute('aria-label', `Robot companion: ${mode}`);
-  }
-}
-
-question.addEventListener('input', () => {
-  if (question.value.trim() && companionEl.dataset.mode === 'sleeping') {
-    setCompanionMode('thinking');
-  } else if (!question.value.trim() && companionEl.dataset.mode === 'thinking') {
-    setCompanionMode('sleeping');
-  }
-});
-question.addEventListener('focus', () => {
-  if (companionEl.dataset.mode === 'sleeping') {
-    setCompanionMode('thinking');
-  }
-});
-question.addEventListener('blur', () => {
-  if (!question.value.trim() && companionEl.dataset.mode === 'thinking') {
-    setCompanionMode('sleeping');
-  }
-});
 let workerOnline = false;
 let currentChat = [];
 
@@ -497,7 +469,6 @@ async function submitQuestion(){
     .slice(-12)
     .map(message=>({role:message.role,content:message.content}));
 
-  setCompanionMode('charging');
   askButton.disabled=true;
   newConversationButton.disabled=true;
   question.value='';
@@ -578,7 +549,6 @@ async function submitQuestion(){
             }
 
             if (event.thinking) {
-              setCompanionMode('thinking');
               if (!thinkingDiv) {
                 thinkingDiv = document.createElement('div');
                 thinkingDiv.className = 'thinking-block';
@@ -598,7 +568,6 @@ async function submitQuestion(){
             }
 
             if (event.thinking_tokens && !event.thinking && !event.text && !thinkingDiv?.dataset.raw) {
-              setCompanionMode('thinking');
               if (!thinkingDiv) {
                 thinkingDiv = document.createElement('div');
                 thinkingDiv.className = 'thinking-block';
@@ -648,7 +617,6 @@ async function submitQuestion(){
             }
 
             if (event.text) {
-              setCompanionMode('charging');
               accumulatedText += event.text;
               renderAnswerText(ensureTextContainer(botBubble), accumulatedText);
             }
@@ -676,7 +644,6 @@ async function submitQuestion(){
     }
     askButton.disabled=false;
     newConversationButton.disabled=false;
-    setCompanionMode('sleeping');
   }
 }
 askButton.onclick=submitQuestion;

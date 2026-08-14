@@ -47,11 +47,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
 
-project_root = Path(__file__).resolve().parents[2]
 static_dir = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-petdex_dir = project_root / "petdex_robot_companion"
-app.mount("/petdex", StaticFiles(directory=str(petdex_dir)), name="petdex")
 
 app.include_router(pages.router)
 app.include_router(auth.router)

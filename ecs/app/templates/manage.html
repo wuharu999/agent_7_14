@@ -8,7 +8,7 @@
 <style>
 body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 8px 30px #1f293711}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,.button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;text-decoration:none;box-sizing:border-box;font-size:14px}.secondary{background:#475569}.danger{background:#b91c1c}.danger:disabled{background:#94a3b8;cursor:not-allowed}.muted{color:#64748b}.status{padding:3px 8px;border-radius:999px;background:#e2e8f0;font-size:12px}.processing{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.failed,.partially_failed{background:#fee2e2;color:#991b1b}.queued{background:#dbeafe;color:#1e40af}.tree{list-style:none;padding-left:0}.tree ul{list-style:none;margin:6px 0 6px 22px;padding-left:12px;border-left:1px solid #cbd5e1}.item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px;border-radius:8px}.item:hover{background:#f8fafc}.name{min-width:0;overflow-wrap:anywhere}.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}code{overflow-wrap:anywhere}form{display:inline;margin:0}summary{list-style:none;outline:none;cursor:pointer}summary::-webkit-details-marker{display:none}summary .name::before{content:'▶ ';font-size:11px;color:#94a3b8;transition:transform .15s}details[open]>summary .name::before{content:'▼ ';color:#64748b}</style>
 <style>
-.admin-create{display:grid;grid-template-columns:minmax(260px,420px) minmax(300px,1fr);gap:22px;align-items:stretch;margin-bottom:20px}.petdex-state-panel{border:1px solid #bfdbfe;border-radius:12px;padding:14px;background:linear-gradient(135deg,#eff6ff,#f8fafc)}.petdex-state-panel h3{margin:0 0 4px}.petdex-state-panel p{margin:0 0 12px;font-size:13px;color:#64748b}.petdex-states{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.petdex-state{min-width:0;padding:10px;border:1px solid #dbe2ee;border-radius:10px;background:#fff;text-align:center}.petdex-sprite{width:64px;height:64px;margin:0 auto 7px;background-repeat:no-repeat;background-size:512px 64px;image-rendering:pixelated;image-rendering:crisp-edges;animation:petdex-admin-sprite 1.2s steps(8) infinite}.petdex-sprite.sleeping{background-image:url('/petdex/assets/sleeping-sheet.png');animation-duration:1.44s}.petdex-sprite.charging{background-image:url('/petdex/assets/charging-sheet.png');animation-duration:.88s}.petdex-sprite.thinking{background-image:url('/petdex/assets/thinking-sheet.png');animation-duration:1.2s}.petdex-state strong{display:block;font-size:13px}.petdex-state small{display:block;margin-top:3px;font-size:11px;color:#64748b;line-height:1.35}@keyframes petdex-admin-sprite{from{background-position-x:0}to{background-position-x:-512px}}.assignment-board{display:grid;grid-template-columns:minmax(220px,1fr) minmax(360px,2fr);gap:18px;align-items:start}.editor-pool-panel,.robots-panel{border:1px solid #dbe2ee;border-radius:12px;background:#f8fafc;padding:14px}.editor-pool{display:flex;flex-direction:column;gap:8px;min-height:90px}.editor-chip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:650;cursor:grab}.editor-chip:active{cursor:grabbing}.editor-chip small{color:#64748b;font-weight:500}.assigned-editor{display:inline-flex;width:auto;margin:4px 6px 4px 0;cursor:grab}.assigned-editor button{height:auto;padding:0 2px;background:none;color:#b91c1c;font-size:17px;line-height:1}.robot-card{margin-bottom:12px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;transition:border-color .15s,background .15s}.robot-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.robot-card-header>div{flex-wrap:wrap;justify-content:flex-end}.robot-card-header .danger{height:32px;padding:0 11px;font-size:12px}.robot-order-controls{display:inline-flex;gap:4px}.robot-order-button{width:32px;height:32px;padding:0;font-size:17px}.robot-order-button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}.robot-order-hint{margin:0 0 10px;font-size:12px;color:#64748b}.robot-card.drag-over{border-color:#2563eb;background:#eff6ff}.robot-drop-hint{font-size:12px;color:#64748b;margin:6px 0}.robot-editors{min-height:35px;padding-top:4px}@media(max-width:760px){.admin-create,.assignment-board{grid-template-columns:1fr}.petdex-states{grid-template-columns:repeat(3,minmax(86px,1fr))}.editor-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}@media(prefers-reduced-motion:reduce){.petdex-sprite{animation:none}}
+.admin-create{display:block;margin-bottom:20px}.robot-create-form{max-width:420px}.assignment-board{display:grid;grid-template-columns:minmax(220px,1fr) minmax(360px,2fr);gap:18px;align-items:start}.editor-pool-panel,.robots-panel{border:1px solid #dbe2ee;border-radius:12px;background:#f8fafc;padding:14px}.editor-pool{display:flex;flex-direction:column;gap:8px;min-height:90px}.editor-chip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:650;cursor:grab}.editor-chip:active{cursor:grabbing}.editor-chip small{color:#64748b;font-weight:500}.assigned-editor{display:inline-flex;width:auto;margin:4px 6px 4px 0;cursor:grab}.assigned-editor button{height:auto;padding:0 2px;background:none;color:#b91c1c;font-size:17px;line-height:1}.robot-card{margin-bottom:12px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;transition:border-color .15s,background .15s}.robot-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.robot-card-header>div{flex-wrap:wrap;justify-content:flex-end}.robot-card-header .danger{height:32px;padding:0 11px;font-size:12px}.robot-order-controls{display:inline-flex;gap:4px}.robot-order-button{width:32px;height:32px;padding:0;font-size:17px}.robot-order-button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}.robot-order-hint{margin:0 0 10px;font-size:12px;color:#64748b}.robot-card.drag-over{border-color:#2563eb;background:#eff6ff}.robot-drop-hint{font-size:12px;color:#64748b;margin:6px 0}.robot-editors{min-height:35px;padding-top:4px}@media(max-width:760px){.assignment-board{grid-template-columns:1fr}.editor-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
 </style>
 </head>
 <body>
@@ -50,15 +50,6 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
                 <p id="create-robot-msg" class="muted"></p>
             </form>
         </div>
-        <aside class="petdex-state-panel" aria-labelledby="petdex-state-title">
-            <h3 id="petdex-state-title" data-i18n="petdexStates">PetDex robot states</h3>
-            <p data-i18n="petdexStatesHelp">Visual states available for the robot companion.</p>
-            <div class="petdex-states">
-                <div class="petdex-state"><div class="petdex-sprite sleeping" aria-hidden="true"></div><strong data-i18n="petdexSleeping">Sleeping</strong><small data-i18n="petdexSleepingHelp">Resting / idle</small></div>
-                <div class="petdex-state"><div class="petdex-sprite charging" aria-hidden="true"></div><strong data-i18n="petdexCharging">Charging</strong><small data-i18n="petdexChargingHelp">Processing work</small></div>
-                <div class="petdex-state"><div class="petdex-sprite thinking" aria-hidden="true"></div><strong data-i18n="petdexThinking">Thinking</strong><small data-i18n="petdexThinkingHelp">Waiting for a model</small></div>
-            </div>
-        </aside>
     </div>
     <div class="assignment-board">
         <div class="editor-pool-panel">
@@ -172,15 +163,7 @@ const translations = {
     failedToGenerateReport: 'Failed to generate report.',
     addEditorFailed: 'Failed to assign editor.',
     removeEditorFailed: 'Failed to remove editor.',
-    contradictionWarningTitle: 'Wiki Contradictions Detected (Last 7 Days)',
-    petdexStates: 'PetDex robot states',
-    petdexStatesHelp: 'Visual states available for the robot companion.',
-    petdexSleeping: 'Sleeping',
-    petdexSleepingHelp: 'Resting / idle',
-    petdexCharging: 'Charging',
-    petdexChargingHelp: 'Processing work',
-    petdexThinking: 'Thinking',
-    petdexThinkingHelp: 'Waiting for a model'
+    contradictionWarningTitle: 'Wiki Contradictions Detected (Last 7 Days)'
   },
   'zh-CN': {
     title: '知识源管理器',
@@ -250,15 +233,7 @@ const translations = {
     failedToGenerateReport: '生成报告失败。',
     addEditorFailed: '分配编辑者失败。',
     removeEditorFailed: '移除编辑者失败。',
-    contradictionWarningTitle: '检测到 Wiki 内容冲突（最近 7 天）',
-    petdexStates: 'PetDex 机器人状态',
-    petdexStatesHelp: '机器人伙伴可使用的视觉状态。',
-    petdexSleeping: '休眠',
-    petdexSleepingHelp: '休息 / 空闲',
-    petdexCharging: '充能',
-    petdexChargingHelp: '正在处理任务',
-    petdexThinking: '思考',
-    petdexThinkingHelp: '正在等待模型'
+    contradictionWarningTitle: '检测到 Wiki 内容冲突（最近 7 天）'
   }
 };
 
