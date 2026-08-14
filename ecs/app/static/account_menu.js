@@ -11,6 +11,7 @@
     'ru': {settings:'Настройки', accountSettings:'Настройки пользователя', workbench:'Рабочая область реализуемости сценариев', gapAnalytics:'Аналитика пробелов возможностей', manage:'Управление источниками', upload:'Загрузить документацию', exportWiki:'Экспорт в мой ИИ', userManagement:'Управление пользователями', signOut:'Выйти', signIn:'Войти', exportFailed:'Ошибка экспорта'},
     'es': {settings:'Configuración', accountSettings:'Configuración de usuario', workbench:'Banco de viabilidad de escenarios', gapAnalytics:'Análisis de brechas de capacidad', manage:'Administrar fuentes', upload:'Subir documentación', exportWiki:'Exportar a mi IA', userManagement:'Gestión de usuarios', signOut:'Cerrar sesión', signIn:'Iniciar sesión', exportFailed:'Error de exportación'}
   };
+  const SHOW_CAPABILITY_NAVIGATION = false;
 
   function selectedLanguage() {
     const selector = document.querySelector('#language, #langSelect, #ui-language');
@@ -94,11 +95,13 @@
     });
     popover.appendChild(accountSettings);
 
-    const workbench = makeElement('a', 'account-menu-item');
-    workbench.href = '/capability-match';
-    workbench.role = 'menuitem';
-    workbench.dataset.accountLabel = 'workbench';
-    popover.appendChild(workbench);
+    if (SHOW_CAPABILITY_NAVIGATION) {
+      const workbench = makeElement('a', 'account-menu-item');
+      workbench.href = '/capability-match';
+      workbench.role = 'menuitem';
+      workbench.dataset.accountLabel = 'workbench';
+      popover.appendChild(workbench);
+    }
 
     const manage = makeElement('a', 'account-menu-item');
     manage.href = '/manage';
@@ -126,11 +129,13 @@
       users.dataset.accountLabel = 'userManagement';
       popover.appendChild(users);
 
-      const capabilities = makeElement('a', 'account-menu-item');
-      capabilities.href = '/admin/capabilities';
-      capabilities.role = 'menuitem';
-      capabilities.dataset.accountLabel = 'gapAnalytics';
-      popover.appendChild(capabilities);
+      if (SHOW_CAPABILITY_NAVIGATION) {
+        const capabilities = makeElement('a', 'account-menu-item');
+        capabilities.href = '/admin/capabilities';
+        capabilities.role = 'menuitem';
+        capabilities.dataset.accountLabel = 'gapAnalytics';
+        popover.appendChild(capabilities);
+      }
     }
 
     popover.appendChild(makeElement('div', 'account-menu-divider'));

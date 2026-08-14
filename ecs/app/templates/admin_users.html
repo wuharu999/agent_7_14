@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>用户与文件夹权限管理 - Admin User Management</title>
 <link rel="stylesheet" href="/static/account_menu.css">
-<script src="/static/account_menu.js?v=20260804-1" defer></script>
+<script src="/static/account_menu.js?v=20260814-1" defer></script>
 <style>
 body { font-family: system-ui, -apple-system, sans-serif; max-width: 1120px; margin: 40px auto; padding: 0 18px; background: #f5f7fb; color: #172033; }
 .top { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 20px; }
@@ -67,14 +67,17 @@ th { background: #f8fafc; font-weight: 600; color: #475569; border-top: 1px soli
     系统说明：电子邮箱与后台冲突检测机制 (System Notice: Emails & Conflict Detection)
   </h3>
   <div style="font-size: 13.5px; line-height: 1.6; color: #1e3a8a;">
+    <p style="margin: 6px 0; padding: 9px 11px; border-radius: 8px; background: #dbeafe;">
+      <strong>⚠️ 当前状态：</strong>电子邮件通知功能尚未开放。现阶段冲突只会记录到数据库并显示在文件管理页面，不会发送电子邮件。
+    </p>
     <p style="margin: 6px 0;">
-      <strong>📧 电子邮箱的用途：</strong>用户的电子邮箱用于接收系统自动预警。当后台检测到任何知识库文档内容冲突时，系统会实时向所有<strong>管理员角色 (Admin)</strong> 账户的注册邮箱发送冲突提醒邮件（不依赖特定的团队负责人）。
+      <strong>📧 电子邮箱的规划用途：</strong>电子邮件功能开放后，用户的电子邮箱将用于接收系统自动预警。当后台检测到知识库文档内容冲突时，系统将向所有<strong>管理员角色 (Admin)</strong> 账户的注册邮箱发送冲突提醒邮件（不依赖特定的团队负责人）。
     </p>
     <p style="margin: 6px 0;">
       <strong>⚙️ 后台冲突检测机制：</strong>当编辑者上传新源文件或发布文章时，后台 Worker 会自动运行 LLM Wiki 冲突审查任务。如果发现不同文档之间存在规格矛盾、逻辑冲突或陈述不一致，系统会：
       <span style="display: block; padding-left: 16px; margin-top: 4px;">
         1. 自动将冲突详情记录至数据库，并在 <a href="/manage" style="color: #2563eb; text-decoration: underline; font-weight: 600;">文件管理页面</a> 顶部显示醒目的<strong>红色预警横幅</strong>（仅保留最近 7 天的记录，支持展开查看详细冲突）。<br>
-        2. 实时触发邮件通知，向所有系统管理员的注册邮箱发送预警信息。
+        2. 电子邮件通知功能开放后，向所有系统管理员的注册邮箱发送预警信息。
       </span>
     </p>
   </div>

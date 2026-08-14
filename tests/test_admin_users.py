@@ -96,6 +96,8 @@ def test_admin_users_page_success():
     assert "用户与文件夹权限管理" in response.text
     assert "removeDisabledUser" in response.text
     assert "删除账户" in response.text
+    assert "电子邮件通知功能尚未开放" in response.text
+    assert "不会发送电子邮件" in response.text
 
 
 def test_username_normalization_supports_chinese_characters():
