@@ -25,6 +25,7 @@ from ecs.app.auth import (
     verify_password,
 )
 from ecs.app.database import get_user_by_id, update_user_email, update_user_password, write_audit
+from ecs.app.web_paths import rooted_path
 
 router = APIRouter()
 _LOGIN_WINDOW_SECONDS = 15 * 60
@@ -122,7 +123,7 @@ async def login(
     safe_next = safe_next_url(next_url, "/manage")
     if len(_trim_failures(key)) >= _LOGIN_MAX_FAILURES:
         return RedirectResponse(
-            f"/login?error=2&next={quote(safe_next, safe='/')}",
+            rooted_path(f"/login?error=2&next={quote(safe_next, safe='/')}"),
             status_code=303,
         )
 
@@ -130,7 +131,7 @@ async def login(
     if user is None:
         _login_failures[key].append(time.monotonic())
         return RedirectResponse(
-            f"/login?error=1&next={quote(safe_next, safe='/')}",
+            rooted_path(f"/login?error=1&next={quote(safe_next, safe='/')}"),
             status_code=303,
         )
 
@@ -141,7 +142,7 @@ async def login(
         str(user["role"]),
         "/manage",
     )
-    response = RedirectResponse(destination, status_code=303)
+    response = RedirectResponse(rooted_path(destination), status_code=303)
     set_session_cookie(response, token)
     write_audit(
         user_id=int(user["id"]),
@@ -168,6 +169,6 @@ async def logout(
             result="ok",
         )
     logout_session(request)
-    response = RedirectResponse("/login", status_code=303)
+    response = RedirectResponse(rooted_path("/login"), status_code=303)
     clear_session_cookie(response)
     return response

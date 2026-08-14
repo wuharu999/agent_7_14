@@ -14,6 +14,7 @@ from ecs.app.auth import require_roles, verify_csrf, check_robot_access
 from ecs.app.config import PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET, TEAM_MAX_UPLOAD_BYTES
 from ecs.app.database import get_allowed_teams, create_upload, get_upload, update_upload, write_audit, get_team_upload_usage
 from ecs.app.gateway import gateway
+from ecs.app.web_paths import rooted_path
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, is_supported_upload
 
 router = APIRouter()
@@ -181,8 +182,8 @@ async def upload_file(
     return {
         "upload_id": upload_id,
         "status": "queued" if gateway.online else "waiting_for_worker",
-        "status_url": f"/api/uploads/{upload_id}",
-        "status_page": f"/uploads/{upload_id}",
+        "status_url": rooted_path(f"/api/uploads/{upload_id}"),
+        "status_page": rooted_path(f"/uploads/{upload_id}"),
     }
 
 

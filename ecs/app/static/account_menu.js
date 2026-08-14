@@ -12,6 +12,7 @@
     'es': {settings:'Configuración', accountSettings:'Configuración de usuario', workbench:'Banco de viabilidad de escenarios', gapAnalytics:'Análisis de brechas de capacidad', manage:'Administrar fuentes', upload:'Subir documentación', exportWiki:'Exportar a mi IA', userManagement:'Gestión de usuarios', signOut:'Cerrar sesión', signIn:'Iniciar sesión', exportFailed:'Error de exportación'}
   };
   const SHOW_CAPABILITY_NAVIGATION = false;
+  const appUrl = path => typeof window.appUrl === 'function' ? window.appUrl(path) : path;
 
   function selectedLanguage() {
     const selector = document.querySelector('#language, #langSelect, #ui-language');
@@ -65,7 +66,7 @@
         body: new URLSearchParams({csrf_token: csrfToken})
       });
     } finally {
-      window.location.href = returnPath;
+      window.location.href = appUrl(returnPath);
     }
   }
 
@@ -86,31 +87,31 @@
     popover.role = 'menu';
     popover.hidden = true;
     const accountSettings = makeElement('a', 'account-menu-item');
-    accountSettings.href = '/settings';
+    accountSettings.href = appUrl('/settings');
     accountSettings.role = 'menuitem';
     accountSettings.dataset.accountLabel = 'accountSettings';
     accountSettings.addEventListener('click', event => {
       event.preventDefault();
-      window.location.assign('/settings');
+      window.location.assign(appUrl('/settings'));
     });
     popover.appendChild(accountSettings);
 
     if (SHOW_CAPABILITY_NAVIGATION) {
       const workbench = makeElement('a', 'account-menu-item');
-      workbench.href = '/capability-match';
+      workbench.href = appUrl('/capability-match');
       workbench.role = 'menuitem';
       workbench.dataset.accountLabel = 'workbench';
       popover.appendChild(workbench);
     }
 
     const manage = makeElement('a', 'account-menu-item');
-    manage.href = '/manage';
+    manage.href = appUrl('/manage');
     manage.role = 'menuitem';
     manage.dataset.accountLabel = 'manage';
     popover.appendChild(manage);
 
     const upload = makeElement('a', 'account-menu-item');
-    upload.href = '/upload';
+    upload.href = appUrl('/upload');
     upload.role = 'menuitem';
     upload.dataset.accountLabel = 'upload';
     popover.appendChild(upload);
@@ -124,14 +125,14 @@
 
     if (user.role === 'admin') {
       const users = makeElement('a', 'account-menu-item');
-      users.href = '/admin/users';
+      users.href = appUrl('/admin/users');
       users.role = 'menuitem';
       users.dataset.accountLabel = 'userManagement';
       popover.appendChild(users);
 
       if (SHOW_CAPABILITY_NAVIGATION) {
         const capabilities = makeElement('a', 'account-menu-item');
-        capabilities.href = '/admin/capabilities';
+        capabilities.href = appUrl('/admin/capabilities');
         capabilities.role = 'menuitem';
         capabilities.dataset.accountLabel = 'gapAnalytics';
         popover.appendChild(capabilities);
@@ -189,7 +190,7 @@
     } catch (_) {}
 
     const login = makeElement('a', 'account-menu-login');
-    login.href = '/login';
+    login.href = appUrl('/login');
     login.textContent = (labels[selectedLanguage()] || labels.en).signIn;
     host.replaceChildren(login);
   }

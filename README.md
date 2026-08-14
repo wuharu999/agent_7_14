@@ -34,9 +34,9 @@ ROOT_PATH=/v1/faq-platform
 
 The FastAPI application receives this value through its constructor, so both
 prefixed routes such as `/v1/faq-platform/health` and the existing unprefixed
-routes continue to work. The ECS also preserves unprefixed `/static/...` assets
-used by the existing templates. Do not replace this setting with only Uvicorn's
-`--root-path` flag.
+routes continue to work at the origin. Browser links, forms, redirects, API
+requests, uploads, and static assets automatically remain beneath the configured
+prefix. Do not replace this setting with only Uvicorn's `--root-path` flag.
 
 ### Indexed QA with provider failover
 

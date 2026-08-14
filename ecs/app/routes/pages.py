@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import json
-from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request
@@ -10,22 +9,21 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ecs.app.auth import current_session, safe_next_url, safe_next_url_for_role
 from ecs.app.database import get_allowed_teams, get_robot_options
+from ecs.app.web_paths import render_template, rooted_path
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, UPLOAD_ACCEPT
 
 router = APIRouter()
-_TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "templates"
 
 
 def _template(name: str) -> str:
-    content = (_TEMPLATE_ROOT / name).read_text(encoding="utf-8")
-    if name != "bg_graph.html" and "</body>" in content:
-        bg = (_TEMPLATE_ROOT / "bg_graph.html").read_text(encoding="utf-8")
-        content = content.replace("</body>", bg + "\n</body>")
-    return content
+    return render_template(name, include_background=True)
 
 
 def _login_redirect(next_url: str) -> RedirectResponse:
-    return RedirectResponse(f"/login?next={quote(next_url, safe='/')}", status_code=303)
+    return RedirectResponse(
+        rooted_path(f"/login?next={quote(next_url, safe='/')}"),
+        status_code=303,
+    )
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -45,10 +43,12 @@ async def login_page(
     session = current_session(request)
     if session is not None:
         return RedirectResponse(
-            safe_next_url_for_role(
-                next_url,
-                str(session["role"]),
-                "/manage",
+            rooted_path(
+                safe_next_url_for_role(
+                    next_url,
+                    str(session["role"]),
+                    "/manage",
+                )
             ),
             status_code=303,
         )

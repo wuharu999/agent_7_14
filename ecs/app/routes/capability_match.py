@@ -40,10 +40,10 @@ from ecs.app.database import (
 )
 from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
+from ecs.app.web_paths import render_template, rooted_path
 
 router = APIRouter()
 log = logging.getLogger("ecs.capability_match")
-_TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "templates"
 _PDF_FONT_LOCK = threading.Lock()
 CAPABILITY_CATALOG_SCOPE = "repository"
 
@@ -91,7 +91,7 @@ _catalog_tasks: dict[str, asyncio.Task[None]] = {}
 
 
 def _template(name: str) -> str:
-    return (_TEMPLATE_ROOT / name).read_text(encoding="utf-8")
+    return render_template(name)
 
 
 def _public_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
@@ -802,9 +802,12 @@ async def export_capability_match(
 async def admin_capabilities_page(request: Request) -> Response:
     session = current_session(request)
     if session is None:
-        return RedirectResponse("/login?next=/admin/capabilities", status_code=303)
+        return RedirectResponse(
+            rooted_path("/login?next=/admin/capabilities"),
+            status_code=303,
+        )
     if session["role"] != "admin":
-        return RedirectResponse("/manage", status_code=303)
+        return RedirectResponse(rooted_path("/manage"), status_code=303)
     page = _template("admin_capabilities.html")
     page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
     page = page.replace("__USERNAME__", html.escape(str(session["username"])))

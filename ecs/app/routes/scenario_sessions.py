@@ -54,6 +54,7 @@ from ecs.app.database import (
 )
 from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
+from ecs.app.web_paths import rooted_path
 from shared.scenario_state import (
     apply_answer,
     apply_state_patch,
@@ -1606,7 +1607,7 @@ async def share_route(
         {
             "status": "ok",
             "share_id": share_id,
-            "url": f"/s/scenario-report/{raw_token}",
+            "url": rooted_path(f"/s/scenario-report/{raw_token}"),
             "expires_at": expires_at,
         },
         status_code=201,

@@ -30,6 +30,7 @@ from ecs.app.database import (
     update_user_password,
     write_audit,
 )
+from ecs.app.web_paths import render_template, rooted_path
 
 router = APIRouter()
 
@@ -49,18 +50,16 @@ class UpdateUserRequest(BaseModel):
 
 
 def _template(name: str) -> str:
-    from pathlib import Path
-    template_path = Path(__file__).resolve().parents[1] / "templates" / name
-    return template_path.read_text(encoding="utf-8")
+    return render_template(name)
 
 
 @router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users_page(request: Request):
     session = current_session(request)
     if session is None:
-        return RedirectResponse("/login?next=/admin/users", status_code=303)
+        return RedirectResponse(rooted_path("/login?next=/admin/users"), status_code=303)
     if session["role"] != "admin":
-        return RedirectResponse("/manage", status_code=303)
+        return RedirectResponse(rooted_path("/manage"), status_code=303)
     page = _template("admin_users.html")
     page = page.replace("__CSRF_TOKEN__", html.escape(str(session["csrf_token"]), quote=True))
     page = page.replace("__USERNAME__", html.escape(str(session["username"])))
