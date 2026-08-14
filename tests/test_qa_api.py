@@ -117,7 +117,7 @@ def test_specific_robot_scope_keeps_target_first_and_bounds_other_robots(
     write(
         tmp_path / "index.md",
         "[[tiangong-overview]] [[shared-vector-walking]] [[walker-s2-vector]] "
-        "[[walker-s2-api]] [[walker-c1-motion]]",
+        "[[walker-s2-api]] [[walker-c1-motion]] [[tiangong-walker-s2-comparison]]",
     )
     write(
         tmp_path / "entities" / "tiangong-overview.md",
@@ -138,6 +138,10 @@ def test_specific_robot_scope_keeps_target_first_and_bounds_other_robots(
     write(
         tmp_path / "entities" / "walker-c1-motion.md",
         "# Walker C1\nMotion details.",
+    )
+    write(
+        tmp_path / "comparisons" / "tiangong-walker-s2-comparison.md",
+        "# 天工行者 and Walker S2 Edu\nClaims are scoped per comparison row.",
     )
     wiki = qa_api.Wiki(tmp_path)
 
@@ -160,9 +164,18 @@ def test_specific_robot_scope_keeps_target_first_and_bounds_other_robots(
     assert "walker-c1-motion" not in ordered
     documents = wiki.load(ordered, allowed_slugs=wiki.retrievable_slugs)
     context = qa_api._make_context(wiki, documents, team="TienKung")
-    assert "ROBOT SCOPE: SELECTED ROBOT EVIDENCE" in context
+    assert (
+        "ROBOT SCOPE: MENTIONS SELECTED ROBOT - STILL VERIFY EACH CLAIM LOCALLY"
+        in context
+    )
     assert "OTHER ROBOT EVIDENCE - NAME IT AND KEEP IT SECONDARY" in context
     assert context.index("天工行者运动能力") < context.index("Walker S2 Edu")
+    mixed_context = qa_api._make_context(
+        wiki,
+        wiki.load(["tiangong-walker-s2-comparison"]),
+        team="TienKung",
+    )
+    assert "MIXED ROBOTS - VERIFY THE LOCAL SUBJECT OF EVERY CLAIM" in mixed_context
 
 
 def test_tienkung_selector_adds_unindexed_tiangong_alias_pages(tmp_path: Path) -> None:
@@ -210,6 +223,9 @@ def test_api_prompts_are_wiki_only_and_canonicalize_all_untrusted_text(
     assert "CLAUDE.md" not in combined
     assert "PRIMARY ROBOT: tian_gong" in answer
     assert "Answer this robot first" in answer
+    assert "Apply this filter to each individual claim" in answer
+    assert "SELECTED ROBOT ALIASES" in router
+    assert "天工行者" in router
 
 
 def test_router_response_rejects_unknown_duplicate_and_excess_slugs() -> None:
