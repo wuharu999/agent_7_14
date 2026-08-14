@@ -145,7 +145,7 @@ def test_supports_obsidian_and_html_image_references(tmp_path: Path) -> None:
     assert selected == [("Ethernet port", port), ("Ethernet cable", cable)]
 
 
-def test_orphaned_llm_wiki_media_requires_explicit_image_request(
+def test_orphaned_llm_wiki_media_sends_one_for_related_ordinary_question(
     tmp_path: Path,
 ) -> None:
     wiki = tmp_path / "wiki"
@@ -162,7 +162,7 @@ def test_orphaned_llm_wiki_media_requires_explicit_image_request(
         wiki,
         [document],
         language="en",
-    ) == []
+    ) == [("Walker guide — image 1", first)]
 
     selected = qa_images.select_relevant_qa_images(
         "Show me pictures of the robot exterior",
@@ -175,6 +175,53 @@ def test_orphaned_llm_wiki_media_requires_explicit_image_request(
         ("Walker guide — image 1", first),
         ("Walker guide — image 2", second),
     ]
+
+
+def test_orphaned_media_is_not_sent_for_unrelated_ordinary_question(
+    tmp_path: Path,
+) -> None:
+    wiki = tmp_path / "wiki"
+    page = wiki / "sources" / "walker-guide.md"
+    _media_file(tmp_path, "walker-guide/img-1.png")
+    document = RetrievedDocument(
+        path=page,
+        text="# Walker guide\n\nThe manual describes the robot exterior.",
+    )
+
+    selected = qa_images.select_relevant_qa_images(
+        "How does account authentication work?",
+        wiki,
+        [document],
+        language="en",
+    )
+
+    assert selected == []
+
+
+def test_linked_image_from_top_retrieved_page_no_longer_requires_image_words(
+    tmp_path: Path,
+) -> None:
+    wiki = tmp_path / "wiki"
+    page = wiki / "sources" / "walker-guide.md"
+    first = _media_file(tmp_path, "walker-guide/front.png")
+    second = _media_file(tmp_path, "walker-guide/rear.png")
+    document = RetrievedDocument(
+        path=page,
+        text=(
+            "# Walker guide\n\n"
+            "![Front](../media/walker-guide/front.png)\n"
+            "![Rear](../media/walker-guide/rear.png)"
+        ),
+    )
+
+    selected = qa_images.select_relevant_qa_images(
+        "What capabilities are available?",
+        wiki,
+        [document],
+    )
+
+    assert selected == [("Front", first)]
+    assert second not in [path for _alt, path in selected]
 
 
 def test_attached_image_markers_round_trip_without_exposing_paths(

@@ -94,9 +94,10 @@ should return to the default `main` branch after the pull request is merged.
 The Worker deterministically associates images with the Wiki pages already
 selected for an answer. It prefers Markdown, Obsidian, and HTML image references
 inside the best-matching section. Some LLM Wiki versions extract PDF images into
-`wiki/media/<page-stem>/` without adding Markdown references; for an explicit
-image request, the Worker can conservatively use that retrieved page's media
-folder instead. The answer model never selects paths.
+`wiki/media/<page-stem>/` without adding Markdown references; when the retrieved
+page overlaps the question, the Worker can conservatively attach one such image
+without requiring the customer to ask for a picture. Explicit image requests may
+return up to three. The answer model never selects paths.
 
 At most three images are attached. The Worker rejects traversal and symlinks,
 permits PNG, JPEG, GIF, and WebP, and limits each image to 8 MiB and the total
@@ -187,6 +188,8 @@ scan can assign capabilities only after the new robot appears in that registry.
 - Authenticated multi-file upload page with per-file pipeline status.
 - Authenticated source-tree manager.
 - Editor and admin roles.
+- Admin-managed robot display order shared by QA, upload, capability, and
+  management selectors.
 - Soft deletion into `.agent1-trash/` rather than permanent erasure.
 - CSRF-protected file-changing requests.
 - SQLite users, sessions, uploads, source status and audit logs.

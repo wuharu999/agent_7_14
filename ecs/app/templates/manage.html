@@ -8,7 +8,7 @@
 <style>
 body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:0 18px;background:#f5f7fb;color:#172033}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;padding:20px;margin:14px 0;box-shadow:0 8px 30px #1f293711}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,.button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;text-decoration:none;box-sizing:border-box;font-size:14px}.secondary{background:#475569}.danger{background:#b91c1c}.danger:disabled{background:#94a3b8;cursor:not-allowed}.muted{color:#64748b}.status{padding:3px 8px;border-radius:999px;background:#e2e8f0;font-size:12px}.processing{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.failed,.partially_failed{background:#fee2e2;color:#991b1b}.queued{background:#dbeafe;color:#1e40af}.tree{list-style:none;padding-left:0}.tree ul{list-style:none;margin:6px 0 6px 22px;padding-left:12px;border-left:1px solid #cbd5e1}.item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px;border-radius:8px}.item:hover{background:#f8fafc}.name{min-width:0;overflow-wrap:anywhere}.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px}.error{color:#b91c1c;white-space:pre-wrap}code{overflow-wrap:anywhere}form{display:inline;margin:0}summary{list-style:none;outline:none;cursor:pointer}summary::-webkit-details-marker{display:none}summary .name::before{content:'▶ ';font-size:11px;color:#94a3b8;transition:transform .15s}details[open]>summary .name::before{content:'▼ ';color:#64748b}</style>
 <style>
-.admin-create{display:grid;grid-template-columns:minmax(260px,420px) minmax(300px,1fr);gap:22px;align-items:stretch;margin-bottom:20px}.petdex-state-panel{border:1px solid #bfdbfe;border-radius:12px;padding:14px;background:linear-gradient(135deg,#eff6ff,#f8fafc)}.petdex-state-panel h3{margin:0 0 4px}.petdex-state-panel p{margin:0 0 12px;font-size:13px;color:#64748b}.petdex-states{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.petdex-state{min-width:0;padding:10px;border:1px solid #dbe2ee;border-radius:10px;background:#fff;text-align:center}.petdex-sprite{width:64px;height:64px;margin:0 auto 7px;background-repeat:no-repeat;background-size:512px 64px;image-rendering:pixelated;image-rendering:crisp-edges;animation:petdex-admin-sprite 1.2s steps(8) infinite}.petdex-sprite.sleeping{background-image:url('/petdex/assets/sleeping-sheet.png');animation-duration:1.44s}.petdex-sprite.charging{background-image:url('/petdex/assets/charging-sheet.png');animation-duration:.88s}.petdex-sprite.thinking{background-image:url('/petdex/assets/thinking-sheet.png');animation-duration:1.2s}.petdex-state strong{display:block;font-size:13px}.petdex-state small{display:block;margin-top:3px;font-size:11px;color:#64748b;line-height:1.35}@keyframes petdex-admin-sprite{from{background-position-x:0}to{background-position-x:-512px}}.assignment-board{display:grid;grid-template-columns:minmax(220px,1fr) minmax(360px,2fr);gap:18px;align-items:start}.editor-pool-panel,.robots-panel{border:1px solid #dbe2ee;border-radius:12px;background:#f8fafc;padding:14px}.editor-pool{display:flex;flex-direction:column;gap:8px;min-height:90px}.editor-chip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:650;cursor:grab}.editor-chip:active{cursor:grabbing}.editor-chip small{color:#64748b;font-weight:500}.assigned-editor{display:inline-flex;width:auto;margin:4px 6px 4px 0;cursor:grab}.assigned-editor button{height:auto;padding:0 2px;background:none;color:#b91c1c;font-size:17px;line-height:1}.robot-card{margin-bottom:12px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;transition:border-color .15s,background .15s}.robot-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.robot-card-header .danger{height:32px;padding:0 11px;font-size:12px}.robot-card.drag-over{border-color:#2563eb;background:#eff6ff}.robot-drop-hint{font-size:12px;color:#64748b;margin:6px 0}.robot-editors{min-height:35px;padding-top:4px}@media(max-width:760px){.admin-create,.assignment-board{grid-template-columns:1fr}.petdex-states{grid-template-columns:repeat(3,minmax(86px,1fr))}.editor-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}@media(prefers-reduced-motion:reduce){.petdex-sprite{animation:none}}
+.admin-create{display:grid;grid-template-columns:minmax(260px,420px) minmax(300px,1fr);gap:22px;align-items:stretch;margin-bottom:20px}.petdex-state-panel{border:1px solid #bfdbfe;border-radius:12px;padding:14px;background:linear-gradient(135deg,#eff6ff,#f8fafc)}.petdex-state-panel h3{margin:0 0 4px}.petdex-state-panel p{margin:0 0 12px;font-size:13px;color:#64748b}.petdex-states{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.petdex-state{min-width:0;padding:10px;border:1px solid #dbe2ee;border-radius:10px;background:#fff;text-align:center}.petdex-sprite{width:64px;height:64px;margin:0 auto 7px;background-repeat:no-repeat;background-size:512px 64px;image-rendering:pixelated;image-rendering:crisp-edges;animation:petdex-admin-sprite 1.2s steps(8) infinite}.petdex-sprite.sleeping{background-image:url('/petdex/assets/sleeping-sheet.png');animation-duration:1.44s}.petdex-sprite.charging{background-image:url('/petdex/assets/charging-sheet.png');animation-duration:.88s}.petdex-sprite.thinking{background-image:url('/petdex/assets/thinking-sheet.png');animation-duration:1.2s}.petdex-state strong{display:block;font-size:13px}.petdex-state small{display:block;margin-top:3px;font-size:11px;color:#64748b;line-height:1.35}@keyframes petdex-admin-sprite{from{background-position-x:0}to{background-position-x:-512px}}.assignment-board{display:grid;grid-template-columns:minmax(220px,1fr) minmax(360px,2fr);gap:18px;align-items:start}.editor-pool-panel,.robots-panel{border:1px solid #dbe2ee;border-radius:12px;background:#f8fafc;padding:14px}.editor-pool{display:flex;flex-direction:column;gap:8px;min-height:90px}.editor-chip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:650;cursor:grab}.editor-chip:active{cursor:grabbing}.editor-chip small{color:#64748b;font-weight:500}.assigned-editor{display:inline-flex;width:auto;margin:4px 6px 4px 0;cursor:grab}.assigned-editor button{height:auto;padding:0 2px;background:none;color:#b91c1c;font-size:17px;line-height:1}.robot-card{margin-bottom:12px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;transition:border-color .15s,background .15s}.robot-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.robot-card-header>div{flex-wrap:wrap;justify-content:flex-end}.robot-card-header .danger{height:32px;padding:0 11px;font-size:12px}.robot-order-controls{display:inline-flex;gap:4px}.robot-order-button{width:32px;height:32px;padding:0;font-size:17px}.robot-order-button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}.robot-order-hint{margin:0 0 10px;font-size:12px;color:#64748b}.robot-card.drag-over{border-color:#2563eb;background:#eff6ff}.robot-drop-hint{font-size:12px;color:#64748b;margin:6px 0}.robot-editors{min-height:35px;padding-top:4px}@media(max-width:760px){.admin-create,.assignment-board{grid-template-columns:1fr}.petdex-states{grid-template-columns:repeat(3,minmax(86px,1fr))}.editor-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}@media(prefers-reduced-motion:reduce){.petdex-sprite{animation:none}}
 </style>
 </head>
 <body>
@@ -68,6 +68,7 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
         </div>
         <div class="robots-panel">
             <h3 id="robots-heading" data-i18n="robotsAndEditors">Robots & Editors</h3>
+            <p class="robot-order-hint" data-i18n="robotOrderHint">Use the arrow buttons to set the order used by robot selectors.</p>
             <div id="robots-list" data-i18n="loadingRobots">Loading robots...</div>
         </div>
     </div>
@@ -120,6 +121,10 @@ const translations = {
     noActiveEditors: 'No active editor accounts.',
     dropEditorHere: 'Drop an editor here to assign access.',
     robotsAndEditors: 'Robots & Editors',
+    robotOrderHint: 'Use the arrow buttons to set the order used by robot selectors.',
+    moveRobotUp: 'Move robot up',
+    moveRobotDown: 'Move robot down',
+    updateRobotOrderFailed: 'Failed to update robot order.',
     recentAuditLog: 'Recent Audit Log',
     refreshAudit: 'Refresh Log',
     refreshSourceTree: 'Refresh source tree',
@@ -194,6 +199,10 @@ const translations = {
     noActiveEditors: '没有启用的编辑者账户。',
     dropEditorHere: '将编辑者拖到此处以分配访问权限。',
     robotsAndEditors: '机器人与编辑者列表',
+    robotOrderHint: '使用上下箭头调整顺序；问答页等机器人下拉列表将使用相同顺序。',
+    moveRobotUp: '上移机器人',
+    moveRobotDown: '下移机器人',
+    updateRobotOrderFailed: '修改机器人顺序失败。',
     recentAuditLog: '最近审计日志',
     refreshAudit: '刷新日志',
     refreshSourceTree: '刷新源文件树',
@@ -474,6 +483,7 @@ document.getElementById('refresh').onclick = async () => {
 const role = document.getElementById('user-role').textContent.trim();
 if (role === 'admin') {
     document.getElementById('admin-panel').style.display = 'block';
+    let robotOrderUpdating = false;
 
     function makeEditorChip(editor, assignedRobot = null) {
         const chip = document.createElement('div');
@@ -578,6 +588,32 @@ if (role === 'admin') {
         }
     }
 
+    async function moveRobot(robots, robotIndex, offset) {
+        if (robotOrderUpdating) return;
+        const targetIndex = robotIndex + offset;
+        if (targetIndex < 0 || targetIndex >= robots.length) return;
+        robotOrderUpdating = true;
+        const reordered = robots.map(robot => robot.id);
+        [reordered[robotIndex], reordered[targetIndex]] = [
+            reordered[targetIndex],
+            reordered[robotIndex]
+        ];
+        try {
+            const response = await fetch('/api/manage/robots/order', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                body: JSON.stringify({robot_ids: reordered})
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || tr('updateRobotOrderFailed'));
+            await loadRobots();
+        } catch (error) {
+            alert(String(error));
+        } finally {
+            robotOrderUpdating = false;
+        }
+    }
+
     async function loadRobots() {
         try {
             const [robotsResponse, editorsResponse] = await Promise.all([
@@ -611,7 +647,7 @@ if (role === 'admin') {
                 empty.textContent = tr('noRobots');
                 list.appendChild(empty);
             }
-            for (const robot of robots) {
+            for (const [robotIndex, robot] of robots.entries()) {
                 const div = document.createElement('div');
                 div.className = 'robot-card';
                 const header = document.createElement('div');
@@ -621,6 +657,31 @@ if (role === 'admin') {
                 const controls = document.createElement('div');
                 controls.style.display = 'flex';
                 controls.style.gap = '8px';
+                const orderControls = document.createElement('div');
+                orderControls.className = 'robot-order-controls';
+                const moveUpButton = document.createElement('button');
+                moveUpButton.type = 'button';
+                moveUpButton.className = 'secondary robot-order-button';
+                moveUpButton.textContent = '↑';
+                moveUpButton.title = tr('moveRobotUp');
+                moveUpButton.setAttribute('aria-label', tr('moveRobotUp'));
+                moveUpButton.disabled = robotIndex === 0;
+                moveUpButton.addEventListener('click', event => {
+                    event.stopPropagation();
+                    moveRobot(robots, robotIndex, -1);
+                });
+                const moveDownButton = document.createElement('button');
+                moveDownButton.type = 'button';
+                moveDownButton.className = 'secondary robot-order-button';
+                moveDownButton.textContent = '↓';
+                moveDownButton.title = tr('moveRobotDown');
+                moveDownButton.setAttribute('aria-label', tr('moveRobotDown'));
+                moveDownButton.disabled = robotIndex === robots.length - 1;
+                moveDownButton.addEventListener('click', event => {
+                    event.stopPropagation();
+                    moveRobot(robots, robotIndex, 1);
+                });
+                orderControls.append(moveUpButton, moveDownButton);
                 const editButton = document.createElement('button');
                 editButton.type = 'button';
                 editButton.className = 'secondary';
@@ -637,7 +698,7 @@ if (role === 'admin') {
                     event.stopPropagation();
                     removeRobot(robot, removeButton);
                 });
-                controls.append(editButton, removeButton);
+                controls.append(orderControls, editButton, removeButton);
                 header.append(heading, controls);
                 div.appendChild(header);
 

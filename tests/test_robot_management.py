@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import uuid
 
@@ -126,6 +127,128 @@ def test_admin_can_update_robot_display_names_used_by_chat_selector():
     chat_page = client.get("/").text
     assert '"english_name": "Walker Display"' in chat_page
     assert '"chinese_name": "行者展示"' in chat_page
+
+
+def test_admin_can_persist_robot_order_used_by_chat_selector():
+    client, csrf = _admin_client()
+    initial = database.get_all_robots()
+    requested_ids = [int(robot["id"]) for robot in reversed(initial)]
+    expected_names = [str(robot["name"]) for robot in reversed(initial)]
+
+    response = client.put(
+        "/api/manage/robots/order",
+        json={"robot_ids": requested_ids},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    assert [robot["name"] for robot in response.json()["robots"]] == expected_names
+    assert [robot["name"] for robot in database.get_all_robots()] == expected_names
+    assert [
+        robot["name"] for robot in database.get_robot_options()
+    ] == expected_names
+
+    page = client.get("/").text
+    marker_start = page.index("const robots=") + len("const robots=")
+    marker_end = page.index(";", marker_start)
+    embedded_robots = json.loads(page[marker_start:marker_end])
+    assert [robot["name"] for robot in embedded_robots] == expected_names
+    assert database.list_audit_log(1)[0]["action"] == "update_robot_order"
+
+    database.initialize_database()
+    assert [robot["name"] for robot in database.get_all_robots()] == expected_names
+
+    database.reconcile_robots_with_source_tree(list(reversed(expected_names)))
+    assert [robot["name"] for robot in database.get_all_robots()] == expected_names
+
+    appended_id = database.create_robot("newly_appended_robot")
+    assert database.get_all_robots()[-1]["id"] == appended_id
+
+
+def test_robot_order_rejects_stale_or_duplicate_id_lists():
+    client, csrf = _admin_client()
+    initial = database.get_all_robots()
+    initial_ids = [int(robot["id"]) for robot in initial]
+
+    duplicate = client.put(
+        "/api/manage/robots/order",
+        json={"robot_ids": [initial_ids[0], initial_ids[0]]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    missing = client.put(
+        "/api/manage/robots/order",
+        json={"robot_ids": initial_ids[:-1]},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert duplicate.status_code == 409
+    assert missing.status_code == 409
+    assert [int(robot["id"]) for robot in database.get_all_robots()] == initial_ids
+
+
+def test_robot_order_requires_admin_and_csrf():
+    admin_client, _admin_csrf = _admin_client()
+    initial_ids = [int(robot["id"]) for robot in database.get_all_robots()]
+
+    missing_csrf = admin_client.put(
+        "/api/manage/robots/order",
+        json={"robot_ids": list(reversed(initial_ids))},
+    )
+
+    _editor_id, editor_token, editor_csrf = _user("editor")
+    editor_client = TestClient(app)
+    editor_client.cookies.set(config.SESSION_COOKIE_NAME, editor_token)
+    wrong_role = editor_client.put(
+        "/api/manage/robots/order",
+        json={"robot_ids": list(reversed(initial_ids))},
+        headers={"X-CSRF-Token": editor_csrf},
+    )
+
+    assert missing_csrf.status_code == 403
+    assert wrong_role.status_code == 403
+    assert [int(robot["id"]) for robot in database.get_all_robots()] == initial_ids
+
+
+def test_legacy_robot_table_gets_stable_additive_display_order(
+    tmp_path,
+    monkeypatch,
+):
+    legacy_database = tmp_path / "legacy-agent-jobs.db"
+    with sqlite3.connect(legacy_database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE robots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                display_name_en TEXT NOT NULL DEFAULT '',
+                display_name_zh TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                storage_path TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        for name in ("zeta_robot", "alpha_robot", "middle_robot"):
+            connection.execute(
+                "INSERT INTO robots "
+                "(name, description, storage_path, created_at) VALUES (?, '', ?, ?)",
+                (name, name, "2026-08-14T00:00:00+00:00"),
+            )
+    monkeypatch.setattr(database, "DATABASE_PATH", legacy_database)
+
+    database.initialize_database()
+
+    migrated = [
+        robot
+        for robot in database.get_all_robots()
+        if str(robot["name"]).endswith("_robot")
+    ]
+    assert [robot["name"] for robot in migrated] == [
+        "alpha_robot",
+        "middle_robot",
+        "zeta_robot",
+    ]
+    assert all("display_order" in robot for robot in migrated)
 
 
 def test_old_database_keeps_all_configured_robots_after_upgrade(monkeypatch):
@@ -329,6 +452,10 @@ def test_editor_pool_drag_assignment_and_removal():
     assert "/petdex/assets/charging-sheet.png" in page
     assert "/petdex/assets/thinking-sheet.png" in page
     assert "method: 'PATCH'" in page
+    assert "/api/manage/robots/order" in page
+    assert "moveRobotUp" in page
+    assert "moveRobotDown" in page
+    assert "问答页等机器人下拉列表将使用相同顺序" in page
     scripts = []
     cursor = 0
     while True:

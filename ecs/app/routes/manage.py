@@ -22,6 +22,7 @@ from ecs.app.database import (
     mark_sources_deleted,
     reconcile_robots_with_source_tree,
     remove_robot_editor,
+    set_robot_display_order,
     update_robot_display_names,
     write_audit,
 )
@@ -223,6 +224,7 @@ class CreateRobotRequest(BaseModel):
     description: str = Field(default="", max_length=500)
     storage_path: str = Field(default="")
 
+
 class AssignEditorRequest(BaseModel):
     user_id: int
 
@@ -230,6 +232,11 @@ class AssignEditorRequest(BaseModel):
 class UpdateRobotDisplayNamesRequest(BaseModel):
     english_name: str = Field(min_length=1, max_length=64)
     chinese_name: str = Field(min_length=1, max_length=64)
+
+
+class UpdateRobotOrderRequest(BaseModel):
+    robot_ids: list[int] = Field(min_length=1, max_length=10_000)
+
 
 @router.get("/api/manage/robots")
 async def list_robots(request: Request):
@@ -241,6 +248,32 @@ async def list_robots(request: Request):
 async def list_editor_pool(request: Request):
     require_roles(request, {"admin"})
     return {"editors": list_active_editors()}
+
+
+@router.put("/api/manage/robots/order")
+async def update_robot_order(
+    payload: UpdateRobotOrderRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"admin"})
+    verify_csrf(session, x_csrf_token)
+    try:
+        robots = set_robot_display_order(payload.robot_ids)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    write_audit(
+        user_id=int(session["user_id"]),
+        username=str(session["username"]),
+        action="update_robot_order",
+        source_path="robots",
+        result="ok",
+        details=json.dumps(
+            {"robot_names": [str(robot["name"]) for robot in robots]},
+            ensure_ascii=False,
+        ),
+    )
+    return {"status": "ok", "robots": robots}
 
 
 @router.post("/api/manage/robots")

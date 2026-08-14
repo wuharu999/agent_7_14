@@ -8,6 +8,7 @@ from typing import Protocol, Sequence
 from urllib.parse import quote, unquote, urlsplit
 
 MAX_QA_IMAGES = 3
+MAX_QA_IMPLICIT_IMAGES = 1
 MAX_QA_IMAGE_BYTES = 8 * 1024**2
 MAX_QA_IMAGE_TOTAL_BYTES = 12 * 1024**2
 
@@ -285,6 +286,7 @@ def select_relevant_qa_images(
     """Select validated images associated with the already-retrieved Wiki pages."""
     wiki_root = wiki_root.resolve()
     query_terms = _lexical_terms(question)
+    explicit_image_request = bool(_IMAGE_INTENT.search(question))
     candidates: list[_Candidate] = []
     seen: set[Path] = set()
 
@@ -325,11 +327,10 @@ def select_relevant_qa_images(
     ]
     if matched_candidates:
         candidates = matched_candidates
-    elif not _IMAGE_INTENT.search(question):
-        candidates = []
     elif candidates:
-        # With explicit image intent but no section-level text match, keep only
-        # images from the first retrieved page that actually contains one.
+        # The retriever already established page relevance. If no individual
+        # section/alt text matches, still offer the first image from the first
+        # retrieved page instead of requiring the customer to ask for a photo.
         first_document = min(candidate.document_order for candidate in candidates)
         candidates = [
             candidate
@@ -338,12 +339,22 @@ def select_relevant_qa_images(
         ]
 
     # Some LLM Wiki versions extract PDF images to a folder named after the
-    # generated page but omit the corresponding Markdown references. Only use
-    # that weaker association when the customer explicitly requests a picture.
-    if not candidates and _IMAGE_INTENT.search(question):
+    # generated page but omit the corresponding Markdown references. For an
+    # ordinary question, use this weaker association only when the retrieved
+    # page itself overlaps the question. An explicit image request may use the
+    # first retrieved page even when its captions are absent.
+    if not candidates:
         for document_order, document in enumerate(documents):
+            document_terms = _lexical_terms(
+                f"{_document_title(document)} {document.text[:6000]}"
+            )
+            if not explicit_image_request and not (query_terms & document_terms):
+                continue
+            orphaned_images = _orphaned_page_images(document, wiki_root, language)
+            if not orphaned_images:
+                continue
             for image_order, (alt, path) in enumerate(
-                _orphaned_page_images(document, wiki_root, language)
+                orphaned_images
             ):
                 if path in seen:
                     continue
@@ -358,6 +369,9 @@ def select_relevant_qa_images(
                     )
                 )
                 seen.add(path)
+            # Orphaned media has only page-level evidence. Never mix media
+            # folders from several retrieved pages in one answer.
+            break
 
     candidates.sort(
         key=lambda candidate: (
@@ -367,7 +381,12 @@ def select_relevant_qa_images(
             candidate.path.as_posix(),
         )
     )
-    return [(candidate.alt, candidate.path) for candidate in candidates[:MAX_QA_IMAGES]]
+    image_limit = (
+        MAX_QA_IMAGES
+        if explicit_image_request or matched_candidates
+        else min(MAX_QA_IMAGES, MAX_QA_IMPLICIT_IMAGES)
+    )
+    return [(candidate.alt, candidate.path) for candidate in candidates[:image_limit]]
 
 
 def attach_relevant_qa_images(

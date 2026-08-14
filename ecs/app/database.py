@@ -33,6 +33,13 @@ def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
+def _next_robot_display_order(connection: sqlite3.Connection) -> int:
+    row = connection.execute(
+        "SELECT COALESCE(MAX(display_order), -1) + 1 AS next_order FROM robots"
+    ).fetchone()
+    return int(row["next_order"]) if row is not None else 0
+
+
 def initialize_database() -> None:
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _DB_LOCK, _connect() as connection:
@@ -570,6 +577,7 @@ def initialize_database() -> None:
                 name TEXT NOT NULL UNIQUE,
                 display_name_en TEXT NOT NULL DEFAULT '',
                 display_name_zh TEXT NOT NULL DEFAULT '',
+                display_order INTEGER NOT NULL DEFAULT 0,
                 description TEXT NOT NULL DEFAULT '',
                 storage_path TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
@@ -607,6 +615,10 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE robots ADD COLUMN display_name_zh TEXT NOT NULL DEFAULT ''"
             )
+        if "display_order" not in _columns(connection, "robots"):
+            connection.execute(
+                "ALTER TABLE robots ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0"
+            )
         connection.execute("UPDATE robots SET display_name_en = name WHERE display_name_en = ''")
         connection.execute("UPDATE robots SET display_name_zh = name WHERE display_name_zh = ''")
 
@@ -627,10 +639,34 @@ def initialize_database() -> None:
                 if row["team"].strip():
                     teams_to_migrate.add(row["team"].strip())
 
-            for t in teams_to_migrate:
+            for t in sorted(teams_to_migrate, key=str.casefold):
                 connection.execute(
-                    "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
-                    (t, f"Legacy team {t}", t, now),
+                    "INSERT OR IGNORE INTO robots "
+                    "(name, display_order, description, storage_path, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        t,
+                        _next_robot_display_order(connection),
+                        f"Legacy team {t}",
+                        t,
+                        now,
+                    ),
+                )
+
+        # Older databases receive display_order=0 for every existing row. Give
+        # those rows a stable initial order matching the former ORDER BY name
+        # behavior. This also repairs duplicate/default positions safely while
+        # preserving an already customized order as the primary sort key.
+        robot_order_rows = connection.execute(
+            "SELECT id, display_order FROM robots "
+            "ORDER BY display_order, name COLLATE NOCASE, id"
+        ).fetchall()
+        robot_orders = [int(row["display_order"]) for row in robot_order_rows]
+        if robot_orders != list(range(len(robot_order_rows))):
+            for display_order, row in enumerate(robot_order_rows):
+                connection.execute(
+                    "UPDATE robots SET display_order = ? WHERE id = ?",
+                    (display_order, int(row["id"])),
                 )
 
         # Seed default admin account if no admin exists
@@ -680,8 +716,10 @@ def create_user_record(
                 t = t.strip()
                 if t:
                     connection.execute(
-                        "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
-                        (t, f"Team {t}", t, now)
+                        "INSERT OR IGNORE INTO robots "
+                        "(name, display_order, description, storage_path, created_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (t, _next_robot_display_order(connection), f"Team {t}", t, now)
                     )
                     robot_id = connection.execute("SELECT id FROM robots WHERE name = ?", (t,)).fetchone()["id"]
                     connection.execute(
@@ -708,8 +746,10 @@ def update_user_record(
                 t = t.strip()
                 if t:
                     connection.execute(
-                        "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
-                        (t, f"Team {t}", t, now)
+                        "INSERT OR IGNORE INTO robots "
+                        "(name, display_order, description, storage_path, created_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (t, _next_robot_display_order(connection), f"Team {t}", t, now)
                     )
                     robot_id = connection.execute("SELECT id FROM robots WHERE name = ?", (t,)).fetchone()["id"]
                     connection.execute(
@@ -761,8 +801,10 @@ def update_user_details(user_id: int, role: str, teams: str = "") -> None:
                 t = t.strip()
                 if t:
                     connection.execute(
-                        "INSERT OR IGNORE INTO robots (name, description, storage_path, created_at) VALUES (?, ?, ?, ?)",
-                        (t, f"Team {t}", t, now)
+                        "INSERT OR IGNORE INTO robots "
+                        "(name, display_order, description, storage_path, created_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (t, _next_robot_display_order(connection), f"Team {t}", t, now)
                     )
                     robot_row = connection.execute("SELECT id FROM robots WHERE name = ?", (t,)).fetchone()
                     if robot_row:
@@ -917,7 +959,9 @@ def get_recent_upload_count(user_id: int, minutes: int = 1) -> int:
 
 def get_all_robots() -> list[dict[str, Any]]:
     with _DB_LOCK, _connect() as connection:
-        rows = connection.execute("SELECT * FROM robots ORDER BY name").fetchall()
+        rows = connection.execute(
+            "SELECT * FROM robots ORDER BY display_order, name COLLATE NOCASE, id"
+        ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -946,9 +990,21 @@ def create_robot(
     now = utc_now()
     with _DB_LOCK, _connect() as connection:
         try:
+            display_order = _next_robot_display_order(connection)
             cursor = connection.execute(
-                "INSERT INTO robots (name, display_name_en, display_name_zh, description, storage_path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (name, (display_name_en or name).strip(), (display_name_zh or name).strip(), description.strip(), normalized_storage_path, now)
+                "INSERT INTO robots "
+                "(name, display_name_en, display_name_zh, display_order, "
+                "description, storage_path, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    name,
+                    (display_name_en or name).strip(),
+                    (display_name_zh or name).strip(),
+                    display_order,
+                    description.strip(),
+                    normalized_storage_path,
+                    now,
+                ),
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Robot '{name}' already exists") from exc
@@ -988,6 +1044,26 @@ def update_robot_display_names(
     return robot
 
 
+def set_robot_display_order(robot_ids: list[int]) -> list[dict[str, Any]]:
+    """Persist one exact ordering containing every current robot exactly once."""
+    if len(robot_ids) != len(set(robot_ids)):
+        raise ValueError("Robot order contains duplicate IDs")
+    with _DB_LOCK, _connect() as connection:
+        current_ids = {
+            int(row["id"])
+            for row in connection.execute("SELECT id FROM robots").fetchall()
+        }
+        requested_ids = set(robot_ids)
+        if requested_ids != current_ids:
+            raise ValueError("Robot order must contain every current robot exactly once")
+        for display_order, robot_id in enumerate(robot_ids):
+            connection.execute(
+                "UPDATE robots SET display_order = ? WHERE id = ?",
+                (display_order, robot_id),
+            )
+    return get_all_robots()
+
+
 def list_active_editors() -> list[dict[str, Any]]:
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute(
@@ -1003,7 +1079,8 @@ def _sync_user_team_names(connection: sqlite3.Connection, user_id: int) -> None:
         for row in connection.execute(
             "SELECT r.name FROM robots r "
             "JOIN robot_editors re ON re.robot_id = r.id "
-            "WHERE re.user_id = ? ORDER BY r.name",
+            "WHERE re.user_id = ? "
+            "ORDER BY r.display_order, r.name COLLATE NOCASE, r.id",
             (user_id,),
         ).fetchall()
     ]
@@ -1048,7 +1125,8 @@ def reconcile_robots_with_source_tree(robot_names: list[str]) -> dict[str, list[
 
     with _DB_LOCK, _connect() as connection:
         existing_rows = connection.execute(
-            "SELECT id, name FROM robots ORDER BY name"
+            "SELECT id, name FROM robots "
+            "ORDER BY display_order, name COLLATE NOCASE, id"
         ).fetchall()
         existing = {str(row["name"]): int(row["id"]) for row in existing_rows}
         added = sorted(desired - set(existing))
@@ -1057,10 +1135,17 @@ def reconcile_robots_with_source_tree(robot_names: list[str]) -> dict[str, list[
         for name in added:
             connection.execute(
                 """
-                INSERT INTO robots (name, description, storage_path, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO robots
+                    (name, display_order, description, storage_path, created_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (name, "Discovered from Worker source tree", name, now),
+                (
+                    name,
+                    _next_robot_display_order(connection),
+                    "Discovered from Worker source tree",
+                    name,
+                    now,
+                ),
             )
 
         affected_editor_ids: set[int] = set()
@@ -1147,7 +1232,7 @@ def get_user_robots(user_id: int) -> list[dict[str, Any]]:
             SELECT r.* FROM robots r
             JOIN robot_editors re ON r.id = re.robot_id
             WHERE re.user_id = ?
-            ORDER BY r.name
+            ORDER BY r.display_order, r.name COLLATE NOCASE, r.id
             """, (user_id,)
         ).fetchall()
     return [dict(row) for row in rows]
