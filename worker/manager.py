@@ -35,7 +35,7 @@ from worker.capability_catalog import (
     save_capability_entry,
     delete_capability_entry,
 )
-from worker.conversation_store import ConversationStore
+from worker.conversation_store import ConversationStore, ConversationTurn
 from worker.config import (
     CAPABILITY_MATCH_QUEUE_MAX,
     CAPABILITY_MATCH_WORKERS,
@@ -78,6 +78,30 @@ from worker.zip_extractor import extract_zip_safely
 from shared.team_names import normalize_team_name
 
 log = logging.getLogger("worker.manager")
+
+_CLIENT_HISTORY_MESSAGES = 12
+_CLIENT_HISTORY_MESSAGE_CHARS = 8_000
+
+
+def _client_history_turns(value: object) -> list[ConversationTurn]:
+    """Convert bounded browser messages into complete user/assistant turns."""
+    if not isinstance(value, list):
+        return []
+    turns: list[ConversationTurn] = []
+    pending_question = ""
+    for item in value[-_CLIENT_HISTORY_MESSAGES:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "")
+        content = str(item.get("content") or "").strip()[:_CLIENT_HISTORY_MESSAGE_CHARS]
+        if not content:
+            continue
+        if role == "user":
+            pending_question = content
+        elif role == "bot" and pending_question:
+            turns.append(ConversationTurn(question=pending_question, answer=content))
+            pending_question = ""
+    return turns
 
 
 class WorkerManager:
@@ -245,6 +269,10 @@ class WorkerManager:
             conversation_id = str(data.get("conversation_id") or job_id)[:128]
             language = str(data.get("language") or "zh-CN")
             team = str(data.get("team") or "default")
+            self.conversations.seed_if_empty(
+                conversation_id,
+                _client_history_turns(data.get("history")),
+            )
             job = QuestionJob(
                 job_id=job_id,
                 question=str(data.get("text") or ""),

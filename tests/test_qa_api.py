@@ -86,6 +86,97 @@ def test_wiki_reader_canonicalizes_in_memory_without_changing_files(tmp_path: Pa
     assert page.read_bytes() == original_page
 
 
+def test_stale_index_candidates_inherit_product_from_recent_history(tmp_path: Path) -> None:
+    write(tmp_path / "index.md", "[[walker-s2]]")
+    write(tmp_path / "entities" / "walker-s2.md", "Walker S2 evidence")
+    write(tmp_path / "entities" / "walker-c1.md", "Walker C1 battery evidence")
+    wiki = qa_api.Wiki(tmp_path)
+
+    candidates = wiki.candidate_slugs(
+        "all",
+        "How long does its battery last?",
+        [
+            ConversationTurn(
+                question="Tell me about Walker C1.",
+                answer="Walker C1 is a commercial service humanoid robot.",
+            )
+        ],
+    )
+
+    assert candidates == {"walker-s2", "walker-c1"}
+    assert wiki.candidate_slugs(
+        "walker_s2",
+        "How long does its battery last?",
+        [ConversationTurn("Tell me about Walker C1.", "Walker C1 overview")],
+    ) == {"walker-s2"}
+
+
+def test_specific_robot_scope_keeps_target_first_and_bounds_other_robots(
+    tmp_path: Path,
+) -> None:
+    write(
+        tmp_path / "index.md",
+        "[[tiangong-overview]] [[shared-vector-walking]] [[walker-s2-vector]] "
+        "[[walker-s2-api]] [[walker-c1-motion]]",
+    )
+    write(
+        tmp_path / "entities" / "tiangong-overview.md",
+        "# 天工行者\n天工行者运动能力。",
+    )
+    write(
+        tmp_path / "concepts" / "shared-vector-walking.md",
+        "# Vector walking\nShared definition.",
+    )
+    write(
+        tmp_path / "entities" / "walker-s2-vector.md",
+        "# Walker S2 Edu\nVector walking procedure.",
+    )
+    write(
+        tmp_path / "entities" / "walker-s2-api.md",
+        "# Walker S2 Edu API\nMotion API.",
+    )
+    write(
+        tmp_path / "entities" / "walker-c1-motion.md",
+        "# Walker C1\nMotion details.",
+    )
+    wiki = qa_api.Wiki(tmp_path)
+
+    ordered = wiki.prioritize_robot_scope(
+        [
+            "walker-s2-vector",
+            "shared-vector-walking",
+            "walker-s2-api",
+            "walker-c1-motion",
+        ],
+        question="How does vector walking work?",
+        team="TienKung",
+        history=(),
+        allowed_slugs=wiki.retrievable_slugs,
+    )
+
+    assert ordered[0] == "tiangong-overview"
+    assert ordered[1] == "shared-vector-walking"
+    assert ordered[2:] == ["walker-s2-vector", "walker-s2-api"]
+    assert "walker-c1-motion" not in ordered
+    documents = wiki.load(ordered, allowed_slugs=wiki.retrievable_slugs)
+    context = qa_api._make_context(wiki, documents, team="TienKung")
+    assert "ROBOT SCOPE: SELECTED ROBOT EVIDENCE" in context
+    assert "OTHER ROBOT EVIDENCE - NAME IT AND KEEP IT SECONDARY" in context
+    assert context.index("天工行者运动能力") < context.index("Walker S2 Edu")
+
+
+def test_tienkung_selector_adds_unindexed_tiangong_alias_pages(tmp_path: Path) -> None:
+    write(tmp_path / "index.md", "[[walker-s2-vector]]")
+    write(tmp_path / "entities" / "walker-s2-vector.md", "Walker S2 vector walking")
+    write(tmp_path / "entities" / "tiangong-vector.md", "天工行者 vector walking")
+    wiki = qa_api.Wiki(tmp_path)
+
+    assert wiki.candidate_slugs("TienKung", "How does vector walking work?") == {
+        "walker-s2-vector",
+        "tiangong-vector",
+    }
+
+
 def test_api_prompts_are_wiki_only_and_canonicalize_all_untrusted_text(
     tmp_path: Path,
 ) -> None:
@@ -97,7 +188,11 @@ def test_api_prompts_are_wiki_only_and_canonicalize_all_untrusted_text(
     router = qa_api._router_prompt(
         "天工2.0 Pro", "tian_gong", history, wiki, candidates
     )
-    context = qa_api._make_context(wiki, wiki.load(["tiangong"]))
+    context = qa_api._make_context(
+        wiki,
+        wiki.load(["tiangong"]),
+        team="tian_gong",
+    )
     answer = qa_api._answer_prompt(
         "天工2.0 Pro",
         team="tian_gong",
@@ -113,6 +208,8 @@ def test_api_prompts_are_wiki_only_and_canonicalize_all_untrusted_text(
     assert "天工行者dex" in combined
     assert "raw/sources" not in combined
     assert "CLAUDE.md" not in combined
+    assert "PRIMARY ROBOT: tian_gong" in answer
+    assert "Answer this robot first" in answer
 
 
 def test_router_response_rejects_unknown_duplicate_and_excess_slugs() -> None:
@@ -266,8 +363,11 @@ async def test_retrieval_api_preserves_language_team_history_and_response_bounda
     answer_prompt = client.calls[1][1]
     assert "SELECTED ROBOT OR TOPIC: walker_s2" in router_prompt
     assert "它是什么？" in router_prompt
+    assert "MOST RECENT TURN" in router_prompt
+    assert "primary source for resolving an omitted subject" in router_prompt
     assert "RETRIEVABLE PAGE SLUGS" in router_prompt
     assert "ANSWER LANGUAGE: Simplified Chinese (简体中文)" in answer_prompt
+    assert "MOST RECENT TURN" in answer_prompt
     assert "Walker evidence" in answer_prompt
     assert "Other evidence" not in answer_prompt
     assert "concepts/walker.md" not in answer_prompt

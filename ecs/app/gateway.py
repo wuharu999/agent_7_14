@@ -103,6 +103,7 @@ class WorkerGateway:
         team: str = "all",
         conversation_id: str,
         language: str,
+        history: list[dict[str, str]] | None = None,
         timeout: int | None = None,
     ) -> Any:
         if not self.online:
@@ -119,6 +120,7 @@ class WorkerGateway:
                     "text": question,
                     "conversation_id": conversation_id,
                     "language": language,
+                    "history": history or [],
                     "stream": True,
                 }
             )
@@ -148,6 +150,7 @@ class WorkerGateway:
         team: str = "all",
         conversation_id: str,
         language: str,
+        history: list[dict[str, str]] | None = None,
         timeout: int | None = None,
     ) -> str:
         full_text = []
@@ -156,6 +159,7 @@ class WorkerGateway:
             team=team,
             conversation_id=conversation_id,
             language=language,
+            history=history,
             timeout=timeout,
         ):
             if event.get("status") == "error":

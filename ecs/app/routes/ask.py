@@ -19,6 +19,33 @@ from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 
 router = APIRouter()
 _CONVERSATION_ID = re.compile(r"^[A-Za-z0-9:_-]{1,128}$")
+_CLIENT_HISTORY_MESSAGES = 12
+_CLIENT_HISTORY_MESSAGE_CHARS = 8_000
+_CLIENT_HISTORY_TOTAL_CHARS = 48_000
+
+
+def _bounded_client_history(value: object) -> list[dict[str, str]]:
+    """Keep only recent user/assistant display history within prompt limits."""
+    if not isinstance(value, list):
+        return []
+    bounded_reversed: list[dict[str, str]] = []
+    total = 0
+    for item in reversed(value[-_CLIENT_HISTORY_MESSAGES:]):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "")
+        if role not in {"user", "bot"}:
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        remaining = _CLIENT_HISTORY_TOTAL_CHARS - total
+        if remaining <= 0:
+            break
+        content = content[: min(_CLIENT_HISTORY_MESSAGE_CHARS, remaining)]
+        bounded_reversed.append({"role": role, "content": content})
+        total += len(content)
+    return list(reversed(bounded_reversed))
 
 class RateLimiter:
     def __init__(self):
@@ -79,6 +106,7 @@ async def ask(request: Request, body: dict):
     conversation_id = str(body.get("conversation_id") or "").strip()
     if not _CONVERSATION_ID.fullmatch(conversation_id):
         conversation_id = f"web:{uuid.uuid4().hex}"
+    history = _bounded_client_history(body.get("history"))
 
     from fastapi.responses import StreamingResponse
     import json
@@ -97,6 +125,7 @@ async def ask(request: Request, body: dict):
                 team=team,
                 conversation_id=conversation_id,
                 language=language,
+                history=history,
             ):
                 yield json.dumps(event, ensure_ascii=False) + "\n"
         except Exception as exc:

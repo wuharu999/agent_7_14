@@ -492,6 +492,10 @@ async function submitQuestion(){
   if(askButton.disabled)return;
   const q=question.value.trim();
   if(!q)return;
+  const priorConversation=currentChat
+    .filter(message=>message&&['user','bot'].includes(message.role)&&typeof message.content==='string')
+    .slice(-12)
+    .map(message=>({role:message.role,content:message.content}));
 
   setCompanionMode('charging');
   askButton.disabled=true;
@@ -516,7 +520,8 @@ async function submitQuestion(){
         question:q,
         language:language.value,
         team:team.value,
-        conversation_id:getConversationId()
+        conversation_id:getConversationId(),
+        history:priorConversation
       })
     });
 

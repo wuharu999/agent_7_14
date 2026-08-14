@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict, deque
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from worker.config import CONVERSATION_MAX_SESSIONS, CONVERSATION_MAX_TURNS
@@ -36,6 +37,25 @@ class ConversationStore:
             turns = deque(maxlen=max(1, CONVERSATION_MAX_TURNS))
             self._sessions[conversation_id] = turns
         turns.append(ConversationTurn(question=question, answer=answer))
+        self._sessions.move_to_end(conversation_id)
+        while len(self._sessions) > max(1, CONVERSATION_MAX_SESSIONS):
+            self._sessions.popitem(last=False)
+
+    def seed_if_empty(
+        self,
+        conversation_id: str,
+        turns: Sequence[ConversationTurn],
+    ) -> None:
+        """Restore bounded browser-visible history after a Worker restart.
+
+        Existing Worker history remains authoritative. Browser history is used
+        only when the conversation ID is unknown to this Worker process and is
+        still treated as untrusted prompt context by the QA layer.
+        """
+        if not turns or conversation_id in self._sessions:
+            return
+        bounded = deque(turns, maxlen=max(1, CONVERSATION_MAX_TURNS))
+        self._sessions[conversation_id] = bounded
         self._sessions.move_to_end(conversation_id)
         while len(self._sessions) > max(1, CONVERSATION_MAX_SESSIONS):
             self._sessions.popitem(last=False)

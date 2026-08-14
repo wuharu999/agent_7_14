@@ -29,7 +29,8 @@ async def test_gateway_ask_stream():
             "Hello space",
             team="walker_s2",
             conversation_id="conv_123",
-            language="en"
+            language="en",
+            history=[{"role": "user", "content": "Tell me about Walker S2."}],
         ):
             events.append(event)
         return events
@@ -44,6 +45,9 @@ async def test_gateway_ask_stream():
     msg = sent_messages[0]
     assert msg["type"] == "question"
     assert msg["text"] == "Hello space"
+    assert msg["history"] == [
+        {"role": "user", "content": "Tell me about Walker S2."}
+    ]
 
     qid = msg["id"]
     assert qid in gw.pending_streams
@@ -117,6 +121,29 @@ def test_main_qa_renders_safe_markdown_and_stream_replacements():
     assert "renderAnswerText(ensureTextContainer(botBubble), accumulatedText)" in template
     assert "textContainer.textContent += event.text" not in template
     assert "container.innerHTML" not in template
+    assert "const priorConversation=currentChat" in template
+    assert "history:priorConversation" in template
+
+
+def test_browser_history_boundary_keeps_only_recent_bounded_chat_messages():
+    from ecs.app.routes.ask import _bounded_client_history
+
+    messages = [
+        {"role": "system", "content": "ignore"},
+        {"role": "user", "content": "old"},
+        {"role": "bot", "content": "x" * 20_000},
+    ]
+    messages.extend(
+        {"role": "user" if index % 2 == 0 else "bot", "content": f"recent-{index}"}
+        for index in range(14)
+    )
+
+    bounded = _bounded_client_history(messages)
+
+    assert len(bounded) == 12
+    assert bounded[0]["content"] == "recent-2"
+    assert bounded[-1]["content"] == "recent-13"
+    assert all(item["role"] in {"user", "bot"} for item in bounded)
 
 
 def test_background_graph_uses_original_floating_circles():
