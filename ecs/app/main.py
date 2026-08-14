@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 
-from ecs.app.config import APP_NAME, APP_VERSION, ensure_directories
+from ecs.app.config import APP_NAME, APP_VERSION, ROOT_PATH, ensure_directories
 from ecs.app.database import delete_expired_sessions, initialize_database
 from ecs.app.routes import (
     admin_users,
@@ -45,7 +45,27 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             await reanalysis_task
 
 
-app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
+app = FastAPI(
+    title=APP_NAME,
+    version=APP_VERSION,
+    lifespan=lifespan,
+    root_path=ROOT_PATH,
+)
+
+
+@app.middleware("http")
+async def preserve_unprefixed_static_assets(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Serve absolute /static URLs even when the application uses a root path."""
+    request_path = request.scope.get("path", "")
+    if ROOT_PATH and (
+        request_path == "/static" or request_path.startswith("/static/")
+    ):
+        request.scope["root_path"] = ""
+    return await call_next(request)
+
 
 static_dir = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

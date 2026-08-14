@@ -11,6 +11,16 @@ load_dotenv(PROJECT_ROOT / "ecs" / ".env")
 APP_NAME = os.environ.get("APP_NAME", "Uchat Knowledge Base")
 APP_VERSION = "7.14-final"
 
+
+def normalize_root_path(value: str) -> str:
+    """Normalize an optional ASGI URL prefix without changing root deployments."""
+    normalized = value.strip()
+    if normalized in {"", "/"}:
+        return ""
+    return f"/{normalized.strip('/')}"
+
+
+ROOT_PATH = normalize_root_path(os.environ.get("ROOT_PATH", ""))
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", str(PROJECT_ROOT / "ecs-data"))).expanduser().resolve()
 UPLOAD_ROOT = DATA_ROOT / "uploads"
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(DATA_ROOT / "agent_jobs.db"))).expanduser().resolve()

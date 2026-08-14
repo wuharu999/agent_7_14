@@ -22,6 +22,22 @@ environment files and ignored runtime data, create deployment backups, update
 Python dependencies, restart the expected tmux session, and run machine-level
 checks. Override the branch with `DEPLOY_BRANCH` when required.
 
+### URL-prefix deployments
+
+The ECS supports an optional URL prefix through `ROOT_PATH`. Leave it empty for
+normal root deployments such as the existing 47 ECS. When a WAF forwards the
+prefix unchanged, configure only that ECS machine, for example:
+
+```env
+ROOT_PATH=/v1/faq-platform
+```
+
+The FastAPI application receives this value through its constructor, so both
+prefixed routes such as `/v1/faq-platform/health` and the existing unprefixed
+routes continue to work. The ECS also preserves unprefixed `/static/...` assets
+used by the existing templates. Do not replace this setting with only Uvicorn's
+`--root-path` flag.
+
 ### Indexed QA with provider failover
 
 Public answers now use an Agent1-owned implementation based on the read-only
