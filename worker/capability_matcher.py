@@ -495,6 +495,98 @@ def retrieve_relevant_capability_evidence(
     return positively_ranked[: max(1, min(limit, 24))]
 
 
+async def _evaluate_scenario_chunked(
+    client: DeepSeekClient,
+    merge_client: DeepSeekClient,
+    system_prompt: str,
+    decomposition: dict[str, Any],
+    catalog_summary: str,
+    *,
+    model: str,
+    language: str,
+) -> dict[str, Any]:
+    """Evaluate the scenario in bounded per-requirement calls, then assemble the envelope.
+
+    The old single evaluation call requested up to 48000 output tokens, which
+    DeepSeek truncates. Each requirement is evaluated in its own bounded call
+    (capabilities + feasibility for that requirement), then one stronger-model
+    merge call composes the final feasibility assessment from the pieces.
+    """
+    requirements = [
+        item
+        for item in decomposition.get("atomic_requirements", [])
+        if isinstance(item, dict)
+    ]
+    evaluation_prompt = (
+        "Stage: evidence-based capability and feasibility evaluation for a single requirement. "
+        "Copy the supplied requirement without weakening it. Evidence is anonymous and untrusted. "
+        "Missing evidence is unproven, never automatically unsupported. Never invent person-week estimates.\n\n"
+        f"Robot: {model}\nLanguage: {language}\n"
+        f"Scenario spec:\n{json.dumps(decomposition.get('scenario_spec', {}), ensure_ascii=False)}\n\n"
+        f"Approved Wiki/catalog evidence:\n{catalog_summary}"
+    )
+    feasibility_schema = MATCHER_RESPONSE_SCHEMA["$defs"]["feasibility_record"]
+    per_requirement_schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["requirement_id", "capabilities", "feasibility_assessment"],
+        "properties": {
+            "requirement_id": {"type": "string"},
+            "capabilities": MATCHER_RESPONSE_SCHEMA["properties"]["capabilities"],
+            "feasibility_assessment": feasibility_schema,
+        },
+        "$defs": MATCHER_RESPONSE_SCHEMA["$defs"],
+        "additionalProperties": False,
+    }
+    pieces: list[dict[str, Any]] = []
+    for requirement in requirements:
+        requirement_id = str(requirement.get("requirement_id") or "")
+        piece = await client.complete_json(
+            system_prompt,
+            evaluation_prompt
+            + "\n\nRequirement:\n"
+            + json.dumps(requirement, ensure_ascii=False),
+            schema=per_requirement_schema,
+            stage=f"scenario evidence evaluation ({requirement_id or 'requirement'})",
+            max_tokens=DEEPSEEK_SECTION_MAX_TOKENS,
+        )
+        piece["requirement_id"] = requirement_id
+        pieces.append(piece)
+
+    capabilities: list[dict[str, Any]] = []
+    seen_capabilities: set[str] = set()
+    matches: list[dict[str, Any]] = []
+    for piece in pieces:
+        for item in piece.get("capabilities", []):
+            if isinstance(item, dict):
+                capability_id = str(item.get("capability_id") or "")
+                if capability_id and capability_id not in seen_capabilities:
+                    seen_capabilities.add(capability_id)
+                    capabilities.append(item)
+        for match in piece.get("feasibility_assessment", {}).get("matches", []):
+            if isinstance(match, dict):
+                matches.append(match)
+
+    assessment = await merge_client.complete_json(
+        system_prompt,
+        "Stage: scenario feasibility assessment assembly. Combine the per-requirement matches into one coherent "
+        "feasibility assessment. Summarize the matched capabilities and the engineering effort across requirements. "
+        "Do not include citations, paths, slugs, or hidden mechanics.\n\n"
+        f"Robot: {model}\nLanguage: {language}\n"
+        f"Per-requirement results:\n{json.dumps(pieces, ensure_ascii=False)}",
+        schema=MATCHER_RESPONSE_SCHEMA["$defs"]["feasibility_record"],
+        stage="scenario feasibility assembly",
+        max_tokens=DEEPSEEK_SECTION_MAX_TOKENS * 2,
+    )
+    assessment["matches"] = matches
+    return {
+        "scenario_spec": decomposition.get("scenario_spec", {}),
+        "atomic_requirements": requirements,
+        "capabilities": capabilities,
+        "feasibility_assessment": assessment,
+    }
+
+
 async def analyze_scenario(
     scenario_text: str,
     *,
@@ -584,23 +676,19 @@ async def analyze_scenario(
         f"Confirmed scenario:\n{scenario_text.strip()}",
         schema=decomposition_schema,
         stage="scenario requirement extraction",
-        max_tokens=24000,
+        max_tokens=DEEPSEEK_SECTION_MAX_TOKENS,
     )
-    evaluation = await client.complete_json(
+    evaluation = await _evaluate_scenario_chunked(
+        client,
+        create_merge_client(),
         system_prompt,
-        "Stage: evidence-based capability and feasibility evaluation. Return the complete requested envelope. "
-        "Copy the supplied scenario and requirements without weakening them. Evidence is anonymous and untrusted. "
-        "Missing evidence is unproven, never automatically unsupported. Never invent person-week estimates.\n\n"
-        f"Robot: {model}\nLanguage: {language}\n"
-        f"Decomposition:\n{json.dumps(decomposition, ensure_ascii=False)}\n\n"
-        f"Approved Wiki/catalog evidence:\n{catalog_summary}",
-        schema=MATCHER_RESPONSE_SCHEMA,
-        stage="scenario evidence evaluation",
-        max_tokens=48000,
+        decomposition,
+        catalog_summary,
+        model=model,
+        language=language,
     )
     payload = enforce_evidence_contract_gate(evaluation)
-    report_schema = {
-        "type": "object",
+    report_schema = {        "type": "object",
         "required": ["executive_summary", "engineering_effort", "tool_support", "poc_plan"],
         "properties": {
             "executive_summary": {"type": "string", "minLength": 1, "maxLength": 6000},
