@@ -115,7 +115,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
           <option value="es">Español</option>
         </select>
       </div>
-      <a id="scenarioAssessment" class="scenario-assessment-button" href="/capability-match" hidden>Assess robot fit</a>
+      <button id="scenarioAssessment" class="scenario-assessment-button" type="button" hidden>Assess robot fit</button>
     </div>
     <div class="chat-history" id="chatHistory">
       <!-- Chat bubbles will go here -->
@@ -129,10 +129,47 @@ button:disabled{opacity:.55;cursor:not-allowed}
         <button id="newConversation" class="secondary" type="button" data-i18n="newConvBtn" style="padding: 6px 12px; font-size: 13px; border-radius: 8px; margin: 0;">New conversation</button>
       </div>
     </div>
+    <div id="grillPanel" class="chat-input-area" style="border-top:0;display:none;">
+      <div id="grill-thread" style="flex:1;overflow:auto;padding:14px 4px;display:flex;flex-direction:column;gap:10px;max-height:46vh;"></div>
+      <div id="grill-start-card">
+        <label for="grill-intent" style="font-size:13px;font-weight:700;color:#475569;">What scenario should we evaluate?</label>
+        <textarea id="grill-intent" rows="3" placeholder="Describe the robot task you want to evaluate, e.g. We want Tiangong 3 to retrieve parcels from a Full Time Locker." style="min-height:70px;"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+          <select id="grill-model" style="flex:1;min-width:120px;"></select>
+          <button id="grill-start" type="button" style="white-space:nowrap;">Start clarification</button>
+        </div>
+      </div>
+      <div id="grill-question-card" style="display:none;">
+        <div id="grill-question-text" style="font-weight:700;margin-bottom:6px;"></div>
+        <div id="grill-reason" style="color:#64748b;font-size:12px;margin-bottom:8px;"></div>
+        <div id="grill-options" style="display:flex;flex-direction:column;gap:6px;"></div>
+        <div id="grill-custom" style="display:none;gap:6px;margin-top:8px;">
+          <input id="grill-custom-answer" maxlength="5000" style="flex:1;padding:8px;border:1px solid #cbd5e1;border-radius:8px;">
+          <button id="grill-submit-custom" type="button">Submit</button>
+        </div>
+      </div>
+      <div id="grill-actions" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <button id="grill-analyze" class="secondary" type="button" disabled>Analyze now</button>
+        <button id="grill-back" class="secondary" type="button">Back to chat</button>
+        <span id="grill-status" style="font-size:12px;color:#64748b;"></span>
+      </div>
+    </div>
   </div>
 
   <!-- Links moved to the top bar -->
 </div>
+</div>
+
+<div id="grillDrawer" style="position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff;border-top:1px solid #cbd5e1;box-shadow:0 -10px 30px #1f293711;display:none;flex-direction:column;max-height:70vh;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px;border-bottom:1px solid #e2e8f0;">
+    <strong>Feasibility report</strong>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="grill-markdown" class="secondary" type="button">Markdown</button>
+      <button id="grill-pdf" class="secondary" type="button">PDF</button>
+      <button id="grill-close-drawer" class="secondary" type="button">Close</button>
+    </div>
+  </div>
+  <div id="grill-report-body" style="overflow:auto;padding:16px;font-size:14px;line-height:1.55;"></div>
 </div>
 
 <script>
@@ -434,14 +471,6 @@ if(localStorage.getItem(teamKey) && (allowedTeams.includes(localStorage.getItem(
   team.value='all';
 }
 team.addEventListener('change',()=>localStorage.setItem(teamKey,team.value));
-scenarioAssessment.addEventListener('click',()=>{
-  sessionStorage.setItem('agent1.scenario.prefill',JSON.stringify({
-    initial_intent:question.value.trim(),
-    language:language.value,
-    model_id:team.value==='all'?'auto':team.value
-  }));
-});
-
 function updateHealthStatus() {
   const t = i18n[currentLang] || i18n['en'];
   health.textContent = workerOnline ? t.healthOnline : t.healthOffline;
@@ -651,14 +680,350 @@ question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter
 newConversationButton.onclick=()=>{
   localStorage.setItem(conversationKey,newConversationId());
   clearChat();
+  clearGrillSession();
   const t = i18n[currentLang] || i18n['en'];
   addMessage('system', t.newConvStarted);
   question.focus()
 };
 
+// Grill mode (scenario clarification + wiki-grounded feasibility report)
+const grillEls = {
+  panel: document.getElementById('grillPanel'),
+  thread: document.getElementById('grill-thread'),
+  startCard: document.getElementById('grill-start-card'),
+  intent: document.getElementById('grill-intent'),
+  model: document.getElementById('grill-model'),
+  start: document.getElementById('grill-start'),
+  questionCard: document.getElementById('grill-question-card'),
+  questionText: document.getElementById('grill-question-text'),
+  reason: document.getElementById('grill-reason'),
+  options: document.getElementById('grill-options'),
+  custom: document.getElementById('grill-custom'),
+  customAnswer: document.getElementById('grill-custom-answer'),
+  submitCustom: document.getElementById('grill-submit-custom'),
+  analyze: document.getElementById('grill-analyze'),
+  back: document.getElementById('grill-back'),
+  status: document.getElementById('grill-status'),
+  drawer: document.getElementById('grillDrawer'),
+  reportBody: document.getElementById('grill-report-body'),
+  markdown: document.getElementById('grill-markdown'),
+  pdf: document.getElementById('grill-pdf'),
+  closeDrawer: document.getElementById('grill-close-drawer'),
+};
+const grillStorageKey = 'agent1.grill.session';
+let grill = null;
+let grillResumeToken = '';
+
+function grillRobotOptions(){
+  const auto = document.createElement('option');
+  auto.value = 'auto';
+  auto.textContent = 'Auto-select from scenario';
+  grillEls.model.replaceChildren(auto);
+  robots.forEach(robot=>{
+    const op = document.createElement('option');
+    op.value = robot.name;
+    op.textContent = robotLabel(robot);
+    grillEls.model.appendChild(op);
+  });
+  const saved = localStorage.getItem('agent1_team');
+  grillEls.model.value = saved && saved !== 'all' ? saved : 'auto';
+}
+
+function grillBubble(text, kind){
+  const b = document.createElement('div');
+  b.className = 'bubble ' + kind;
+  b.textContent = text;
+  grillEls.thread.appendChild(b);
+  grillEls.thread.scrollTop = grillEls.thread.scrollHeight;
+}
+
+function grillStatus(text){
+  grillEls.status.textContent = text || '';
+}
+
+function saveGrillSession(){
+  if (grill) localStorage.setItem(grillStorageKey, JSON.stringify({session_id:grill.session_id, resume_token:grillResumeToken}));
+}
+
+function clearGrillSession(){
+  localStorage.removeItem(grillStorageKey);
+  grill = null;
+  grillResumeToken = '';
+}
+
+function appendToChatHistory(role, content){
+  currentChat.push({role, content});
+  saveHistory();
+}
+
+function enterGrillMode(){
+  const chatInput = document.querySelector('.chat-input-area');
+  if (chatInput) chatInput.style.display = 'none';
+  grillEls.panel.style.display = 'block';
+  grillEls.thread.replaceChildren();
+  const prefill = question.value.trim();
+  if (prefill) grillEls.intent.value = prefill;
+  loadGrillSession();
+}
+
+function backToChat(){
+  grillEls.panel.style.display = 'none';
+  const chatInput = document.querySelector('.chat-input-area');
+  if (chatInput) chatInput.style.display = '';
+  question.focus();
+}
+
+async function loadGrillSession(){
+  const item = JSON.parse(localStorage.getItem(grillStorageKey) || 'null');
+  if (!item || !item.session_id) { renderGrillStart(); return; }
+  grillResumeToken = item.resume_token || '';
+  try {
+    const r = await fetch(`/api/scenario-sessions/${encodeURIComponent(item.session_id)}`, {
+      headers: grillHeaders(false),
+    });
+    const d = await r.json();
+    if (r.ok && d.session) {
+      grill = d.session;
+      renderGrill();
+    } else {
+      localStorage.removeItem(grillStorageKey);
+      renderGrillStart();
+    }
+  } catch {
+    renderGrillStart();
+  }
+}
+
+function grillHeaders(json){
+  const h = {};
+  if (json) h['Content-Type'] = 'application/json';
+  if (grillResumeToken) h['X-Scenario-Resume-Token'] = grillResumeToken;
+  return h;
+}
+
+function renderGrillStart(){
+  grillEls.startCard.style.display = 'block';
+  grillEls.questionCard.style.display = 'none';
+  grillEls.analyze.disabled = true;
+  grillEls.status.textContent = '';
+  grillEls.thread.replaceChildren();
+  grillBubble('Describe the robot task you want to evaluate. I will ask one high-impact question at a time.', 'bot');
+}
+
+function renderGrill(){
+  if (!grill) return;
+  const state = grill.current_state || {};
+  grillEls.startCard.style.display = 'none';
+  grillEls.thread.replaceChildren();
+  grillBubble(state.initial_intent || '', 'user');
+  (state.question_history || []).forEach(item=>{
+    grillBubble(item.question || '', 'bot');
+    grillBubble(item.answer_mode === 'unknown' ? "I don't know yet" : (item.answer || ''), 'user');
+  });
+  const q = state.current_question;
+  if (q) {
+    grillEls.questionCard.style.display = 'block';
+    grillEls.questionText.textContent = q.question;
+    grillEls.reason.textContent = q.reason_for_asking || '';
+    grillEls.options.replaceChildren();
+    (q.options || []).slice(0,3).forEach((text, index)=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = `${index+1}. ${text}`;
+      b.addEventListener('click', ()=>grillAnswer('option', text));
+      grillEls.options.appendChild(b);
+    });
+    const other = document.createElement('button');
+    other.type = 'button';
+    other.textContent = `4. Other`;
+    other.addEventListener('click', ()=>{ grillEls.custom.style.display = 'flex'; grillEls.customAnswer.focus(); });
+    grillEls.options.appendChild(other);
+    grillEls.custom.style.display = 'none';
+    grillEls.customAnswer.value = '';
+  } else {
+    grillEls.questionCard.style.display = 'none';
+  }
+  const gate = state.minimum_gate || {};
+  grillEls.analyze.disabled = !(state.status === 'report_ready' ? false : (gate.passed && state.status !== 'analyzing'));
+  grillStatus(state.status === 'analyzing' ? 'Analysis in progress...' : (state.status === 'report_ready' ? 'Report ready.' : ''));
+  if (state.status === 'report_ready' && grill.current_report_revision_id) {
+    const report = (grill.reports || []).find(r=>r.report_revision_id === grill.current_report_revision_id);
+    if (report) renderGrillReport(report);
+  }
+  saveGrillSession();
+}
+
+async function grillStart(){
+  const intent = grillEls.intent.value.trim();
+  if (intent.length < 3) { grillStatus('Describe the scenario first.'); return; }
+  grillEls.start.disabled = true;
+  grillStatus('Creating scenario...');
+  try {
+    const r = await fetch('/api/scenario-sessions', {
+      method: 'POST',
+      headers: grillHeaders(true),
+      body: JSON.stringify({
+        initial_intent: intent,
+        model_id: grillEls.model.value,
+        language: language.value,
+        conversation_id: getConversationId(),
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Could not create scenario');
+    grill = d.session;
+    grillResumeToken = d.resume_token || '';
+    renderGrill();
+  } catch (e) {
+    grillStatus(e.message);
+  } finally {
+    grillEls.start.disabled = false;
+  }
+}
+
+async function grillAnswer(mode, text){
+  const state = grill && grill.current_state;
+  const q = state && state.current_question;
+  if (!q) return;
+  grillStatus('Preparing the next question...');
+  try {
+    const r = await fetch(`/api/scenario-sessions/${encodeURIComponent(grill.session_id)}/answers`, {
+      method: 'POST',
+      headers: grillHeaders(true),
+      body: JSON.stringify({
+        expected_state_version: state.state_version,
+        question_id: q.question_id,
+        answer_mode: mode,
+        answer: text,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Answer was not saved');
+    grill = d.session;
+    appendToChatHistory('user', text);
+    renderGrill();
+    pollGrillIfAnalyzing();
+  } catch (e) {
+    grillStatus(e.message);
+  }
+}
+
+async function grillAnalyze(){
+  if (!grill) return;
+  const state = grill.current_state || {};
+  grillEls.analyze.disabled = true;
+  grillStatus('Queuing analysis...');
+  try {
+    const r = await fetch(`/api/scenario-sessions/${encodeURIComponent(grill.session_id)}/analyze-now`, {
+      method: 'POST',
+      headers: grillHeaders(true),
+      body: JSON.stringify({ expected_state_version: state.state_version, trigger: 'user_requested_early' }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Analysis could not be queued');
+    grill = d.session;
+    renderGrill();
+    pollGrillIfAnalyzing();
+  } catch (e) {
+    grillStatus(e.message);
+    grillEls.analyze.disabled = !(state.minimum_gate && state.minimum_gate.passed);
+  }
+}
+
+let grillPollTimer = null;
+async function pollGrillIfAnalyzing(){
+  if (!grill || (grill.current_state || {}).status !== 'analyzing') return;
+  clearInterval(grillPollTimer);
+  grillPollTimer = setInterval(async ()=>{
+    if (!grill) { clearInterval(grillPollTimer); return; }
+    try {
+      const r = await fetch(`/api/scenario-sessions/${encodeURIComponent(grill.session_id)}`, { headers: grillHeaders(false) });
+      const d = await r.json();
+      if (!r.ok || !d.session) { clearInterval(grillPollTimer); return; }
+      grill = d.session;
+      const status = (grill.current_state || {}).status;
+      if (status === 'report_ready') {
+        clearInterval(grillPollTimer);
+        const report = (grill.reports || []).find(item=>item.report_revision_id === grill.current_report_revision_id);
+        if (report) renderGrillReport(report);
+      }
+      renderGrill();
+      if (status !== 'analyzing') clearInterval(grillPollTimer);
+    } catch { clearInterval(grillPollTimer); }
+  }, 1800);
+}
+
+function renderGrillReport(revision){
+  const report = revision.report || {};
+  grillEls.drawer = grillEls.drawer || grillEls.reportBody;
+  grillEls.reportBody.replaceChildren();
+  const h = document.createElement('h3');
+  h.textContent = report.conclusion ? String(report.conclusion).replaceAll('_',' ') : 'Feasibility report';
+  grillEls.reportBody.appendChild(h);
+  if (report.executive_summary) {
+    const p = document.createElement('p');
+    p.textContent = report.executive_summary;
+    grillEls.reportBody.appendChild(p);
+  }
+  const section = (title, items, fmt) => {
+    if (!items || !items.length) return;
+    const box = document.createElement('section');
+    box.style.marginTop = '10px';
+    const t = document.createElement('strong');
+    t.textContent = title;
+    box.appendChild(t);
+    const ul = document.createElement('ul');
+    items.forEach(item=>{
+      const li = document.createElement('li');
+      li.textContent = fmt ? fmt(item) : String(item);
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    grillEls.reportBody.appendChild(box);
+  };
+  section('Conditions', report.conditions, null);
+  section('Main evidence', report.main_evidence, x=>`${x.name || ''} — ${x.support_state || ''}`);
+  section('Engineering effort', (report.engineering_effort || {}).workstreams || [], null);
+  section('Tools and SDK support', report.tool_support, x=>`${x.name || x.tool || ''}: ${x.how_it_helps || x.support || ''}`);
+  section('PoC and acceptance', report.acceptance_tests || [], null);
+  section('Next actions', report.next_actions, x=>`${x.owner || ''}: ${x.action || ''}`);
+  grillEls.drawer.style.display = 'flex';
+}
+
+async function grillExport(format){
+  if (!grill) return;
+  const id = grill.current_report_revision_id;
+  if (!id) return;
+  try {
+    const r = await fetch(`/api/scenario-sessions/${encodeURIComponent(grill.session_id)}/reports/${id}/export?format=${format}`, { headers: grillHeaders(false) });
+    if (!r.ok) throw new Error('Export failed');
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = format === 'pdf' ? 'scenario_report.pdf' : 'scenario_report.md';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  } catch (e) {
+    grillStatus(e.message);
+  }
+}
+
+function setupGrillMode(){
+  grillRobotOptions();
+  grillEls.start.addEventListener('click', grillStart);
+  grillEls.submitCustom.addEventListener('click', ()=>grillAnswer('custom', grillEls.customAnswer.value));
+  grillEls.analyze.addEventListener('click', grillAnalyze);
+  grillEls.back.addEventListener('click', backToChat);
+  grillEls.markdown.addEventListener('click', ()=>grillExport('markdown'));
+  grillEls.pdf.addEventListener('click', ()=>grillExport('pdf'));
+  grillEls.closeDrawer.addEventListener('click', ()=>{ grillEls.drawer.style.display = 'none'; });
+  scenarioAssessment.addEventListener('click', enterGrillMode);
+}
+
 // Init
 translateUI();
 loadHistory();
+setupGrillMode();
 
 </script>
 </body></html>

@@ -601,8 +601,9 @@ def test_public_analysis_persists_and_exports_markdown_and_pdf(monkeypatch: pyte
         Path(__file__).resolve().parents[1] / "ecs" / "app" / "templates" / "ask.html"
     ).read_text(encoding="utf-8")
     assert 'id="scenarioAssessment"' in ask_html
-    assert 'href="/capability-match"' in ask_html
-    assert 'href="/capability-match" hidden' in ask_html
+    assert 'href="/capability-match"' not in ask_html
+    assert 'id="grillPanel"' in ask_html
+    assert 'id="grillDrawer"' in ask_html
     assert "monitorDemandAnalysis" not in ask_html
     assert "/api/capability-match/analyze" not in ask_html
     assert "demandMode" not in ask_html
