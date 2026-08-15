@@ -388,6 +388,10 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE scenario_sessions ADD COLUMN pending_reanalysis_state_version INTEGER"
             )
+        if "conversation_id" not in _columns(connection, "scenario_sessions"):
+            connection.execute(
+                "ALTER TABLE scenario_sessions ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''"
+            )
         if "attempt_count" not in _columns(connection, "scenario_analysis_jobs"):
             connection.execute(
                 "ALTER TABLE scenario_analysis_jobs ADD COLUMN attempt_count "
@@ -2431,6 +2435,7 @@ def create_scenario_session(
     language: str,
     model_id: str,
     state: dict[str, Any],
+    conversation_id: str = "",
     change_source: str = "created",
 ) -> dict[str, Any]:
     now = utc_now()
@@ -2440,8 +2445,9 @@ def create_scenario_session(
             """
             INSERT INTO scenario_sessions (
                 session_id, owner_user_id, anonymous_token_hash, status,
-                current_state_version, language, model_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                current_state_version, language, model_id, conversation_id,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -2451,6 +2457,7 @@ def create_scenario_session(
                 state_version,
                 language,
                 model_id,
+                str(conversation_id or ""),
                 now,
                 now,
             ),

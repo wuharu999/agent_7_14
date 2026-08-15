@@ -214,6 +214,28 @@ def test_anonymous_session_persists_and_requires_resume_token() -> None:
     assert answer_data["session"]["current_state"]["goal"]["confirmation"] == "confirmed"
 
 
+def test_create_session_persists_conversation_id() -> None:
+    async def exercise():
+        created = await routes.create_session_route(
+            routes.CreateSessionRequest(
+                initial_intent="Retrieve parcels from a locker",
+                model_id=database.get_allowed_teams()[0],
+                language="en",
+                conversation_id="web:test-conv-123",
+            ),
+            _request(),
+        )
+        return created
+
+    created = asyncio.run(exercise())
+    data = json.loads(created.body)
+    assert created.status_code == 201
+    assert data["session"]["conversation_id"] == "web:test-conv-123"
+    loaded = database.get_scenario_session(data["session"]["session_id"])
+    assert loaded is not None
+    assert loaded["conversation_id"] == "web:test-conv-123"
+
+
 def test_state_version_write_is_optimistic_and_migration_is_additive() -> None:
     session_id = "SCNSESSION-OPTIMISTIC"
     state = attach_next_question(initial_state(session_id, "Move parcels"))

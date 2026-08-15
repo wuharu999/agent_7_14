@@ -117,6 +117,7 @@ class CreateSessionRequest(BaseModel):
     initial_intent: str = Field(min_length=3, max_length=20_000)
     model_id: str = Field(default="auto", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     language: str = Field(default=DEFAULT_LANGUAGE, max_length=16)
+    conversation_id: str = Field(default="", max_length=200)
 
 
 class AnswerRequest(BaseModel):
@@ -991,6 +992,7 @@ async def create_session_route(
         language=payload.language,
         model_id=model_selection["model_id"],
         state=state,
+        conversation_id=payload.conversation_id,
     )
     await asyncio.to_thread(
         _append_event,
