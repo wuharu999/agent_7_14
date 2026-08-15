@@ -452,10 +452,129 @@ def test_answer_system_preserves_existing_prompt_contract() -> None:
     assert "Never include citations" in qa_api.ANSWER_SYSTEM
     assert "Do not output image paths or image Markdown" in qa_api.ANSWER_SYSTEM
     assert "Cite factual statements" not in qa_api.ANSWER_SYSTEM
+    assert "Prefer omission over inference" in qa_api.ANSWER_SYSTEM
+    assert "DIRECT_FACT" in qa_api.ANSWER_SYSTEM
+    assert "DERIVED_FACT" in qa_api.ANSWER_SYSTEM
+    assert "price, value, positioning, compatibility, superiority" in qa_api.ANSWER_SYSTEM
+    assert "Do not add your own conclusion" in qa_api.ANSWER_SYSTEM
+    assert "Never append a disclaimer" in qa_api.ANSWER_SYSTEM
     assert qa_api.DeepSeekClient._options() == {
         "temperature": 0,
         "extra_body": {"thinking": {"type": "disabled"}},
     }
+
+
+def test_unsupported_synthesis_filter_removes_the_reported_conclusion() -> None:
+    answer = (
+        "## 版本一致性\n\n"
+        "- Walker S2 Edu：国内与海外售卖版本料号相同、配置相同。\n\n"
+        "## 核心结论\n\n"
+        "Walker S2 Edu 本质上是工业版基础上的增强版，整体性价比更高。"
+    )
+
+    filtered = qa_api.strip_unsupported_synthesis(answer)
+
+    assert "版本一致性" in filtered
+    assert "料号相同、配置相同" in filtered
+    assert "核心结论" not in filtered
+    assert "本质上" not in filtered
+    assert "性价比更高" not in filtered
+
+
+def test_unsupported_synthesis_stream_filter_handles_split_heading() -> None:
+    stream_filter = qa_api.UnsupportedSynthesisStreamFilter()
+
+    chunks = [
+        stream_filter.feed("已明确的配置差异。\n\n核"),
+        stream_filter.feed("心结论\nWalker S2 Edu 本质上是增强版。"),
+        stream_filter.finish(),
+    ]
+
+    visible = "".join(chunks)
+    assert visible == "已明确的配置差异。\n\n"
+
+
+def test_unsupported_synthesis_preserves_wiki_backed_comparison_sections() -> None:
+    answer = (
+        "【1. 性价比】Edu 版是多执行器、多感知、多场景教学实训平台，整体性价比更高。\n"
+        "硬件方面，Edu 版配置 3 个末端执行器 + 1 对腕部相机。\n\n"
+        "【2. 定位差异】\n"
+        "工业版定位是\"工业任务执行产品\"，核心是把搬运、巡检、操作等具体任务做通。\n\n"
+        "【4. 绑定事项】只卖设备容易变成展示品，绑定课程、实训和平台，才能真正用起来。"
+    )
+
+    filtered = qa_api.strip_unsupported_synthesis(answer)
+
+    assert filtered == answer
+
+
+def test_unsupported_synthesis_strips_evidence_disclaimers() -> None:
+    answer = (
+        "Edu 版配置 3 个末端执行器 + 1 对腕部相机。\n\n"
+        "以上内容仅来自 wiki，没有证据支持，仅供参考。"
+    )
+
+    filtered = qa_api.strip_unsupported_synthesis(answer)
+
+    assert "末端执行器" in filtered
+    assert "以上内容仅来自" not in filtered
+    assert "没有证据" not in filtered
+
+    english = (
+        "Edu includes additional teaching tools.\n\n"
+        "Note: the above information is not backed by any evidence."
+    )
+    assert "teaching tools" in qa_api.strip_unsupported_synthesis(english)
+    assert "not backed" not in qa_api.strip_unsupported_synthesis(english)
+
+
+@pytest.mark.anyio
+async def test_provider_stream_never_exposes_unsupported_synthesis(
+    monkeypatch, tmp_path: Path
+) -> None:
+    write(tmp_path / "index.md", "[[walker]]")
+    write(tmp_path / "concepts" / "walker.md", "Walker S2 directly supported evidence")
+    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
+    monkeypatch.setattr(
+        qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate("CN", False)
+    )
+    calls: list[str] = []
+
+    class UnsupportedConclusionProvider(FakeProvider):
+        def stream(self, _system: str, _user: str):
+            self.calls.append(f"{self.name}:stream")
+            yield "## 版本一致性\n\n配置相同。\n\n核"
+            yield "心结论\n\nWalker S2 Edu 本质上是增强版，性价比更高。"
+
+    monkeypatch.setattr(
+        qa_api,
+        "_provider_client",
+        lambda name: UnsupportedConclusionProvider(name, calls),
+    )
+    visible: list[str] = []
+
+    async def on_token(text: str) -> None:
+        visible.append(text)
+
+    answer = await qa_api._retrieve_and_stream(
+        "Walker S2 版本有什么区别？",
+        team="walker_s2",
+        language="zh-CN",
+        history=(),
+        on_token=on_token,
+        on_reset=lambda: on_token(""),
+    )
+
+    streamed = "".join(visible)
+    assert "配置相同" in streamed
+    assert "配置相同" in answer
+    assert "核心结论" not in streamed
+    assert "核心结论" not in answer
+    assert "本质上" not in streamed
+    assert "本质上" not in answer
+    assert "性价比更高" not in streamed
+    assert "性价比更高" not in answer
+    assert calls == ["deepseek:complete", "deepseek:stream"]
 
 
 def test_public_qa_manager_has_no_claude_code_answer_path() -> None:
