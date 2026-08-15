@@ -34,6 +34,12 @@ async def ask_page():
     return HTMLResponse(page)
 
 
+@router.get("/capability-match")
+async def capability_match_redirect():
+    """Stale bookmarks to the removed standalone workbench now land on the chat page."""
+    return RedirectResponse(rooted_path("/"), status_code=308)
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(
     request: Request,

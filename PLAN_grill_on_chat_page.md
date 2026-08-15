@@ -43,8 +43,9 @@ removed. Provider is DeepSeek API only — no Claude Code, no coding agents.
   `/capability-match` route + chat link, admin capabilities page
   (`/admin/capabilities`, `admin_capabilities.html`), capability catalog jobs,
   feasibility matching. Keep DB tables for migration safety; stop writing to them.
-- ✅ **Q12 — Report exports**: keep **Markdown + PDF** in the report drawer;
-  drop revisions and share-link for now.
+- ✅ **Q12 — Report delivery**: the report is delivered as a **chat response**
+  (a bot bubble in the shared conversation), not a drawer or an export.
+  No PDF/Markdown export; no report drawer.
 - ✅ **Q13 — Persistence**: keep server persistence (scenario_sessions table) +
   resume; same behavior, relocated. Also lets chat history reference it reliably.
 - ✅ **Q14 — Drawer**: reuse drawer HTML/CSS/JS from `capability_match.html`
@@ -120,11 +121,12 @@ removed. Provider is DeepSeek API only — no Claude Code, no coding agents.
    into bounded calls, merge sections with `deepseek-v4-pro`
    (`DEEPSEEK_MERGE_MODEL`) (Q23).
 2. Backend: pass `conversation_id` into scenario session create (Q16).
-3. Frontend: merge grill UI + drawer into `ask.html`, replace link with
+3. Frontend: merge grill UI into `ask.html`, replace link with
    toggle button (Q1/Q2/Q5/Q14/Q15).
 4. Frontend: shared-history wiring — grill turns + outcome in `localStorage`
-   history; grill session bound to conversation_id; "New conversation" clears
-   both chat and grill (Q3/Q4/Q16/Q17/Q21).
+   history; session bound to conversation_id; "New conversation" clears
+   both chat and grill (Q3/Q4/Q16/Q17/Q21). Report rendered as a chat
+   response (Q12).
 5. Removal: delete capability-match stack — routes, templates, admin
    capability UI, catalog jobs, feasibility matching (Q11-B/Q19).
 6. Route cleanup: redirect `/capability-match` (Q6); admin nav entry removed.
