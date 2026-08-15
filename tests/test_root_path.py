@@ -73,10 +73,8 @@ attribute_pattern = re.compile(
     r'\\b(?:href|src|action|data-account-return)\\s*=\\s*["\\\'](?P<path>/(?!/)[^"\\\']*)'
 )
 for name in (
-    "admin_capabilities.html",
     "admin_users.html",
     "ask.html",
-    "capability_match.html",
     "login.html",
     "manage.html",
     "settings.html",

@@ -17,8 +17,6 @@ ACCOUNT_MENU_TEMPLATES = (
     "upload_status.html",
     "settings.html",
     "admin_users.html",
-    "capability_match.html",
-    "admin_capabilities.html",
 )
 
 
@@ -83,14 +81,14 @@ def test_application_pages_do_not_link_to_removed_wecom_ask_route() -> None:
 
 def test_shared_component_contains_role_gated_admin_and_account_actions() -> None:
     script = (STATIC_ROOT / "account_menu.js").read_text(encoding="utf-8")
-    assert "const SHOW_CAPABILITY_NAVIGATION = false;" in script
     assert "const appUrl = path =>" in script
     assert "if (user.role === 'admin')" in script
     assert "users.href = appUrl('/admin/users')" in script
     assert "manage.href = appUrl('/manage')" in script
     assert "upload.href = appUrl('/upload')" in script
-    assert "workbench.href = appUrl('/capability-match')" in script
-    assert "capabilities.href = appUrl('/admin/capabilities')" in script
+    assert "workbench" not in script
+    assert "capabilities" not in script
+    assert "gapAnalytics" not in script
     assert "fetch('/api/export/wiki')" in script
     assert "fetch('/logout'" in script
     assert "accountSettings" in script
@@ -99,15 +97,15 @@ def test_shared_component_contains_role_gated_admin_and_account_actions() -> Non
     assert "account-menu-heading" not in script
 
 
-def test_capability_navigation_buttons_are_hidden_without_removing_routes() -> None:
+def test_capability_navigation_is_removed() -> None:
     script = (STATIC_ROOT / "account_menu.js").read_text(encoding="utf-8")
-    page = (TEMPLATE_ROOT / "admin_capabilities.html").read_text(encoding="utf-8")
+    page = (TEMPLATE_ROOT / "ask.html").read_text(encoding="utf-8")
 
-    assert "if (SHOW_CAPABILITY_NAVIGATION)" in script
-    assert "workbench.href = appUrl('/capability-match')" in script
-    assert "capabilities.href = appUrl('/admin/capabilities')" in script
-    assert 'href="/capability-match" data-i18n="workbench" hidden' in page
-    assert ".button[hidden]{display:none!important}" in page
+    assert "SHOW_CAPABILITY_NAVIGATION" not in script
+    assert "/capability-match" not in script
+    assert "/admin/capabilities" not in script
+    assert 'id="grillPanel"' in page
+    assert 'href="/capability-match"' not in page
 
 
 def test_shared_component_javascript_parses() -> None:
@@ -122,7 +120,7 @@ def test_shared_component_javascript_parses() -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("template_name", ["ask.html", "settings.html", "capability_match.html", "admin_capabilities.html"])
+@pytest.mark.parametrize("template_name", ["ask.html", "settings.html", "manage.html", "admin_users.html"])
 def test_account_menu_javascript_parses(template_name: str) -> None:
     page = (TEMPLATE_ROOT / template_name).read_text(encoding="utf-8")
     scripts = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)

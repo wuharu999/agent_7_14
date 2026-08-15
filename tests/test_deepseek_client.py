@@ -150,7 +150,6 @@ def test_no_claude_subprocess_module_or_configuration_remains() -> None:
     assert not (root / "worker" / "claude_process.py").exists()
     assert not (root / "worker" / "authoring.py").exists()
     migrated_modules = (
-        "capability_catalog.py",
         "capability_matcher.py",
         "prompt_security.py",
         "scenario_clarification.py",

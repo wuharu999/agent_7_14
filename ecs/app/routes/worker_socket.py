@@ -14,7 +14,6 @@ from ecs.app.database import (
     upsert_source,
     reconcile_existing_uploads,
     reconcile_llm_wiki_snapshot,
-    update_capability_catalog_job,
 )
 from ecs.app.gateway import gateway
 from ecs.app.routes.scenario_sessions import reconcile_pending_scenario_reanalyses
@@ -70,33 +69,11 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 "grill_scenario_result",
                 "scenario_message_classification_result",
                 "scenario_report_answer_result",
-                "capability_catalog_result",
-                "capability_source_changes_result",
-                "update_capability_status_result",
-                "save_capability_result",
-                "delete_capability_result",
             }:
                 gateway.resolve_command(str(data.get("id") or ""), data)
 
             elif message_type == "scenario_analysis_progress":
                 await gateway.resolve_command_progress(str(data.get("id") or ""), data)
-
-            elif message_type == "capability_catalog_progress":
-                job_id = str(data.get("job_id") or "")
-                if job_id:
-                    details = data.get("details")
-                    await asyncio.to_thread(
-                        update_capability_catalog_job,
-                        job_id,
-                        status="processing",
-                        stage=str(data.get("stage") or "processing"),
-                        message=str(data.get("message") or "Organization is in progress."),
-                        result=(
-                            {"progress_snapshot": details}
-                            if isinstance(details, dict) and details
-                            else None
-                        ),
-                    )
 
             elif message_type == "contradiction_alert":
                 team = str(data.get("team") or "")

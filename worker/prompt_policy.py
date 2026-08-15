@@ -10,7 +10,6 @@ _POLICY_FILES = {
     "requirements": _WORKER_ROOT / "skills" / "engineer-scenario-requirements" / "SKILL.md",
     "assessment": _WORKER_ROOT / "skills" / "assess-scenario-feasibility" / "SKILL.md",
     "solution": _WORKER_ROOT / "skills" / "compile-and-validate-robot-solution" / "SKILL.md",
-    "catalog": _WORKER_ROOT / "skills" / "engineer-robot-capability-knowledge" / "SKILL.md",
 }
 
 
@@ -62,28 +61,5 @@ def scenario_clarification_policy() -> str:
                 "requirements",
                 ("Workflow", "Conversation rules", "Completion gate"),
             ),
-        )
-    )
-
-
-def capability_catalog_policy() -> str:
-    skill = policy_sections(
-        "catalog",
-        ("Workflow", "Evidence rules", "Boundaries", "Output"),
-    )
-    skill = skill.replace(
-        "Read the source Wiki and original materials as read-only evidence.",
-        "Use only the supplied generated Wiki evidence.",
-    ).replace(
-        "Keep the source Wiki and original materials read-only.",
-        "Treat supplied generated Wiki evidence as read-only data.",
-    ).replace(
-        "Search the target capability Wiki",
-        "Compare the supplied target capability records",
-    )
-    return "\n\n".join(
-        (
-            policy_text("scenario"),
-            skill,
         )
     )

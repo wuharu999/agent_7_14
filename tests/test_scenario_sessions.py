@@ -398,50 +398,34 @@ def test_capability_migration_and_progress_sanitization() -> None:
 
 
 def test_workbench_uses_safe_dom_and_accessible_report_drawer() -> None:
-    page = Path("ecs/app/templates/capability_match.html").read_text(encoding="utf-8")
-    assert "I want something else" in page
-    assert "I don't know yet" in page
+    page = Path("ecs/app/templates/ask.html").read_text(encoding="utf-8")
+    assert "Start clarification" in page
+    assert "Analyze now" in page
     assert "textContent" in page
-    assert "innerHTML" not in page
-    assert 'role="separator"' in page
-    assert 'aria-label="Scenario report"' in page
-    assert "50vh" in page and "88vh" in page
-    assert "onclick=" not in page
-    assert "confirm(" not in page
-    assert "confirmation-card" in page
-    assert "eventReconnectTimer=setTimeout(connectEvents,2000)" in page
-    assert 'id="process-indicator"' in page
-    assert "Paused · Worker offline" in page
-    assert "Working · analysis in progress" in page
-    assert "Complete · report ready" in page
     assert "Auto-select from scenario" in page
-    assert "renderConversationHistory" in page
-    assert "dataset.scenarioHistory" in page
-    assert "waiting-pulse" in page
-    assert "pendingOperation" in page
-    assert "Analysis failed · retry available" in page
-    assert "!scenario.current_report_revision_id" in page
-    assert 'class="report-spinner"' in page
-    assert 'role="progressbar"' in page
-    assert "Still working ·" in page
-    assert "setInterval(updateActivityClock,1000)" in page
-    assert "progress-shimmer" in page
+    assert 'id="grillPanel"' in page
+    assert 'id="grillDrawer"' not in page
+    grill_js = page.split("// Grill mode", 1)[1]
+    assert "innerHTML" not in grill_js
+    assert "onclick=" not in grill_js
+    assert "confirm(" not in grill_js
 
 
 def test_workbench_registers_every_referenced_element() -> None:
-    page = Path("ecs/app/templates/capability_match.html").read_text(encoding="utf-8")
+    page = Path("ecs/app/templates/ask.html").read_text(encoding="utf-8")
     registry_match = re.search(
-        r"const els=Object\.fromEntries\(\[(.*?)\]\.map",
+        r"const grillEls = \{(.*?)\n\};",
         page,
         flags=re.DOTALL,
     )
     assert registry_match is not None
-    registered = set(re.findall(r"'([^']+)'", registry_match.group(1)))
-    dot_references = set(re.findall(r"\bels\.([A-Za-z][A-Za-z0-9_-]*)", page))
-    bracket_references = set(re.findall(r"\bels\['([^']+)'\]", page))
+    registered = set(re.findall(r"\b([A-Za-z][A-Za-z0-9_]*):\s", registry_match.group(1)))
+    dot_references = set(re.findall(r"\bgrillEls\.([A-Za-z][A-Za-z0-9_-]*)", page))
+    bracket_references = set(re.findall(r"\bgrillEls\['([^']+)'\]", page))
 
     assert dot_references | bracket_references <= registered
     assert "thread" in registered
+    assert "analyze" in registered
 
 
 def test_robot_auto_selection_prefers_customer_choice_name_and_scenario_fit(
@@ -613,20 +597,6 @@ def test_locker_analysis_creates_immutable_report_export_and_private_share(
         )
         reports = database.list_scenario_report_revisions(session_id)
         revision = reports[0]
-        exported_md = await routes.report_export_route(
-            session_id,
-            revision["report_revision_id"],
-            _request(method="GET"),
-            format="markdown",
-            x_scenario_resume_token=resume_token,
-        )
-        exported_pdf = await routes.report_export_route(
-            session_id,
-            revision["report_revision_id"],
-            _request(method="GET"),
-            format="pdf",
-            x_scenario_resume_token=resume_token,
-        )
         shared = await routes.share_route(
             session_id,
             routes.ShareRequest(
@@ -639,9 +609,9 @@ def test_locker_analysis_creates_immutable_report_export_and_private_share(
         )
         share_token = json.loads(shared.body)["url"].rsplit("/", 1)[-1]
         page = await routes.shared_report_page(share_token)
-        return job, revision, exported_md, exported_pdf, shared, page
+        return job, revision, shared, page
 
-    job, revision, exported_md, exported_pdf, shared, page = asyncio.run(exercise())
+    job, revision, shared, page = asyncio.run(exercise())
     assert database.get_scenario_analysis_job(job["job_id"])["status"] == "completed"
     assert revision["is_current"] is True
     assert revision["report"]["conclusion"] == "fit_with_conditions"
@@ -649,8 +619,6 @@ def test_locker_analysis_creates_immutable_report_export_and_private_share(
     completed_session = database.get_scenario_session(session_id)
     assert completed_session["status"] == "report_ready"
     assert completed_session["current_state"]["status"] == "report_ready"
-    assert b"Package width" in exported_md.body
-    assert exported_pdf.body.startswith(b"%PDF-")
     assert shared.status_code == 201
     shared_html = page.body.decode()
     assert "fit_with_conditions" in shared_html
@@ -1401,11 +1369,11 @@ def test_confirm_change_rechecks_job_if_analysis_finishes_during_save(
 
 def test_sse_is_long_lived_and_browser_reconnects_after_normal_eof() -> None:
     route_source = Path("ecs/app/routes/scenario_sessions.py").read_text(encoding="utf-8")
-    page = Path("ecs/app/templates/capability_match.html").read_text(encoding="utf-8")
+    page = Path("ecs/app/templates/ask.html").read_text(encoding="utf-8")
     assert "for _ in range(20)" not in route_source
     assert "while not await request.is_disconnected()" in route_source
     assert "retry: 2000" in route_source
-    assert "eventReconnectTimer=setTimeout(connectEvents,2000)" in page
+    assert "pollGrillIfAnalyzing" in page
 
 
 def test_keep_asking_attaches_a_real_question_instead_of_dead_ending() -> None:

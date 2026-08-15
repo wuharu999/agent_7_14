@@ -598,7 +598,7 @@ async def analyze_scenario(
     if not scenario_text.strip():
         raise ValueError("Scenario text cannot be empty")
 
-    catalog = evidence_context or load_model_capability_catalog(model)
+    catalog = evidence_context or []
     client = create_deepseek_client(timeout=450)
     if evidence_context:
         candidate_ids = [

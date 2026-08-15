@@ -160,18 +160,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
 </div>
 </div>
 
-<div id="grillDrawer" style="position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff;border-top:1px solid #cbd5e1;box-shadow:0 -10px 30px #1f293711;display:none;flex-direction:column;max-height:70vh;">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px;border-bottom:1px solid #e2e8f0;">
-    <strong>Feasibility report</strong>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <button id="grill-markdown" class="secondary" type="button">Markdown</button>
-      <button id="grill-pdf" class="secondary" type="button">PDF</button>
-      <button id="grill-close-drawer" class="secondary" type="button">Close</button>
-    </div>
-  </div>
-  <div id="grill-report-body" style="overflow:auto;padding:16px;font-size:14px;line-height:1.55;"></div>
-</div>
-
 <script>
 const i18n = {
   'zh-CN': { title: '优必答 知识库', subtitle: '向本地知识库提问。', placeholder: '输入您的问题', teamLabel: '机器人 (知识库)', langLabel: '回答语言', askBtn: '提问', newConvBtn: '新对话', hint: '在此浏览器中的后续问题会保留近期的对话上下文。“新对话”会清除该上下文。', waiting: '等待 Worker 处理中...', healthChecking: '正在检查 Worker...', healthOnline: 'Worker 在线', healthOffline: 'Worker 离线', signIn: '登录', manageSources: '管理源文件', uploadDocs: '上传文档', wecomLink: '企业微信版本', newConvStarted: '已开始新对话。', allRobots: '全部机器人', exportWikiTitle: '导出到我的AI', exportDenied: '仅编辑者和管理员可导出知识库。', genericError: '与助手通信时出错。请稍后再试。',
@@ -704,11 +692,6 @@ const grillEls = {
   analyze: document.getElementById('grill-analyze'),
   back: document.getElementById('grill-back'),
   status: document.getElementById('grill-status'),
-  drawer: document.getElementById('grillDrawer'),
-  reportBody: document.getElementById('grill-report-body'),
-  markdown: document.getElementById('grill-markdown'),
-  pdf: document.getElementById('grill-pdf'),
-  closeDrawer: document.getElementById('grill-close-drawer'),
 };
 const grillStorageKey = 'agent1.grill.session';
 let grill = null;
@@ -955,31 +938,13 @@ async function pollGrillIfAnalyzing(){
 
 function renderGrillReport(revision){
   const report = revision.report || {};
-  grillEls.drawer = grillEls.drawer || grillEls.reportBody;
-  grillEls.reportBody.replaceChildren();
-  const h = document.createElement('h3');
-  h.textContent = report.conclusion ? String(report.conclusion).replaceAll('_',' ') : 'Feasibility report';
-  grillEls.reportBody.appendChild(h);
-  if (report.executive_summary) {
-    const p = document.createElement('p');
-    p.textContent = report.executive_summary;
-    grillEls.reportBody.appendChild(p);
-  }
+  const lines = [];
+  lines.push(report.conclusion ? String(report.conclusion).replaceAll('_',' ') : 'Feasibility report');
+  if (report.executive_summary) lines.push('', report.executive_summary);
   const section = (title, items, fmt) => {
     if (!items || !items.length) return;
-    const box = document.createElement('section');
-    box.style.marginTop = '10px';
-    const t = document.createElement('strong');
-    t.textContent = title;
-    box.appendChild(t);
-    const ul = document.createElement('ul');
-    items.forEach(item=>{
-      const li = document.createElement('li');
-      li.textContent = fmt ? fmt(item) : String(item);
-      ul.appendChild(li);
-    });
-    box.appendChild(ul);
-    grillEls.reportBody.appendChild(box);
+    lines.push('', title);
+    items.forEach(item=>lines.push('- ' + (fmt ? fmt(item) : String(item))));
   };
   section('Conditions', report.conditions, null);
   section('Main evidence', report.main_evidence, x=>`${x.name || ''} — ${x.support_state || ''}`);
@@ -987,25 +952,9 @@ function renderGrillReport(revision){
   section('Tools and SDK support', report.tool_support, x=>`${x.name || x.tool || ''}: ${x.how_it_helps || x.support || ''}`);
   section('PoC and acceptance', report.acceptance_tests || [], null);
   section('Next actions', report.next_actions, x=>`${x.owner || ''}: ${x.action || ''}`);
-  grillEls.drawer.style.display = 'flex';
-}
-
-async function grillExport(format){
-  if (!grill) return;
-  const id = grill.current_report_revision_id;
-  if (!id) return;
-  try {
-    const r = await fetch(`/api/scenario-sessions/${encodeURIComponent(grill.session_id)}/reports/${id}/export?format=${format}`, { headers: grillHeaders(false) });
-    if (!r.ok) throw new Error('Export failed');
-    const blob = await r.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = format === 'pdf' ? 'scenario_report.pdf' : 'scenario_report.md';
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
-  } catch (e) {
-    grillStatus(e.message);
-  }
+  const text = lines.join('\n');
+  grillBubble(text, 'bot');
+  appendToChatHistory('bot', text);
 }
 
 function setupGrillMode(){
@@ -1014,9 +963,6 @@ function setupGrillMode(){
   grillEls.submitCustom.addEventListener('click', ()=>grillAnswer('custom', grillEls.customAnswer.value));
   grillEls.analyze.addEventListener('click', grillAnalyze);
   grillEls.back.addEventListener('click', backToChat);
-  grillEls.markdown.addEventListener('click', ()=>grillExport('markdown'));
-  grillEls.pdf.addEventListener('click', ()=>grillExport('pdf'));
-  grillEls.closeDrawer.addEventListener('click', ()=>{ grillEls.drawer.style.display = 'none'; });
   scenarioAssessment.addEventListener('click', enterGrillMode);
 }
 

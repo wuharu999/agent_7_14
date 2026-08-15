@@ -92,15 +92,6 @@ CAPABILITY_MATCH_WORKERS = max(1, int(os.environ.get("CAPABILITY_MATCH_WORKERS",
 CAPABILITY_MATCH_QUEUE_MAX = max(1, int(os.environ.get("CAPABILITY_MATCH_QUEUE_MAX", "8")))
 CLARIFICATION_WORKERS = max(1, int(os.environ.get("CLARIFICATION_WORKERS", "1")))
 CLARIFICATION_QUEUE_MAX = max(1, int(os.environ.get("CLARIFICATION_QUEUE_MAX", "16")))
-CAPABILITY_CATALOG_WORKERS = max(
-    1, int(os.environ.get("CAPABILITY_CATALOG_WORKERS", "2"))
-)
-CAPABILITY_CATALOG_QUEUE_MAX = max(
-    1, int(os.environ.get("CAPABILITY_CATALOG_QUEUE_MAX", "8"))
-)
-CAPABILITY_CATALOG_BATCH_CONCURRENCY = max(
-    1, int(os.environ.get("CAPABILITY_CATALOG_BATCH_CONCURRENCY", "4"))
-)
 FILE_MANAGER_MAX_ENTRIES = int(os.environ.get("FILE_MANAGER_MAX_ENTRIES", "10000"))
 CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "").strip()
 CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "gpt-oss-120b").strip() or "gpt-oss-120b"
@@ -155,27 +146,6 @@ CEREBRAS_BLOCKED_COUNTRIES = frozenset(
 WIKI_QA_MAX_PAGES = max(1, min(10, int(os.environ.get("WIKI_QA_MAX_PAGES", "8"))))
 WIKI_QA_MAX_PAGE_CHARS = max(
     1_000, int(os.environ.get("WIKI_QA_MAX_PAGE_CHARS", "24000"))
-)
-CAPABILITY_CATALOG_BATCH_BYTES = max(
-    16 * 1024,
-    int(os.environ.get("CAPABILITY_CATALOG_BATCH_BYTES", str(96 * 1024))),
-)
-CAPABILITY_CATALOG_UNIT_BYTES = max(
-    8 * 1024,
-    min(
-        CAPABILITY_CATALOG_BATCH_BYTES,
-        int(os.environ.get("CAPABILITY_CATALOG_UNIT_BYTES", str(64 * 1024))),
-    ),
-)
-CAPABILITY_CATALOG_BATCH_TIMEOUT = max(
-    DEEPSEEK_TIMEOUT,
-    1800,
-    int(os.environ.get("CAPABILITY_CATALOG_BATCH_TIMEOUT", "1800")),
-)
-CAPABILITY_CATALOG_REDUCE_TIMEOUT = max(
-    DEEPSEEK_TIMEOUT,
-    3600,
-    int(os.environ.get("CAPABILITY_CATALOG_REDUCE_TIMEOUT", "3600")),
 )
 SCENARIO_RETRIEVAL_CACHE_FILE = Path(
     os.environ.get(

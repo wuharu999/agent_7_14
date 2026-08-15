@@ -28,21 +28,12 @@ from worker.scenario_clarification import (
     clarify_scenario,
     classify_followup_intent,
 )
-from worker.capability_catalog import (
-    inspect_capability_source_changes,
-    organize_capability_catalog,
-    update_capability_status,
-    save_capability_entry,
-    delete_capability_entry,
-)
 from worker.conversation_store import ConversationStore, ConversationTurn
 from worker.config import (
     CAPABILITY_MATCH_QUEUE_MAX,
     CAPABILITY_MATCH_WORKERS,
     CLARIFICATION_QUEUE_MAX,
     CLARIFICATION_WORKERS,
-    CAPABILITY_CATALOG_QUEUE_MAX,
-    CAPABILITY_CATALOG_WORKERS,
     DOWNLOAD_WORKERS,
     FILE_OPERATION_WORKERS,
     QA_WORKERS,
@@ -118,9 +109,6 @@ class WorkerManager:
         self.clarification_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
             maxsize=CLARIFICATION_QUEUE_MAX
         )
-        self.capability_catalog_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
-            maxsize=CAPABILITY_CATALOG_QUEUE_MAX
-        )
         self.outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
         self.websocket = None
         self.connected = asyncio.Event()
@@ -128,7 +116,6 @@ class WorkerManager:
         self.active_command_ids: set[str] = set()
         self.active_capability_match_ids: set[str] = set()
         self.active_clarification_ids: set[str] = set()
-        self.active_capability_catalog_ids: set[str] = set()
         self.monitor_tasks: set[asyncio.Task[None]] = set()
         self.wiki_snapshot_refresh = asyncio.Event()
 
@@ -176,13 +163,6 @@ class WorkerManager:
                 name=f"scenario-clarification-{index + 1}",
             )
             for index in range(CLARIFICATION_WORKERS)
-        )
-        tasks.extend(
-            asyncio.create_task(
-                self.capability_catalog_worker(index + 1),
-                name=f"capability-catalog-{index + 1}",
-            )
-            for index in range(CAPABILITY_CATALOG_WORKERS)
         )
         await asyncio.gather(*tasks)
 
@@ -341,30 +321,6 @@ class WorkerManager:
                 )
             return
 
-        if message_type in {"organize_capability_catalog", "inspect_capability_source_changes"}:
-            command_id = str(data.get("id") or "")
-            if not command_id or command_id in self.active_capability_catalog_ids:
-                return
-            self.active_capability_catalog_ids.add(command_id)
-            try:
-                self.capability_catalog_queue.put_nowait(data)
-            except asyncio.QueueFull:
-                self.active_capability_catalog_ids.discard(command_id)
-                await self.emit(
-                    {
-                        "type": (
-                            "capability_source_changes_result"
-                            if message_type == "inspect_capability_source_changes"
-                            else "capability_catalog_result"
-                        ),
-                        "id": command_id,
-                        "job_id": str(data.get("job_id") or ""),
-                        "status": "failed",
-                        "error": "Capability catalog queue is full; try again later",
-                    }
-                )
-            return
-
         if message_type == "download_file":
             task_id = str(data.get("id") or "")
             if not task_id or task_id in self.active_download_ids:
@@ -382,7 +338,7 @@ class WorkerManager:
             )
             return
 
-        if message_type in {"list_sources", "delete_source", "delete_robot_folder", "update_capability_status", "save_capability", "delete_capability"}:
+        if message_type in {"list_sources", "delete_source", "delete_robot_folder"}:
             command_id = str(data.get("id") or "")
             if not command_id or command_id in self.active_command_ids:
                 return
@@ -841,95 +797,6 @@ class WorkerManager:
                 self.active_clarification_ids.discard(command_id)
                 self.clarification_queue.task_done()
 
-    async def capability_catalog_worker(self, worker_number: int) -> None:
-        while True:
-            data = await self.capability_catalog_queue.get()
-            command_id = str(data.get("id") or "")
-            job_id = str(data.get("job_id") or "")
-            model_id = str(data.get("model_id") or "")
-
-            async def progress(
-                stage: str,
-                message: str,
-                details: dict[str, Any] | None = None,
-            ) -> None:
-                await self.emit(
-                    {
-                        "type": "capability_catalog_progress",
-                        "id": command_id,
-                        "job_id": job_id,
-                        "model_id": model_id,
-                        "status": "processing",
-                        "stage": stage,
-                        "message": message,
-                        "details": details or {},
-                    }
-                )
-
-            try:
-                log.info(
-                    "Capability catalog worker %d handling %s for %s",
-                    worker_number,
-                    command_id,
-                    model_id,
-                )
-                if data.get("type") == "inspect_capability_source_changes":
-                    result = await asyncio.to_thread(
-                        inspect_capability_source_changes,
-                        model_id,
-                    )
-                    await self.emit(
-                        {
-                            "type": "capability_source_changes_result",
-                            "id": command_id,
-                            "status": "ok",
-                            "result": result,
-                        }
-                    )
-                    continue
-                result = await organize_capability_catalog(
-                    job_id=job_id,
-                    model_id=model_id,
-                    snapshot_id=str(data.get("snapshot_id") or ""),
-                    scan_mode=str(data.get("scan_mode") or "incremental"),
-                    reuse_checkpoints=data.get("reuse_checkpoints") is not False,
-                    known_robot_ids=(
-                        [str(value) for value in data.get("known_robot_ids", [])]
-                        if isinstance(data.get("known_robot_ids"), list)
-                        else None
-                    ),
-                    on_progress=progress,
-                )
-                await self.emit(
-                    {
-                        "type": "capability_catalog_result",
-                        "id": command_id,
-                        "job_id": job_id,
-                        "status": "ok",
-                        "result": result,
-                    }
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                log.exception("Capability catalog organization failed for %s", command_id)
-                detail = str(exc).strip() or type(exc).__name__
-                await self.emit(
-                    {
-                        "type": (
-                            "capability_source_changes_result"
-                            if data.get("type") == "inspect_capability_source_changes"
-                            else "capability_catalog_result"
-                        ),
-                        "id": command_id,
-                        "job_id": job_id,
-                        "status": "failed",
-                        "error": f"{type(exc).__name__}: {detail}"[:1200],
-                    }
-                )
-            finally:
-                self.active_capability_catalog_ids.discard(command_id)
-                self.capability_catalog_queue.task_done()
 
     async def file_operation_worker(self, worker_number: int) -> None:
         while True:
@@ -968,56 +835,6 @@ class WorkerManager:
                     await self.emit(
                         {
                             "type": "delete_robot_folder_result",
-                            "id": job.command_id,
-                            "status": "ok",
-                            **result,
-                        }
-                    )
-                elif job.operation == "update_capability_status":
-                    model_id = str(job.payload.get("model_id") or "")
-                    capability_id = str(job.payload.get("capability_id") or "")
-                    status = str(job.payload.get("status") or "draft")
-                    result = await asyncio.to_thread(
-                        update_capability_status,
-                        model_id=model_id,
-                        capability_id=capability_id,
-                        new_status=status,
-                    )
-                    await self.emit(
-                        {
-                            "type": "update_capability_status_result",
-                            "id": job.command_id,
-                            "status": "ok",
-                            **result,
-                        }
-                    )
-                elif job.operation == "save_capability":
-                    model_id = str(job.payload.get("model_id") or "")
-                    entry = job.payload.get("entry") if isinstance(job.payload.get("entry"), dict) else {}
-                    result = await asyncio.to_thread(
-                        save_capability_entry,
-                        model_id=model_id,
-                        entry=entry,
-                    )
-                    await self.emit(
-                        {
-                            "type": "save_capability_result",
-                            "id": job.command_id,
-                            "status": "ok",
-                            **result,
-                        }
-                    )
-                elif job.operation == "delete_capability":
-                    model_id = str(job.payload.get("model_id") or "")
-                    capability_id = str(job.payload.get("capability_id") or "")
-                    result = await asyncio.to_thread(
-                        delete_capability_entry,
-                        model_id=model_id,
-                        capability_id=capability_id,
-                    )
-                    await self.emit(
-                        {
-                            "type": "delete_capability_result",
                             "id": job.command_id,
                             "status": "ok",
                             **result,

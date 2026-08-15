@@ -2,16 +2,15 @@
   'use strict';
 
   const labels = {
-    'zh-CN': {settings:'设置', accountSettings:'用户设置', workbench:'场景可行性工作台', gapAnalytics:'能力缺口分析', manage:'管理源文件', upload:'上传文档', exportWiki:'导出到我的AI', userManagement:'用户与权限管理', signOut:'退出登录', signIn:'登录', exportFailed:'导出失败'},
-    'zh-TW': {settings:'設定', accountSettings:'使用者設定', workbench:'場景可行性工作台', gapAnalytics:'能力缺口分析', manage:'管理來源', upload:'上傳文件', exportWiki:'導出到我的AI', userManagement:'使用者與權限管理', signOut:'登出', signIn:'登入', exportFailed:'導出失敗'},
-    'ko': {settings:'설정', accountSettings:'사용자 설정', workbench:'시나리오 타당성 워크벤치', gapAnalytics:'역량 격차 분석', manage:'소스 관리', upload:'문서 업로드', exportWiki:'내 AI로 내보내기', userManagement:'사용자 및 권한 관리', signOut:'로그아웃', signIn:'로그인', exportFailed:'내보내기 실패'},
-    'ja': {settings:'設定', accountSettings:'ユーザー設定', workbench:'シナリオ実現可能性ワークベンチ', gapAnalytics:'能力ギャップ分析', manage:'ソースの管理', upload:'ドキュメントのアップロード', exportWiki:'マイAIにエクスポート', userManagement:'ユーザーと権限の管理', signOut:'サインアウト', signIn:'サインイン', exportFailed:'エクスポート失敗'},
-    'en': {settings:'Settings', accountSettings:'User settings', workbench:'Scenario feasibility workbench', gapAnalytics:'Capability gap analytics', manage:'Manage sources', upload:'Upload documentation', exportWiki:'Export to my AI', userManagement:'User management', signOut:'Sign out', signIn:'Sign in', exportFailed:'Export failed'},
-    'pt': {settings:'Configurações', accountSettings:'Configurações do usuário', workbench:'Bancada de viabilidade de cenários', gapAnalytics:'Análise de lacunas de capacidade', manage:'Gerenciar fontes', upload:'Enviar documentação', exportWiki:'Exportar para minha IA', userManagement:'Gerenciamento de usuários', signOut:'Sair', signIn:'Entrar', exportFailed:'Falha na exportação'},
-    'ru': {settings:'Настройки', accountSettings:'Настройки пользователя', workbench:'Рабочая область реализуемости сценариев', gapAnalytics:'Аналитика пробелов возможностей', manage:'Управление источниками', upload:'Загрузить документацию', exportWiki:'Экспорт в мой ИИ', userManagement:'Управление пользователями', signOut:'Выйти', signIn:'Войти', exportFailed:'Ошибка экспорта'},
-    'es': {settings:'Configuración', accountSettings:'Configuración de usuario', workbench:'Banco de viabilidad de escenarios', gapAnalytics:'Análisis de brechas de capacidad', manage:'Administrar fuentes', upload:'Subir documentación', exportWiki:'Exportar a mi IA', userManagement:'Gestión de usuarios', signOut:'Cerrar sesión', signIn:'Iniciar sesión', exportFailed:'Error de exportación'}
+    'zh-CN': {settings:'设置', accountSettings:'用户设置', manage:'管理源文件', upload:'上传文档', exportWiki:'导出到我的AI', userManagement:'用户与权限管理', signOut:'退出登录', signIn:'登录', exportFailed:'导出失败'},
+    'zh-TW': {settings:'設定', accountSettings:'使用者設定', manage:'管理來源', upload:'上傳文件', exportWiki:'導出到我的AI', userManagement:'使用者與權限管理', signOut:'登出', signIn:'登入', exportFailed:'導出失敗'},
+    'ko': {settings:'설정', accountSettings:'사용자 설정', manage:'소스 관리', upload:'문서 업로드', exportWiki:'내 AI로 내보내기', userManagement:'사용자 및 권한 관리', signOut:'로그아웃', signIn:'로그인', exportFailed:'내보내기 실패'},
+    'ja': {settings:'設定', accountSettings:'ユーザー設定', manage:'ソースの管理', upload:'ドキュメントのアップロード', exportWiki:'マイAIにエクスポート', userManagement:'ユーザーと権限の管理', signOut:'サインアウト', signIn:'サインイン', exportFailed:'エクスポート失敗'},
+    'en': {settings:'Settings', accountSettings:'User settings', manage:'Manage sources', upload:'Upload documentation', exportWiki:'Export to my AI', userManagement:'User management', signOut:'Sign out', signIn:'Sign in', exportFailed:'Export failed'},
+    'pt': {settings:'Configurações', accountSettings:'Configurações do usuário', manage:'Gerenciar fontes', upload:'Enviar documentação', exportWiki:'Exportar para minha IA', userManagement:'Gerenciamento de usuários', signOut:'Sair', signIn:'Entrar', exportFailed:'Falha na exportação'},
+    'ru': {settings:'Настройки', accountSettings:'Настройки пользователя', manage:'Управление источниками', upload:'Загрузить документацию', exportWiki:'Экспорт в мой ИИ', userManagement:'Управление пользователями', signOut:'Выйти', signIn:'Войти', exportFailed:'Ошибка экспорта'},
+    'es': {settings:'Configuración', accountSettings:'Configuración de usuario', manage:'Administrar fuentes', upload:'Subir documentación', exportWiki:'Exportar a mi IA', userManagement:'Gestión de usuarios', signOut:'Cerrar sesión', signIn:'Iniciar sesión', exportFailed:'Error de exportación'}
   };
-  const SHOW_CAPABILITY_NAVIGATION = false;
   const appUrl = path => typeof window.appUrl === 'function' ? window.appUrl(path) : path;
 
   function selectedLanguage() {
@@ -96,14 +95,6 @@
     });
     popover.appendChild(accountSettings);
 
-    if (SHOW_CAPABILITY_NAVIGATION) {
-      const workbench = makeElement('a', 'account-menu-item');
-      workbench.href = appUrl('/capability-match');
-      workbench.role = 'menuitem';
-      workbench.dataset.accountLabel = 'workbench';
-      popover.appendChild(workbench);
-    }
-
     const manage = makeElement('a', 'account-menu-item');
     manage.href = appUrl('/manage');
     manage.role = 'menuitem';
@@ -129,14 +120,6 @@
       users.role = 'menuitem';
       users.dataset.accountLabel = 'userManagement';
       popover.appendChild(users);
-
-      if (SHOW_CAPABILITY_NAVIGATION) {
-        const capabilities = makeElement('a', 'account-menu-item');
-        capabilities.href = appUrl('/admin/capabilities');
-        capabilities.role = 'menuitem';
-        capabilities.dataset.accountLabel = 'gapAnalytics';
-        popover.appendChild(capabilities);
-      }
     }
 
     popover.appendChild(makeElement('div', 'account-menu-divider'));
