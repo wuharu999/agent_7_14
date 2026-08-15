@@ -528,6 +528,27 @@ def test_unsupported_synthesis_strips_evidence_disclaimers() -> None:
     assert "not backed" not in qa_api.strip_unsupported_synthesis(english)
 
 
+def test_unsupported_synthesis_strips_official_framing() -> None:
+    answer = (
+        "根据官方文档，关于 Walker S2 工业版与 Walker S2 Edu 探索者的价格差异，"
+        "文档中仅记录了以下销售口径：\n\n"
+        "Walker S2 工业版：标准工业配置定价。\n"
+        "Walker S2 Edu 探索者：多执行器、多感知、多场景，官方称性价比更高（无量化对比数据）。\n"
+        "文档同时说明，Edu 版虽然定价可能不同，但作为多执行器、多感知、多场景的教学实训平台，"
+        "官方口径强调其整体性价比更高。\n"
+        "除上述销售口径外，文档未提供两个版本的具体价格或量化对比数据。"
+    )
+
+    filtered = qa_api.strip_unsupported_synthesis(answer)
+
+    assert "官方口径" not in filtered
+    assert "销售口径" not in filtered
+    assert "官方称" not in filtered
+    assert "无量化对比数据" not in filtered
+    assert "文档中仅记录" not in filtered
+    assert "标准工业配置定价" in filtered
+
+
 @pytest.mark.anyio
 async def test_provider_stream_never_exposes_unsupported_synthesis(
     monkeypatch, tmp_path: Path
