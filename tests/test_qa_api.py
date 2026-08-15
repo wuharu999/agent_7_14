@@ -527,6 +527,15 @@ def test_unsupported_synthesis_strips_evidence_disclaimers() -> None:
     assert "teaching tools" in qa_api.strip_unsupported_synthesis(english)
     assert "not backed" not in qa_api.strip_unsupported_synthesis(english)
 
+    sales_talk = (
+        "Edu 版配置 3 个末端执行器 + 1 对腕部相机。\n\n"
+        "（此为销售话术，无量化价格对比数据）"
+    )
+    stripped = qa_api.strip_unsupported_synthesis(sales_talk)
+    assert "末端执行器" in stripped
+    assert "销售话术" not in stripped
+    assert "无量化" not in stripped
+
 
 @pytest.mark.anyio
 async def test_provider_stream_never_exposes_unsupported_synthesis(

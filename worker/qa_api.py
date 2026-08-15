@@ -86,6 +86,8 @@ UNSUPPORTED_SYNTHESIS_CLAIM_RE = re.compile(
     r"(?:支持|证明|佐证|证实|可供)?|"
     r"未(?:经|能)(?:证实|核实|验证)|"
     r"仅供参考|仅供內部參考|"
+    r"(?:此|这|這)(?:为|属|是)[^\n。！？.!?]{0,12}话术|"
+    r"无量化|無量化|没有量化|沒有量化|"
     r"(?:no|not|without)[ \t]+(?:any[ \t]+)?(?:evidence|proof)"
     r"|\bnot[ \t]+backed[ \t]+by[ \t]+(?:any[ \t]+)?evidence\b"
     r"|\bunverified\b|\bunsubstantiated\b"
