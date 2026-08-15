@@ -110,6 +110,17 @@ DEEPSEEK_MODEL = (
     os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash").strip()
     or "deepseek-v4-flash"
 )
+DEEPSEEK_MERGE_MODEL = (
+    os.environ.get("DEEPSEEK_MERGE_MODEL", "deepseek-v4-pro").strip()
+    or "deepseek-v4-pro"
+)
+# Safe per-call output budget for DeepSeek section calls. The previous single
+# evaluation call requested up to 48000 tokens, far above the model's real
+# output cap, which caused truncation errors. Keep every bounded call under a
+# realistic budget and merge the sections with the stronger merge model.
+DEEPSEEK_SECTION_MAX_TOKENS = max(
+    1024, int(os.environ.get("DEEPSEEK_SECTION_MAX_TOKENS", "8192"))
+)
 DEEPSEEK_BASE_URL = (
     os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
     or "https://api.deepseek.com"

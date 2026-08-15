@@ -13,8 +13,16 @@ from shared.capability_types import (
     migrate_legacy_capability,
     required_capability_type,
 )
-from worker.config import SCENARIO_RETRIEVAL_MAX_DOCUMENTS, get_team_config
-from worker.deepseek_client import create_deepseek_client
+from worker.config import (
+    DEEPSEEK_SECTION_MAX_TOKENS,
+    SCENARIO_RETRIEVAL_MAX_DOCUMENTS,
+    get_team_config,
+)
+from worker.deepseek_client import (
+    DeepSeekClient,
+    create_deepseek_client,
+    create_merge_client,
+)
 from worker.prompt_policy import scenario_analysis_policy
 
 log = logging.getLogger("worker.capability_matcher")
@@ -639,17 +647,98 @@ async def analyze_scenario(
         },
         "additionalProperties": False,
     }
-    payload["report_composition"] = await client.complete_json(
+    payload["report_composition"] = await _compose_report_chunked(
+        client,
+        create_merge_client(),
         system_prompt,
-        "Stage: user-facing report composition. Summarize only the validated evaluation. Explain evidenced "
-        "SDK/API/platform/tool support, required integration, effort bands, and a measurable PoC. Do not include "
-        "citations, paths, slugs, percentages, or hidden mechanics.\n\n"
-        f"Language: {language}\nValidated evaluation:\n{json.dumps(payload, ensure_ascii=False)}",
-        schema=report_schema,
-        stage="scenario report composition",
-        max_tokens=16000,
+        payload,
+        language=language,
+        report_schema=report_schema,
     )
     return payload
+
+
+async def _compose_report_chunked(
+    client: DeepSeekClient,
+    merge_client: DeepSeekClient,
+    system_prompt: str,
+    validated: dict[str, Any],
+    *,
+    language: str,
+    report_schema: dict[str, Any],
+) -> dict[str, Any]:
+    """Compose the user-facing report in bounded section calls, then merge with the pro model.
+
+    DeepSeek truncates when a single call requests far more output than the model
+    supports. Generate three small, schema-bounded sections independently, then a
+    final merge call (stronger model) assembles them into the report schema.
+    """
+    section_schemas: dict[str, dict[str, Any]] = {
+        "executive_summary": {
+            "type": "object",
+            "required": ["executive_summary"],
+            "properties": {
+                "executive_summary": report_schema["properties"]["executive_summary"],
+            },
+            "additionalProperties": False,
+        },
+        "engineering_effort": {
+            "type": "object",
+            "required": ["engineering_effort"],
+            "properties": {
+                "engineering_effort": report_schema["properties"]["engineering_effort"],
+            },
+            "additionalProperties": False,
+        },
+        "tool_support_poc": {
+            "type": "object",
+            "required": ["tool_support", "poc_plan"],
+            "properties": {
+                "tool_support": report_schema["properties"]["tool_support"],
+                "poc_plan": report_schema["properties"]["poc_plan"],
+            },
+            "additionalProperties": False,
+        },
+    }
+    evaluation_json = json.dumps(validated, ensure_ascii=False)
+    section_prompts = {
+        "executive_summary": (
+            "Stage: user-facing report composition (executive summary only). Summarize the validated evaluation "
+            "in one concise passage. Do not include citations, paths, slugs, percentages, or hidden mechanics.\n\n"
+            f"Language: {language}\nValidated evaluation:\n{evaluation_json}"
+        ),
+        "engineering_effort": (
+            "Stage: user-facing report composition (engineering effort only). Explain evidenced SDK/API/platform/"
+            "tool integration, required workstreams, dependencies, and effort band. Do not include citations, "
+            "paths, slugs, or hidden mechanics.\n\n"
+            f"Language: {language}\nValidated evaluation:\n{evaluation_json}"
+        ),
+        "tool_support_poc": (
+            "Stage: user-facing report composition (tool support and PoC plan only). List evidenced tools and a "
+            "measurable PoC. Do not include citations, paths, slugs, or hidden mechanics.\n\n"
+            f"Language: {language}\nValidated evaluation:\n{evaluation_json}"
+        ),
+    }
+    sections: dict[str, dict[str, Any]] = {}
+    for name, schema in section_schemas.items():
+        sections[name] = await client.complete_json(
+            system_prompt,
+            section_prompts[name],
+            schema=schema,
+            stage=f"scenario report section ({name})",
+            max_tokens=DEEPSEEK_SECTION_MAX_TOKENS,
+        )
+
+    merged = await merge_client.complete_json(
+        system_prompt,
+        "Stage: user-facing report composition (final merge). Combine the approved section drafts into one "
+        "coherent report without adding new claims. Do not include citations, paths, slugs, or hidden mechanics.\n\n"
+        f"Language: {language}\nSection drafts:\n{json.dumps(sections, ensure_ascii=False)}",
+        schema=report_schema,
+        stage="scenario report composition (merge)",
+        max_tokens=DEEPSEEK_SECTION_MAX_TOKENS * 2,
+    )
+    return merged
 
 
 _MULTI_TURN_GRILL_SCHEMA: dict[str, Any] = {

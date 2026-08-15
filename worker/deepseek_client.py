@@ -238,3 +238,13 @@ class DeepSeekClient:
 
 def create_deepseek_client(*, timeout: int | None = None) -> DeepSeekClient:
     return DeepSeekClient(timeout=timeout or DEEPSEEK_TIMEOUT)
+
+
+def create_merge_client(*, timeout: int | None = None) -> DeepSeekClient:
+    """Client for the stronger model that merges section outputs into a final report."""
+    from worker.config import DEEPSEEK_MERGE_MODEL
+
+    return DeepSeekClient(
+        model=DEEPSEEK_MERGE_MODEL,
+        timeout=timeout or DEEPSEEK_TIMEOUT,
+    )

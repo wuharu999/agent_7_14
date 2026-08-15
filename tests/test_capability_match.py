@@ -344,6 +344,7 @@ def test_worker_analysis_embeds_policies_and_reapplies_hard_gate(
             }
 
     monkeypatch.setattr(capability_matcher, "create_deepseek_client", lambda **_kwargs: FakeClient())
+    monkeypatch.setattr(capability_matcher, "create_merge_client", lambda **_kwargs: FakeClient())
     result = asyncio.run(
         capability_matcher.analyze_scenario(
             "Serve popcorn outdoors",
