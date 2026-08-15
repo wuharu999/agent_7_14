@@ -1,62 +1,47 @@
 # Validation
 
-## Robot scenario feasibility compiler
+## Robot scenario feasibility compiler (chat-page grill)
 
 From the repository root:
 
 ```bash
-python3 /home/eason/Downloads/vscode-copilot-robot-scenario-compiler-agent-v1.0.0-20260730/scripts/validate_agent_package.py
 python3 -m compileall -q ecs worker shared scripts
 python3 -m json.tool shared/schemas/atomic-capability.schema.json >/dev/null
 python3 -m json.tool shared/schemas/feasibility-assessment.schema.json >/dev/null
-pytest -q tests/test_capability_catalog.py tests/test_capability_match.py tests/test_account_menu.py tests/test_security_migration.py
+pytest -q tests/test_scenario_sessions.py tests/test_account_menu.py tests/test_security_migration.py
 ```
 
-The capability-match tests cover schema installation, the building-block versus
-operational-behavior evidence gate, additive/idempotent SQLite migration, public persistence,
-Markdown/PDF exports, admin analytics, CSRF enforcement, and idempotent draft
-stub creation. Run the HTTP tests in a supported project test environment; some
+The scenario-sessions tests cover schema installation, the building-block versus
+operational-behavior evidence gate, additive/idempotent SQLite migration,
+persistent scenario sessions, CSRF enforcement, and the shared conversation_id
+binding. Run the HTTP tests in a supported project test environment; some
 sandboxed Python 3.14 TestClient builds cannot create the internal stream file
 descriptor and may hang before sending an ASGI request.
+
+The capability-match stack (standalone `/capability-match` route, admin
+capabilities UI, worker catalog jobs, feasibility matching, PDF/Markdown
+report export) has been removed. The scenario grill now runs inside the chat
+page (`/`): the **Assess robot fit** button toggles the same conversation box
+into grill mode, and the finished report is delivered as a chat response.
 
 On the deployed pair, verify in this order:
 
 1. `/health` reports `worker_online: true`.
-2. On `/`, confirm **Assess robot fit** opens `/capability-match` and that normal
-   chat contains no scenario-analysis switch or background scenario job.
+2. On `/`, confirm **Assess robot fit** toggles the chat input into grill mode
+   without navigating away, and that `/capability-match` redirects to `/`.
 3. Choose a robot or leave **Auto-select from scenario** selected, create a
    persistent scenario, confirm the selected robot is shown, and answer the
    one-question clarification flow through the minimum gate.
 4. Confirm the status pill distinguishes working, waiting for customer input,
    reconnecting, paused when the Worker is offline, and report completion. Confirm
-   stable scenarios enter the countdown and the versioned report drawer opens.
+   stable scenarios enter the countdown and the versioned report is returned as a
+   chat response.
 5. Use a scenario with only building-block SDK/driver evidence and confirm the
    operational-behavior evidence gate reports `Operational behavior evidence required`.
-6. Download `feasibility_report.md` and `feasibility_report.pdf`.
-7. Sign in as admin and open `/admin/capabilities`. Confirm the file-change panel
-   shows the selected robot's added/modified/deleted paths.
-8. Start organization with no prior organization manifest. Confirm it reports a
-   full Wiki scan, and a second admin session plus a refreshed page see the same state.
-9. Add or modify a generated Wiki page and confirm **Organize changes** uses an
-   incremental scan. Then use **Resume full scan** and confirm matching checkpoints
-   are restored. Use **Force full re-extraction** and confirm all generated Wiki
-   evidence is inventoried without checkpoint reads while `wiki/capabilities/` and
-   raw images are excluded.
-   Confirm the progress advances through deterministic extraction batches and
-   reduction, every eligible evidence file has a final status, and DeepSeek is
-   invoked with no tools. Interrupt a test run after one batch, rerun it, and
-   confirm completed batches are restored from content-hashed checkpoints.
-   Confirm every extraction call contains the relevant allowlisted
-   atomic-capability policy sections, and the shared UI displays cumulative candidates, blocked files, and
-   grouped exclusion reasons.
-   Confirm deployed timeout floors are 1800 seconds per extraction batch, 3600
-   seconds for reduction, and 86400 seconds for the complete ECS command.
-10. Confirm validated drafts appear in both the UI and
-   `wiki/capabilities/<model>/`, the source change list resets only after complete
-   coverage, and a backup is retained for an existing catalog. A partial run must
-   keep the previous successful baseline.
-11. Create one draft stub. Confirm it appears once after repeating the same request and the audit
-   log contains `create_capability_draft_stub`.
+6. Confirm the report appears as a chat bubble, that returning to chat keeps the
+   same conversation context, and that **New conversation** clears both the chat
+   history and the grill session.
+
 
 The final package was checked with:
 
