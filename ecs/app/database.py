@@ -142,51 +142,6 @@ def initialize_database() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
             );
 
-            CREATE TABLE IF NOT EXISTS capability_draft_stubs (
-                stub_id TEXT PRIMARY KEY,
-                assessment_id TEXT NOT NULL,
-                requirement_id TEXT NOT NULL,
-                model_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                details TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'draft',
-                created_by INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                UNIQUE(assessment_id, requirement_id),
-                FOREIGN KEY(assessment_id) REFERENCES scenario_assessments(assessment_id) ON DELETE CASCADE,
-                FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
-            );
-
-            CREATE TABLE IF NOT EXISTS capability_catalog_jobs (
-                job_id TEXT PRIMARY KEY,
-                created_by INTEGER NOT NULL,
-                model_id TEXT NOT NULL,
-                snapshot_id TEXT NOT NULL,
-                scan_mode TEXT NOT NULL DEFAULT 'incremental',
-                status TEXT NOT NULL,
-                stage TEXT NOT NULL,
-                message TEXT NOT NULL DEFAULT '',
-                error TEXT,
-                result_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
-            );
-
-            CREATE TABLE IF NOT EXISTS capability_catalog_source_state (
-                model_id TEXT PRIMARY KEY,
-                changes_json TEXT NOT NULL DEFAULT '{}',
-                current_source_files INTEGER NOT NULL DEFAULT 0,
-                last_organized_manifest_files INTEGER NOT NULL DEFAULT 0,
-                wiki_changes_json TEXT,
-                current_wiki_files INTEGER,
-                last_organized_wiki_files INTEGER,
-                baseline_exists INTEGER,
-                last_scan_mode TEXT,
-                catalog_revision TEXT,
-                checked_at TEXT NOT NULL
-            );
-
             CREATE TABLE IF NOT EXISTS scenario_sessions (
                 session_id TEXT PRIMARY KEY,
                 owner_user_id INTEGER,
@@ -295,12 +250,6 @@ def initialize_database() -> None:
                 ON scenario_assessments(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_scenario_assessments_model
                 ON scenario_assessments(model_id, created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_capability_stubs_created
-                ON capability_draft_stubs(created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_capability_catalog_jobs_created
-                ON capability_catalog_jobs(created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_capability_catalog_jobs_model_status
-                ON capability_catalog_jobs(model_id, status, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_scenario_sessions_owner
                 ON scenario_sessions(owner_user_id, updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_scenario_events_session_sequence
@@ -361,27 +310,6 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE scenario_assessments ADD COLUMN analysis_error TEXT"
             )
-        if "scan_mode" not in _columns(connection, "capability_catalog_jobs"):
-            connection.execute(
-                "ALTER TABLE capability_catalog_jobs ADD COLUMN scan_mode "
-                "TEXT NOT NULL DEFAULT 'incremental'"
-            )
-        capability_source_columns = _columns(
-            connection, "capability_catalog_source_state"
-        )
-        for column, definition in (
-            ("wiki_changes_json", "TEXT"),
-            ("current_wiki_files", "INTEGER"),
-            ("last_organized_wiki_files", "INTEGER"),
-            ("baseline_exists", "INTEGER"),
-            ("last_scan_mode", "TEXT"),
-            ("catalog_revision", "TEXT"),
-        ):
-            if column not in capability_source_columns:
-                connection.execute(
-                    f"ALTER TABLE capability_catalog_source_state "
-                    f"ADD COLUMN {column} {definition}"
-                )
         if "pending_reanalysis_state_version" not in _columns(
             connection, "scenario_sessions"
         ):
@@ -423,17 +351,6 @@ def initialize_database() -> None:
                 analysis_error = 'Scenario analysis was interrupted by a server restart. Please start it again.',
                 updated_at = ?
             WHERE analysis_status IN ('queued', 'processing')
-            """,
-            (utc_now(),),
-        )
-        connection.execute(
-            """
-            UPDATE capability_catalog_jobs
-            SET status = 'failed', stage = 'interrupted',
-                message = 'Catalog organization was interrupted by an ECS restart.',
-                error = 'Catalog organization was interrupted by an ECS restart.',
-                updated_at = ?
-            WHERE status IN ('queued', 'processing')
             """,
             (utc_now(),),
         )
