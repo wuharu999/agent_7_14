@@ -53,6 +53,22 @@ def test_wiki_reader_only_loads_indexed_pages_and_duplicate_slugs(tmp_path: Path
     assert [document.text for document in wiki.load(["hidden", "same"])] == ["a", "b"]
 
 
+def test_wiki_reader_resolves_directory_prefixed_index_links(tmp_path: Path) -> None:
+    write(tmp_path / "index.md", "[[entities/tk-outdoornavigation]] [[concepts/joint-zeroing]]")
+    write(tmp_path / "entities" / "tk-outdoornavigation.md", "Navigation evidence")
+    write(tmp_path / "concepts" / "joint-zeroing.md", "Zeroing evidence")
+    write(tmp_path / "entities" / "unlisted.md", "Not in index")
+
+    wiki = qa_api.Wiki(tmp_path)
+
+    assert wiki.retrievable_slugs == {"entities/tk-outdoornavigation", "concepts/joint-zeroing"}
+    assert [document.text for document in wiki.load(["entities/tk-outdoornavigation"])] == [
+        "Navigation evidence"
+    ]
+    assert wiki.load(["unlisted"]) == []
+    assert wiki.candidate_slugs("all", "天工导航怎么用？") != set()
+
+
 def test_wiki_reader_rejects_symlink_root_and_skips_symlink_pages(tmp_path: Path) -> None:
     real_wiki = tmp_path / "wiki"
     outside = tmp_path / "outside.md"

@@ -360,10 +360,12 @@ class Wiki:
             if path.name in EXCLUDED_FILENAMES or path.is_symlink() or not path.is_file():
                 continue
             try:
-                path.resolve().relative_to(self.root)
+                relative = path.resolve().relative_to(self.root)
             except ValueError:
                 continue
-            paths_by_slug.setdefault(path.stem, []).append(path)
+            keys = {path.stem, relative.with_suffix("").as_posix()}
+            for key in keys:
+                paths_by_slug.setdefault(key, []).append(path)
         return {slug: sorted(paths) for slug, paths in paths_by_slug.items()}
 
     def candidate_slugs(
@@ -400,12 +402,31 @@ class Wiki:
             return set(self.retrievable_slugs)
 
         supplemental: list[tuple[int, str]] = []
-        for slug, paths in sorted(self.pages.items()):
+        seen_paths = {
+            resolved
+            for slug in self.retrievable_slugs
+            for path in self.pages.get(slug, [])
+            for resolved in [path.resolve()]
+        }
+        # One slug per physical file, preferring the bare stem form used by the
+        # index so stale-index supplements reuse the same naming convention.
+        canonical_by_path: dict[Path, str] = {}
+        for slug, paths in self.pages.items():
+            for path in paths:
+                resolved = path.resolve()
+                current = canonical_by_path.get(resolved)
+                if current is None or ("/" in current and "/" not in slug):
+                    canonical_by_path[resolved] = slug
+        for resolved, slug in sorted(canonical_by_path.items()):
+            if resolved in seen_paths:
+                continue
+            paths = [path for path in self.pages[slug] if path.resolve() == resolved]
             searchable = " ".join([slug, *(str(path.relative_to(self.root)) for path in paths)])
             normalized = re.sub(r"[^a-z0-9]+", "", searchable.casefold())
             matches = sum(1 for key in topic_keys if key and key in normalized)
             if matches:
                 supplemental.append((matches, slug))
+                seen_paths.add(resolved)
         supplemental.sort(key=lambda item: (-item[0], item[1]))
         return set(self.retrievable_slugs) | {
             slug for _, slug in supplemental[:_MAX_TOPIC_SUPPLEMENTAL_PAGES]
@@ -635,10 +656,15 @@ class Wiki:
     ) -> list[Document]:
         permitted = self.allowed_slugs if allowed_slugs is None else allowed_slugs
         documents: list[Document] = []
+        seen_paths: set[Path] = set()
         for slug in slugs:
             if slug not in permitted:
                 continue
             for path in self.pages.get(slug, []):
+                resolved = path.resolve()
+                if resolved in seen_paths:
+                    continue
+                seen_paths.add(resolved)
                 text = canonicalize_product_names(path.read_text(encoding="utf-8"))
                 if len(text) > WIKI_QA_MAX_PAGE_CHARS:
                     text = text[:WIKI_QA_MAX_PAGE_CHARS] + "\n\n[Page truncated by retrieval limit.]"
