@@ -308,6 +308,35 @@ def test_retrieval_expands_selected_page_with_links_and_related_wiki_only(
     assert "unrelated" not in expanded
 
 
+def test_fallback_router_leaves_budget_for_link_expansion(tmp_path: Path) -> None:
+    index_links = " ".join(f"[[page-{index}]]" for index in range(12))
+    write(tmp_path / "index.md", index_links)
+    for index in range(12):
+        write(tmp_path / "entities" / f"page-{index}.md", f"Page {index} evidence")
+    write(
+        tmp_path / "entities" / "page-0.md",
+        "# Page 0\nSee [[page-10]] for details.",
+    )
+    write(tmp_path / "entities" / "page-10.md", "Linked page evidence")
+    wiki = qa_api.Wiki(tmp_path)
+
+    fallback = wiki.fallback_slugs(
+        "page-0", "walker_s2", (), wiki.retrievable_slugs
+    )
+    assert len(fallback) <= qa_api._ROUTER_MAX_PAGES
+
+    expanded = wiki.expand_slugs(
+        fallback,
+        question="page-0",
+        team="walker_s2",
+        history=(),
+        allowed_slugs=wiki.retrievable_slugs,
+    )
+
+    assert expanded[0] == "page-0"
+    assert "page-10" in expanded
+
+
 def test_retrieval_expansion_never_adds_unindexed_or_raw_source_pages(
     tmp_path: Path,
 ) -> None:

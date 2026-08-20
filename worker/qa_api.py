@@ -571,7 +571,9 @@ class Wiki:
             ranked.append((score, position, slug))
         ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
         positive = [slug for score, _, slug in ranked if score > 0]
-        return (positive or [ranked[0][2]])[:WIKI_QA_MAX_PAGES]
+        # Cap at the router's selection width so one-hop link expansion (expand_slugs)
+        # still has budget room and linked pages are not always dropped.
+        return (positive or [ranked[0][2]])[: min(_ROUTER_MAX_PAGES, WIKI_QA_MAX_PAGES)]
 
     def expand_slugs(
         self,
