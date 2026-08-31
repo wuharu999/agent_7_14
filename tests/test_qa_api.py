@@ -213,7 +213,7 @@ def test_api_prompts_are_wiki_only_and_canonicalize_all_untrusted_text(
     assert "天工行者无疆" in combined
     assert "天工行者基础版" in combined
     assert "天工行者无界" in combined
-    assert "天工行者dex" in combined
+    assert "天工行者DEX" in combined
     assert "raw/sources" not in combined
     assert "CLAUDE.md" not in combined
     assert "PRIMARY ROBOT: tian_gong" in answer

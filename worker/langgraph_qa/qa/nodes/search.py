@@ -2,6 +2,7 @@ from typing import Dict, Any, List
 from worker.langgraph_qa.qa.state import QAState
 from worker.langgraph_qa.runtime import get_runtime
 from worker.langgraph_qa.wiki.search import search_wiki, SearchResult
+from worker.topic_policy import retrieval_query_variants
 
 
 def search_node(state: QAState) -> Dict[str, Any]:
@@ -27,7 +28,14 @@ def search_node(state: QAState) -> Dict[str, Any]:
         item = r if isinstance(r, dict) else r.to_dict()
         results_by_path[item["path"]] = item
 
+    expanded_queries: List[str] = []
     for q in queries_to_run:
+        if isinstance(q, str):
+            for variant in retrieval_query_variants(q):
+                if variant not in expanded_queries:
+                    expanded_queries.append(variant)
+
+    for q in expanded_queries[:6]:
         if not q or not isinstance(q, str) or not q.strip():
             continue
         runtime = get_runtime()

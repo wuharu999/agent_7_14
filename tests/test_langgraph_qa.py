@@ -11,17 +11,34 @@ pytest.importorskip("langgraph")
 from worker.langgraph_qa import interface
 
 
-def _planner(*, relation: str = "in_scope") -> str:
+def _planner(
+    *, relation: str = "in_scope", entity_type: str = "unknown",
+    explicit: list[str] | None = None,
+) -> str:
+    explicit = explicit or []
     return json.dumps(
         {
             "scope_analysis": {
                 "active_scope": "ignored-provider-value",
-                "explicit_entities": [],
+                "explicit_entities": explicit,
                 "resolved_references": [],
                 "relation": relation,
                 "reason": "classification",
                 "confidence": 0.8,
             },
+            "queried_entity_type": entity_type,
+            "explicit_entities": explicit,
+            "scope_relation": relation,
+            "canonicalized_entities": [
+                {
+                    "mentioned_name": entity,
+                    "canonical_name": entity,
+                    "entity_type": entity_type,
+                    "ambiguous": False,
+                    "candidate_canonical_names": [],
+                }
+                for entity in explicit
+            ],
             "topic_relation": "ambiguous",
             "current_subject": None,
             "history_used": [],
@@ -34,14 +51,20 @@ def _planner(*, relation: str = "in_scope") -> str:
     )
 
 
-def _reason(*, need_more: bool = False) -> str:
+def _reason(
+    *, need_more: bool = False, scope_valid: bool = True,
+    entity_type_consistent: bool = True,
+) -> str:
     return json.dumps(
         {
             "scope_consistency": {
-                "valid": True,
+                "valid": scope_valid,
                 "unsupported_cross_scope_transfer": [],
             },
             "planner_faithful": True,
+            "entity_type_consistent": entity_type_consistent,
+            "evidence_sufficient": True,
+            "canonicalized_entities": [],
             "unsupported_assumptions": [],
             "corrected_standalone_question": None,
             "primary_solution": "ThinkerStudio",
@@ -149,6 +172,74 @@ async def test_selected_scope_does_not_hard_reject_generic_question(
 
     assert answer == "Use ThinkerStudio for teleoperation."
     assert "".join(chunks) == answer
+    assert len(provider.calls) == 3
+
+
+@pytest.mark.anyio
+async def test_explicit_other_robot_semantic_decision_stops_before_retrieval(
+    tmp_path: Path,
+) -> None:
+    wiki = _wiki(tmp_path)
+
+    class OtherRobotProvider(FakeProvider):
+        def complete(self, system: str, user: str) -> str:
+            self.calls.append((system, user))
+            return _planner(
+                relation="out_of_scope",
+                entity_type="robot",
+                explicit=["天工行者无界"],
+            )
+
+    provider = OtherRobotProvider()
+    chunks: list[str] = []
+
+    async def on_token(token: str) -> None:
+        chunks.append(token)
+
+    answer = await interface.stream_answer(
+        question="天工行者的强化学习方案是什么？",
+        team="walker_s2",
+        language="zh-CN",
+        history=(),
+        wiki_root=wiki,
+        provider=provider,
+        on_token=on_token,
+    )
+
+    assert "请切换到对应主题" in answer
+    assert "".join(chunks) == answer
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.anyio
+async def test_cross_robot_comparison_is_not_stopped(tmp_path: Path) -> None:
+    wiki = _wiki(tmp_path)
+
+    class ComparisonProvider(FakeProvider):
+        def complete(self, system: str, user: str) -> str:
+            self.calls.append((system, user))
+            if "Intent Planner" in system:
+                return _planner(
+                    relation="cross_scope",
+                    entity_type="robot",
+                    explicit=["Walker S2 EDU 探索者", "天工行者无界"],
+                )
+            return _reason()
+
+    provider = ComparisonProvider()
+
+    async def discard(_token: str) -> None:
+        return None
+
+    await interface.stream_answer(
+        question="Walker S2 和天工的强化学习方案有什么区别？",
+        team="walker_s2",
+        language="zh-CN",
+        history=(),
+        wiki_root=wiki,
+        provider=provider,
+        on_token=discard,
+    )
     assert len(provider.calls) == 3
 
 

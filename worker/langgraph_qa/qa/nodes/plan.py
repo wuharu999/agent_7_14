@@ -1,10 +1,17 @@
 import logging
+import re
 from typing import Dict, Any, List
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from worker.langgraph_qa.qa.state import QAState
 from worker.langgraph_qa.qa.schemas import PlannerOutput, PlanOutput
 from worker.langgraph_qa.qa.model import get_chat_model
+from worker.topic_policy import (
+    canonicalize_product_names,
+    canonicalized_entities,
+    retrieval_policy_text,
+    topic_entity_guide_text,
+)
 
 
 log = logging.getLogger(__name__)
@@ -31,6 +38,8 @@ Behavioral Policy & Intent Planning Rules:
    - "troubleshooting": Fault diagnosis, error codes, and maintenance issues.
 7. FTS5 Search Queries: Generate 1 to 3 concise, high-signal lexical search terms (Chinese/English keywords) optimized for SQLite FTS5 BM25 search. Strip conversational filler words.
 8. Scope & Language: Incorporate the selected robot/domain context if specified ({robot_topic}), and format standalone output matching the target language ({language}).
+9. Entity Classification: Return the current request's main `queried_entity_type`, explicit current-turn entities, semantic `scope_relation`, and canonicalized entities. Applications, tools, workflows, SDKs, APIs, hardware, solutions, operations, and after-sales are not other robots.
+10. Canonicalization: Follow the supplied Topic and Entity Guide. Never guess one canonical product for an ambiguous alias.
 
 Parameters:
 - Selected Robot/Topic Scope: {robot_topic}
@@ -39,12 +48,21 @@ Parameters:
 
 HISTORY_REFERENCE_MARKERS = (
     "它", "这个机器人", "这个平台", "该机器人", "这款", "刚才那个", "上面提到的",
+    "刚才那个工具", "这个工具", "这个方案", "这个应用", "这个 sdk", "这个 api",
     "it", "this robot", "this platform", "that robot", "the above robot",
+    "that tool", "this tool", "that solution", "this solution", "that sdk", "that api",
 )
 
 def _needs_history_resolution(question: str) -> bool:
     normalized = question.lower()
-    return any(marker in normalized for marker in HISTORY_REFERENCE_MARKERS)
+    return any(
+        (
+            marker in normalized
+            if any(ord(char) > 127 for char in marker)
+            else bool(re.search(rf"\b{re.escape(marker)}\b", normalized))
+        )
+        for marker in HISTORY_REFERENCE_MARKERS
+    )
 
 
 def _compact_history(messages: List[Dict[str, Any]]) -> str:
@@ -65,6 +83,7 @@ def plan_node(state: QAState) -> Dict[str, Any]:
         if isinstance(message, dict)
     ] if isinstance(raw_history, list) else []
     robot_topic = state.get("robot_topic", "全部机器人")
+    active_topic = state.get("active_topic", {})
     language = state.get("language", "zh")
     call_count = state.get("llm_call_count", 0)
 
@@ -82,13 +101,20 @@ Archived Conversation Context (available only to resolve a clear current referen
 Selected Robot Scope:
 {robot_topic}
 
+Active Topic Contract:
+{active_topic}
+
 Current User Question:
 {question}
 
 Formulate the topic relation, active subject, standalone query, intent, preferred abstraction, and 1-3 targeted search terms:
 """
             res: PlannerOutput = structured_llm.invoke([
-                SystemMessage(content=PLANNER_SYSTEM_PROMPT.format(robot_topic=robot_topic, language=language)),
+                SystemMessage(content=(
+                    PLANNER_SYSTEM_PROMPT.format(robot_topic=robot_topic, language=language)
+                    + "\n\nTopic and Entity Guide:\n" + topic_entity_guide_text()
+                    + "\n\nRetrieval Policy:\n" + retrieval_policy_text()
+                )),
                 HumanMessage(content=prompt)
             ])
             if not isinstance(res, PlannerOutput):
@@ -96,13 +122,23 @@ Formulate the topic relation, active subject, standalone query, intent, preferre
 
             scope_analysis = res.scope_analysis.model_dump()
             scope_analysis["active_scope"] = robot_topic
+            explicit = canonicalized_entities(res.explicit_entities or res.scope_analysis.explicit_entities)
+            canonical = [item.model_dump() for item in res.canonicalized_entities]
+            for item in canonical:
+                if item.get("canonical_name"):
+                    item["canonical_name"] = canonicalize_product_names(str(item["canonical_name"]))
+            relation = res.scope_relation or res.scope_analysis.relation
             return {
-                "standalone_question": res.standalone_question,
+                "standalone_question": canonicalize_product_names(res.standalone_question),
                 "topic_relation": res.topic_relation if use_history else ("switch" if history else "ambiguous"),
                 "current_subject": res.current_subject if use_history else None,
                 "history_used": res.history_used if use_history else [],
                 "history_ignored": res.history_ignored if use_history else (["recent conversation"] if history else []),
                 "scope_analysis": scope_analysis,
+                "queried_entity_type": res.queried_entity_type,
+                "explicit_entities": explicit,
+                "scope_relation": relation,
+                "canonicalized_entities": canonical,
                 "intent": res.intent,
                 "preferred_abstraction": res.preferred_abstraction,
                 "search_queries": res.search_queries[:3] if res.search_queries else [question],
@@ -157,11 +193,6 @@ Formulate the topic relation, active subject, standalone query, intent, preferre
         clean_q = question.strip() or "机器人"
 
     search_queries: List[str] = [clean_q]
-    if robot_topic and robot_topic != "全部机器人":
-        topic_query = f"{robot_topic} {clean_q}"
-        if topic_query not in search_queries:
-            search_queries.append(topic_query)
-
     # Ensure unique and non-empty queries
     deduped_queries = []
     for q in search_queries:
@@ -183,6 +214,10 @@ Formulate the topic relation, active subject, standalone query, intent, preferre
             "reason": "No live semantic scope classifier is configured.",
             "confidence": 0.0,
         },
+        "queried_entity_type": "unknown",
+        "explicit_entities": [],
+        "scope_relation": "ambiguous",
+        "canonicalized_entities": [],
         "intent": intent,
         "preferred_abstraction": pref_abstraction,
         "search_queries": deduped_queries[:3] if deduped_queries else [question],

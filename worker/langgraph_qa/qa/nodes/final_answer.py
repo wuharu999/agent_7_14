@@ -4,6 +4,12 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from worker.langgraph_qa.qa.state import QAState
 from worker.langgraph_qa.qa.model import get_chat_model
+from worker.topic_policy import (
+    CANONICAL_TERMINOLOGY_PROMPT,
+    final_response_policy_text,
+    no_confirmed_information,
+    sanitize_customer_output,
+)
 
 
 log = logging.getLogger(__name__)
@@ -103,7 +109,11 @@ Loaded Wiki Evidence:
 
 Generate the final answer in target language '{language}':
 """
-    system = ANSWER_SYSTEM_PROMPT.format(robot_topic=robot_topic, language=language)
+    system = (
+        ANSWER_SYSTEM_PROMPT.format(robot_topic=robot_topic, language=language)
+        + "\n\n" + final_response_policy_text()
+        + "\n\n" + CANONICAL_TERMINOLOGY_PROMPT
+    )
     if state.get("defer_final_answer"):
         return {
             "answer_system": system,
@@ -118,105 +128,25 @@ Generate the final answer in target language '{language}':
                 HumanMessage(content=prompt)
             ])
             return {
-                "answer": res.content,
+                "answer": sanitize_customer_output(str(res.content), language),
                 "llm_call_count": call_count + 1,
             }
         except Exception:
             log.exception("LangGraph final answer failed; using deterministic fallback")
 
-    # Structured template fallback if LLM API is unavailable
-    primary_sol = answer_plan.get("primary_solution", "相关方案" if language == "zh" else "Relevant Solution")
-    lines: List[str] = []
-
-    if language == "en":
-        lines.append(f"### Recommended Solution: {primary_sol}\n")
-        lines.append(
-            f"Regarding your query \"{standalone}\" (Scope: {robot_topic}), "
-            f"based on the knowledge base documentation, the recommended approach is **{primary_sol}**.\n"
-        )
-
-        if loaded_evidence:
-            lines.append("#### Key References & Notes:")
-            for ev in loaded_evidence[:4]:
-                path_name = ev["path"]
-                summary = extract_clean_summary(ev.get("content", ""))
-                lines.append(f"- **[{path_name}]({path_name})**: {summary[:120]}")
-            lines.append("")
-
-        if uncertainties:
-            lines.append("#### Uncertainties & Known Limitations:")
-            for u in uncertainties[:3]:
-                if isinstance(u, dict):
-                    u_path = u.get("path", "")
-                    u_note = u.get("note", u.get("content", ""))
-                    if u_path:
-                        lines.append(f"- **[{u_path}]({u_path})**: {u_note[:120]}")
-                    elif u_note:
-                        lines.append(f"- *{u_note[:120]}*")
-                else:
-                    lines.append(f"- *{str(u)}*")
-            lines.append("")
-
-        if selected_images:
-            lines.append("#### Relevant Architecture & Diagrams:")
-            for img in selected_images[:3]:
-                img_path = img.get("path", "")
-                img_desc = img.get("supports_claim", "Diagram")
-                lines.append(f"![{img_desc}]({img_path})\n")
-
-        lines.append("#### Implementation Steps:")
-        pts = answer_plan.get("supporting_points", [])
-        if pts:
-            for i, pt in enumerate(pts, 1):
-                lines.append(f"{i}. {pt}")
-        else:
-            lines.append(f"1. Refer to the primary solution {primary_sol} in the documentation.")
+    primary_sol = str(answer_plan.get("primary_solution") or "").strip()
+    points = [str(point).strip() for point in answer_plan.get("supporting_points", []) if str(point).strip()]
+    if not loaded_evidence:
+        fallback = no_confirmed_information(language)
+    elif str(language).lower().startswith("en"):
+        fallback = (f"Recommended approach: {primary_sol}." if primary_sol else "Here is the confirmed approach.")
+        if points:
+            fallback += "\n" + "\n".join(f"{index}. {point}" for index, point in enumerate(points, 1))
     else:
-        # Default Chinese output
-        lines.append(f"### 推荐方案：{primary_sol}\n")
-        lines.append(
-            f"针对您提出的问题「{standalone}」（范围：{robot_topic}），"
-            f"基于知识库中的文档，推荐使用 **{primary_sol}** 来达成目标。\n"
-        )
-
-        if loaded_evidence:
-            lines.append("#### 核心参考资料与说明：")
-            for ev in loaded_evidence[:4]:
-                path_name = ev["path"]
-                summary = extract_clean_summary(ev.get("content", ""))
-                lines.append(f"- **[{path_name}]({path_name})**: {summary[:120]}")
-            lines.append("")
-
-        if uncertainties:
-            lines.append("#### 已知不确定性与待确认事项：")
-            for u in uncertainties[:3]:
-                if isinstance(u, dict):
-                    u_path = u.get("path", "")
-                    u_note = u.get("note", u.get("content", ""))
-                    if u_path:
-                        lines.append(f"- **[{u_path}]({u_path})**: {u_note[:120]}")
-                    elif u_note:
-                        lines.append(f"- *{u_note[:120]}*")
-                else:
-                    lines.append(f"- *{str(u)}*")
-            lines.append("")
-
-        if selected_images:
-            lines.append("#### 相关架构与流程图：")
-            for img in selected_images[:3]:
-                img_path = img.get("path", "")
-                img_desc = img.get("supports_claim", "流程图")
-                lines.append(f"![{img_desc}]({img_path})\n")
-
-        lines.append("#### 实施要点：")
-        pts = answer_plan.get("supporting_points", [])
-        if pts:
-            for i, pt in enumerate(pts, 1):
-                lines.append(f"{i}. {pt}")
-        else:
-            lines.append(f"1. 查阅知识库中关于 {primary_sol} 的详细说明文档并按步骤配置。")
-
+        fallback = (f"建议采用：{primary_sol}。" if primary_sol else "以下是目前确认可行的做法。")
+        if points:
+            fallback += "\n" + "\n".join(f"{index}. {point}" for index, point in enumerate(points, 1))
     return {
-        "answer": "\n".join(lines),
+        "answer": sanitize_customer_output(fallback, language),
         "llm_call_count": call_count,
     }

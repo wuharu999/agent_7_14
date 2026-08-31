@@ -35,6 +35,7 @@ from worker.qa_images import attach_relevant_qa_images, strip_qa_image_markdown
 from worker.terminology import (
     CANONICAL_TERMINOLOGY_PROMPT,
     canonicalize_product_names,
+    sanitize_customer_output,
 )
 
 log = logging.getLogger("worker.qa_api")
@@ -1152,6 +1153,7 @@ async def _retrieve_and_stream(
     *,
     team: str,
     language: str,
+    topic_label: str = "",
     history: Sequence[ConversationTurn],
     on_token: Callable[[str], Awaitable[None]],
     on_reset: Callable[[], Awaitable[None]],
@@ -1174,6 +1176,7 @@ async def _retrieve_and_stream(
         question=question,
         team=team,
         language=language,
+        topic_label=topic_label,
         history=history,
         wiki_root=get_team_config(team).wiki_dir,
         provider=DeepSeekClient(),
@@ -1192,6 +1195,7 @@ async def run_qa_api_stream(
     *,
     team: str,
     language: str = "zh-CN",
+    topic_label: str = "",
     history: Sequence[ConversationTurn] = (),
     on_chunk: Callable[[str, str, int], Awaitable[None]],
     on_replace: Callable[[str], Awaitable[None]] | None = None,
@@ -1226,7 +1230,7 @@ async def run_qa_api_stream(
             safe_length = min(safe_length, image_marker_start)
         if safe_length == 0:
             return
-        safe_prefix = canonicalize_product_names(pending_text[:safe_length])
+        safe_prefix = sanitize_customer_output(pending_text[:safe_length], language)
         pending_text = pending_text[safe_length:]
         emitted_text += safe_prefix
         await on_chunk(safe_prefix, "", 0)
@@ -1245,23 +1249,28 @@ async def run_qa_api_stream(
             question,
             team=team,
             language=language,
+            topic_label=topic_label,
             history=history,
             on_token=capture_token,
             on_reset=reset_stream,
         )
         raw_safe_answer = _safe_answer(raw_answer, language)
-        safe_answer = canonicalize_product_names(raw_safe_answer)
+        safe_answer = sanitize_customer_output(raw_safe_answer, language)
         if blocked_stream or raw_safe_answer != raw_answer:
             response = with_ai_notice(safe_answer, language)
             await on_chunk(response, "", 0)
             return response
         response = with_ai_notice(safe_answer, language)
         visible_response = strip_qa_image_markdown(response)
-        remaining = (
-            visible_response[len(emitted_text):]
-            if visible_response.startswith(emitted_text)
-            else visible_response
-        )
+        if emitted_text and not visible_response.startswith(emitted_text) and on_replace is not None:
+            await on_replace(visible_response)
+            remaining = ""
+        else:
+            remaining = (
+                visible_response[len(emitted_text):]
+                if visible_response.startswith(emitted_text)
+                else visible_response
+            )
         if remaining:
             await on_chunk(remaining, "", 0)
         return response
@@ -1277,6 +1286,7 @@ async def run_qa_api(
     *,
     team: str,
     language: str = "zh-CN",
+    topic_label: str = "",
     history: Sequence[ConversationTurn] = (),
     guard_decision: GuardDecision | None = None,
 ) -> str:
@@ -1287,6 +1297,7 @@ async def run_qa_api(
         question,
         team=team,
         language=language,
+        topic_label=topic_label,
         history=history,
         on_chunk=discard,
         guard_decision=guard_decision,

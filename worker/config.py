@@ -126,6 +126,9 @@ QA_REASONING_MAX_CANDIDATES = max(
 QA_REASONING_MAX_PAGES = max(
     3, min(6, int(os.environ.get("QA_REASONING_MAX_PAGES", "6")))
 )
+QA_STRICT_ROBOT_SCOPE = os.environ.get("QA_STRICT_ROBOT_SCOPE", "true").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 CONVERSATION_MAX_TURNS = int(os.environ.get("CONVERSATION_MAX_TURNS", "6"))
 CONVERSATION_MAX_SESSIONS = int(os.environ.get("CONVERSATION_MAX_SESSIONS", "1000"))
 PROMPT_GUARD_ENABLED = os.environ.get("PROMPT_GUARD_ENABLED", "true").strip().lower() in {

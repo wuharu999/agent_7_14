@@ -5,32 +5,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 
 from worker.langgraph_qa.wiki.indexer import tokenize_text, init_jieba
-
-TOPIC_SYNONYMS: Dict[str, List[str]] = {
-    "全部机器人": [],
-    "天工行者无界&无疆": [
-        "天工行者无界", "天工行者无疆", "天工行者", "天工", "tienkung", "tianxing",
-        "无界", "无疆", "tienkung-3", "tienkung-pro", "tienkung-plus", "walker-tienkung", "walker_tienkung"
-    ],
-    "天工行者DEX": [
-        "天工行者dex", "dex", "tiangong-walker-dex", "tienkung-dex", "tiangong-dex", "灵巧手机器人"
-    ],
-    "Walker_C1_EDU共创者": [
-        "walker c1", "walker_c1", "walker-c1", "c1 edu", "c1_edu", "共创者", "astron", "walker-c1-edu", "c1"
-    ],
-    "Walker_S2_EDU探索者": [
-        "walker s2", "walker_s2", "walker-s2", "s2 edu", "s2_edu", "探索者", "walker s2 industrial", "walker-s2-industrial", "s2-api-tiny", "rosa-2.0", "s2"
-    ],
-    "运营": [
-        "运营", "operations", "growth", "ka", "商业模式", "渠道", "生态", "收益模式", "产教融合"
-    ],
-    "方案": [
-        "方案", "solutions", "9-solutions", "建设方案", "产业学院", "产教融合", "实训基地", "申报"
-    ],
-    "售后": [
-        "售后", "aftersale", "9-aftersale", "faq", "常见问题", "排查", "故障", "troubleshooting", "维修", "保修", "warranty", "急停", "emergency-stop"
-    ],
-}
+from worker.topic_policy import topic_search_aliases
 
 
 class SearchResult:
@@ -153,9 +128,7 @@ def search_wiki(
 
     conn.close()
 
-    topic_synonyms = TOPIC_SYNONYMS.get(robot_topic, [])
-    if not topic_synonyms and robot_topic and robot_topic != "全部机器人":
-        topic_synonyms = [robot_topic.lower()]
+    topic_synonyms = topic_search_aliases(robot_topic)
 
     for path, score, title, wiki_section, doc_role, level, meta_json in rows:
         # Optional scope and role filtering

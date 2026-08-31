@@ -6,6 +6,18 @@ IntentType = Literal["how_to", "explicit_api", "concept", "comparison", "trouble
 AbstractionType = Literal["application_or_workflow", "sdk_or_module", "api_or_interface"]
 TopicRelation = Literal["continue", "refine", "switch", "ambiguous"]
 ScopeRelation = Literal["in_scope", "related_scope", "cross_scope", "out_of_scope", "ambiguous"]
+EntityType = Literal[
+    "robot", "application", "tool", "workflow", "sdk", "api", "hardware",
+    "solution", "operations", "after_sales", "unknown",
+]
+
+
+class CanonicalizedEntity(BaseModel):
+    mentioned_name: str
+    canonical_name: Optional[str] = None
+    entity_type: EntityType = "unknown"
+    ambiguous: bool = False
+    candidate_canonical_names: List[str] = Field(default_factory=list)
 
 
 class ScopeAnalysis(BaseModel):
@@ -32,6 +44,10 @@ class SearchQuery(BaseModel):
 
 class PlannerOutput(BaseModel):
     scope_analysis: ScopeAnalysis
+    queried_entity_type: EntityType = "unknown"
+    explicit_entities: List[str] = Field(default_factory=list)
+    scope_relation: ScopeRelation = "ambiguous"
+    canonicalized_entities: List[CanonicalizedEntity] = Field(default_factory=list)
     topic_relation: TopicRelation = Field(
         default="ambiguous",
         description="Relation of the current request to history: continue, refine, switch, or ambiguous.",
@@ -86,6 +102,15 @@ class ReasonOutput(BaseModel):
         default=True,
         description="Whether the planner interpretation adds no unsupported entity or constraint beyond the current turn and active UI scope.",
     )
+    entity_type_consistent: bool = Field(
+        default=True,
+        description="Whether evidence answers the queried entity itself rather than substituting a robot or related object.",
+    )
+    evidence_sufficient: bool = Field(
+        default=True,
+        description="Whether the selected evidence directly supports a useful customer answer.",
+    )
+    canonicalized_entities: List[CanonicalizedEntity] = Field(default_factory=list)
     unsupported_assumptions: List[str] = Field(
         default_factory=list,
         description="Entities or constraints introduced by the planner without support from the current turn or explicitly used history.",

@@ -9,6 +9,19 @@ from worker.langgraph_qa.qa.nodes.expand_related import expand_related_node
 from worker.langgraph_qa.qa.nodes.reason import reason_node
 from worker.langgraph_qa.qa.nodes.load_evidence import load_evidence_node
 from worker.langgraph_qa.qa.nodes.final_answer import final_answer_node
+from worker.langgraph_qa.qa.nodes.scope_stop import scope_stop_node
+
+
+def route_after_plan(state: QAState) -> str:
+    topic = state.get("active_topic", {})
+    should_stop = (
+        state.get("strict_robot_scope", False)
+        and topic.get("topic_type") == "robot_scope"
+        and state.get("scope_relation") == "out_of_scope"
+        and state.get("queried_entity_type") == "robot"
+        and bool(state.get("explicit_entities"))
+    )
+    return "scope_stop" if should_stop else "search"
 
 
 def should_search_again(state: QAState) -> str:
@@ -34,10 +47,14 @@ def build_qa_graph():
     workflow.add_node("reason", reason_node)
     workflow.add_node("load_evidence", load_evidence_node)
     workflow.add_node("final_answer", final_answer_node)
+    workflow.add_node("scope_stop", scope_stop_node)
 
     # Add linear edges for initial pass
     workflow.add_edge(START, "plan")
-    workflow.add_edge("plan", "search")
+    workflow.add_conditional_edges(
+        "plan", route_after_plan, {"scope_stop": "scope_stop", "search": "search"}
+    )
+    workflow.add_edge("scope_stop", END)
     workflow.add_edge("search", "expand_related")
     workflow.add_edge("expand_related", "reason")
 
@@ -65,6 +82,8 @@ def run_qa_pipeline(
     stream: bool = False,
     request_id: Optional[str] = None,
     defer_final_answer: bool = False,
+    active_topic: Optional[Dict[str, Any]] = None,
+    strict_robot_scope: bool = True,
 ) -> Dict[str, Any]:
     """
     Public entry point for running the reasoning-first Wiki Q&A graph pipeline.
@@ -78,6 +97,8 @@ def run_qa_pipeline(
         "question": question,
         "language": str(language).strip() or "zh-CN",
         "robot_topic": robot_topic or "全部机器人",
+        "active_topic": active_topic or {},
+        "strict_robot_scope": strict_robot_scope,
         "recent_history": history or [],
         "defer_final_answer": defer_final_answer or stream,
         "retrieval_round": 0,

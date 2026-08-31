@@ -222,6 +222,7 @@ class WorkerManager:
                 team=team,
                 conversation_id=conversation_id,
                 language=language,
+                topic_label=str(data.get("topic_label") or ""),
                 stream=bool(data.get("stream")),
             )
             lane = self._question_lane(conversation_id)
@@ -417,6 +418,7 @@ class WorkerManager:
                             job.question,
                             team=job.team,
                             language=job.language,
+                            topic_label=job.topic_label,
                             history=history,
                             on_chunk=on_chunk,
                             on_replace=on_replace,
@@ -474,6 +476,7 @@ class WorkerManager:
                         job.question,
                         team=job.team,
                         language=job.language,
+                        topic_label=job.topic_label,
                         history=history,
                         guard_decision=guard_decision,
                     )

@@ -11,6 +11,7 @@ from urllib.parse import quote
 from worker.config import (
     QA_REASONING_MAX_CANDIDATES,
     QA_REASONING_MAX_PAGES,
+    QA_STRICT_ROBOT_SCOPE,
     WIKI_QA_MAX_PAGE_CHARS,
 )
 from worker.langgraph_qa.qa.graph import run_qa_pipeline
@@ -21,17 +22,10 @@ from worker.langgraph_qa.runtime import (
     bind_runtime,
     ensure_artifacts,
 )
+from worker.topic_policy import resolve_topic
 
 
 log = logging.getLogger(__name__)
-
-_TEAM_LABELS = {
-    "all": "全部机器人",
-    "tian_gong": "天工行者无界&无疆",
-    "walker_s2": "Walker_S2_EDU探索者",
-    "walker_c1": "Walker_C1_EDU共创者",
-}
-
 
 def _history_messages(history: Sequence[Any]) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
@@ -57,6 +51,7 @@ def _run_graph(
     history: Sequence[Any],
     wiki_root: Path,
     provider: ChatProvider,
+    topic_label: str = "",
 ) -> dict[str, Any]:
     resolved_wiki = wiki_root.expanduser().resolve(strict=True)
     runtime = Runtime(
@@ -68,11 +63,14 @@ def _run_graph(
         max_candidates=QA_REASONING_MAX_CANDIDATES,
     )
     ensure_artifacts(runtime)
+    topic = resolve_topic(team, topic_label)
     with bind_runtime(runtime):
         return run_qa_pipeline(
             question=question,
             language=language,
-            robot_topic=_TEAM_LABELS.get(team, team),
+            robot_topic=topic.label,
+            active_topic=topic.as_dict(),
+            strict_robot_scope=QA_STRICT_ROBOT_SCOPE,
             history=_history_messages(history),
             stream=True,
             defer_final_answer=True,
@@ -166,6 +164,7 @@ async def stream_answer(
     wiki_root: Path,
     provider: ChatProvider,
     on_token: Callable[[str], Awaitable[None]],
+    topic_label: str = "",
 ) -> str:
     """Run the ported LangGraph Q&A pipeline and stream only its final answer."""
     result = await asyncio.to_thread(
@@ -176,6 +175,7 @@ async def stream_answer(
         history=history,
         wiki_root=wiki_root,
         provider=provider,
+        topic_label=topic_label,
     )
     system = str(result.get("answer_system", ""))
     user = str(result.get("answer_user", ""))

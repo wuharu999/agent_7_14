@@ -28,10 +28,10 @@ def test_known_generated_translations_restore_canonical_names() -> None:
         ("TianGong_2.0_plus", "天工行者无界"),
         ("天工2.0 Pro", "天工行者无疆"),
         ("TIANGONG 2.0 PRO", "天工行者无疆"),
-        ("天工3.0", "天工行者dex"),
-        ("TianGong3.0 dex", "天工行者dex"),
-        ("天工2.0", "天工行者"),
-        ("tiangong 2.0", "天工行者"),
+        ("天工3.0", "天工行者DEX"),
+        ("TianGong3.0 dex", "天工行者DEX"),
+        ("天工2.0", "未明确的天工行者旧版型号"),
+        ("tiangong 2.0", "未明确的天工行者旧版型号"),
     ),
 )
 def test_tiangong_legacy_names_are_always_canonicalized(
@@ -41,7 +41,7 @@ def test_tiangong_legacy_names_are_always_canonicalized(
 
 
 def test_tiangong_canonicalization_is_idempotent() -> None:
-    canonical = "天工行者、天工行者基础版、天工行者无界、天工行者无疆、天工行者dex"
+    canonical = "天工行者、天工行者基础版、天工行者无界、天工行者无疆、天工行者DEX"
     assert canonicalize_product_names(canonical) == canonical
 
 

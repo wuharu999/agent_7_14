@@ -128,6 +128,13 @@ async def ask(request: Request, body: dict):
     if not _CONVERSATION_ID.fullmatch(conversation_id):
         conversation_id = f"web:{uuid.uuid4().hex}"
     history = _bounded_client_history(body.get("history"))
+    if team == "all":
+        topic_label = "全部机器人"
+    else:
+        from ecs.app.database import get_robot_by_name
+
+        robot = get_robot_by_name(team)
+        topic_label = str((robot or {}).get("display_name_zh") or team)
 
     from fastapi.responses import StreamingResponse
     import json
@@ -146,6 +153,7 @@ async def ask(request: Request, body: dict):
                 team=team,
                 conversation_id=conversation_id,
                 language=language,
+                topic_label=topic_label,
                 history=history,
             ):
                 event_name = str(event.get("status") or "chunk")

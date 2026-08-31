@@ -103,6 +103,7 @@ class WorkerGateway:
         team: str = "all",
         conversation_id: str,
         language: str,
+        topic_label: str = "",
         history: list[dict[str, str]] | None = None,
         timeout: int | None = None,
     ) -> Any:
@@ -120,6 +121,7 @@ class WorkerGateway:
                     "text": question,
                     "conversation_id": conversation_id,
                     "language": language,
+                    "topic_label": topic_label,
                     "history": history or [],
                     "stream": True,
                 }
@@ -150,6 +152,7 @@ class WorkerGateway:
         team: str = "all",
         conversation_id: str,
         language: str,
+        topic_label: str = "",
         history: list[dict[str, str]] | None = None,
         timeout: int | None = None,
     ) -> str:
@@ -159,6 +162,7 @@ class WorkerGateway:
             team=team,
             conversation_id=conversation_id,
             language=language,
+            topic_label=topic_label,
             history=history,
             timeout=timeout,
         ):

@@ -8,6 +8,7 @@ from worker.langgraph_qa.qa.state import QAState
 from worker.langgraph_qa.qa.schemas import ReasonOutput
 from worker.langgraph_qa.qa.model import get_chat_model
 from worker.langgraph_qa.runtime import get_runtime
+from worker.topic_policy import retrieval_policy_text, topic_entity_guide_text
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ Your responsibilities:
 8. Evidence Scope Check:
    - Return `scope_consistency.valid = false` when selected evidence would transfer a capability from another product into the active scope without direct support.
    - For `cross_scope`, keep each product's evidence distinct and compare only supported facts. If scope-consistent evidence is missing, request the one permitted local retry with scope-specific queries.
+9. Entity Fidelity: Verify the exact entity type and canonical identity requested. A tool/application/SDK/API question must be answered as that object and must not be suppressed or replaced with a robot capability answer.
+10. Canonical Fidelity: Normalize aliases using the supplied guide. Never transfer a capability between robots, and never choose one product for an ambiguous alias.
 
 Context:
 - Selected Robot Scope: {robot_topic}
@@ -99,6 +102,8 @@ def reason_node(state: QAState) -> Dict[str, Any]:
     topic_relation = state.get("topic_relation", "ambiguous")
     history_used = state.get("history_used", [])
     scope_analysis = state.get("scope_analysis", {})
+    queried_entity_type = state.get("queried_entity_type", "unknown")
+    canonicalized = state.get("canonicalized_entities", [])
 
     candidate_paths = [r["path"] for r in search_results[:15]]
     image_candidates = load_image_candidates(candidate_paths)
@@ -142,7 +147,9 @@ Evaluate evidence and select solution pages, images, and answer plan:
                     scope_analysis=scope_analysis,
                     robot_topic=robot_topic,
                     language=language,
-                )),
+                ) + "\n\nTopic and Entity Guide:\n" + topic_entity_guide_text()
+                  + "\n\nRetrieval Policy:\n" + retrieval_policy_text()
+                  + f"\n\nQueried entity type: {queried_entity_type}\nCanonicalized entities: {canonicalized}"),
                 HumanMessage(content=prompt)
             ])
             if not isinstance(res, ReasonOutput):
@@ -151,21 +158,25 @@ Evaluate evidence and select solution pages, images, and answer plan:
             selected_imgs = [img.model_dump() for img in res.selected_images]
             needs_fidelity_retry = not res.planner_faithful and retrieval_round < 2
             needs_scope_retry = not res.scope_consistency.valid and retrieval_round < 2
+            needs_entity_retry = not res.entity_type_consistent and retrieval_round < 2
+            needs_evidence_retry = not res.evidence_sufficient and retrieval_round < 2
             retry_queries = res.additional_search_queries[:3]
-            if (needs_fidelity_retry or needs_scope_retry) and not retry_queries:
-                retry_queries = [f"{robot_topic} {question}".strip()]
+            if (needs_fidelity_retry or needs_scope_retry or needs_entity_retry or needs_evidence_retry) and not retry_queries:
+                retry_queries = [question]
             return {
                 "selected_pages": res.selected_pages,
                 "selected_images": selected_imgs,
-                "need_more_search": (res.need_more_search or needs_fidelity_retry or needs_scope_retry) and retrieval_round < 2,
+                "need_more_search": (res.need_more_search or needs_fidelity_retry or needs_scope_retry or needs_entity_retry or needs_evidence_retry) and retrieval_round < 2,
                 "additional_search_queries": retry_queries,
                 "planner_faithful": res.planner_faithful,
+                "entity_type_consistent": res.entity_type_consistent,
+                "evidence_sufficient": res.evidence_sufficient,
                 "unsupported_assumptions": res.unsupported_assumptions,
                 "scope_consistency": res.scope_consistency.model_dump(),
                 **({
                     "standalone_question": res.corrected_standalone_question or question,
                     "search_results": [],
-                } if (needs_fidelity_retry or needs_scope_retry) else {}),
+                } if (needs_fidelity_retry or needs_scope_retry or needs_entity_retry) else {}),
                 "uncertainties": res.uncertainties_to_check,
                 "answer_plan": {
                     "primary_solution": res.primary_solution,
@@ -256,6 +267,8 @@ Evaluate evidence and select solution pages, images, and answer plan:
         "selected_images": selected_imgs,
         "need_more_search": False,
         "planner_faithful": True,
+        "entity_type_consistent": True,
+        "evidence_sufficient": bool(selected_pages),
         "unsupported_assumptions": [],
         "scope_consistency": {"valid": True, "unsupported_cross_scope_transfer": []},
         "additional_search_queries": [],
