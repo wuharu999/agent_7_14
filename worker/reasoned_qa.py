@@ -789,8 +789,8 @@ async def _stream(iterator: Iterator[str], callback: Callable[[str], Awaitable[N
         except StopIteration:
             return sentinel
 
-    parts: list[str] = []
-    async with asyncio.timeout(timeout):
+    async def drain() -> str:
+        parts: list[str] = []
         while True:
             item = await asyncio.to_thread(next_item)
             if item is sentinel:
@@ -798,7 +798,12 @@ async def _stream(iterator: Iterator[str], callback: Callable[[str], Awaitable[N
             token = str(item)
             parts.append(token)
             await callback(token)
-    return "".join(parts)
+        return "".join(parts)
+
+    # ``asyncio.timeout`` was introduced in Python 3.11, while Workers support
+    # the repository's Python 3.10 minimum. ``wait_for`` preserves cancellation
+    # and applies the same deadline to the complete token-drain coroutine.
+    return await asyncio.wait_for(drain(), timeout=timeout)
 
 
 async def run_reasoned_qa_stream(

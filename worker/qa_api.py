@@ -992,26 +992,31 @@ async def _stream_in_thread(
         except StopIteration:
             return sentinel
 
-    answer_parts: list[str] = []
+    async def drain() -> str:
+        answer_parts: list[str] = []
+        while True:
+            value = await _run_blocking(next_token)
+            if value is sentinel:
+                break
+            token = str(value)
+            answer_parts.append(token)
+            try:
+                await on_token(token)
+            except Exception as exc:
+                raise StreamCallbackError("Local streaming callback failed") from exc
+        return "".join(answer_parts)
+
     try:
-        async with asyncio.timeout(timeout):
-            while True:
-                value = await _run_blocking(next_token)
-                if value is sentinel:
-                    break
-                token = str(value)
-                answer_parts.append(token)
-                try:
-                    await on_token(token)
-                except Exception as exc:
-                    raise StreamCallbackError("Local streaming callback failed") from exc
+        # ``asyncio.timeout`` requires Python 3.11; Worker environments support
+        # Python 3.10, where ``wait_for`` provides equivalent cancellation and
+        # deadline behavior for the full token-drain coroutine.
+        return await asyncio.wait_for(drain(), timeout=timeout)
     except asyncio.TimeoutError as exc:
         raise QAAPIError("Provider streaming timed out") from exc
     except StreamCallbackError:
         raise
     except Exception as exc:
         raise QAAPIError("Provider streaming failed") from exc
-    return "".join(answer_parts)
 
 
 def _provider_client(provider: str) -> ChatProvider:

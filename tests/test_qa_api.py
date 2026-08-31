@@ -378,6 +378,17 @@ async def test_stream_bridge_works_with_one_default_executor_thread() -> None:
     assert chunks == ["one", "two"]
 
 
+def test_worker_stream_timeouts_remain_compatible_with_python_310() -> None:
+    root = Path(__file__).resolve().parents[1]
+    stream_sources = [
+        (root / "worker" / "qa_api.py").read_text(encoding="utf-8"),
+        (root / "worker" / "reasoned_qa.py").read_text(encoding="utf-8"),
+    ]
+
+    assert all("asyncio.timeout(" not in source for source in stream_sources)
+    assert all("asyncio.wait_for(drain(), timeout=timeout)" in source for source in stream_sources)
+
+
 @pytest.mark.anyio
 async def test_deepseek_retrieval_preserves_language_team_history_and_response_boundary(
     monkeypatch, tmp_path: Path
