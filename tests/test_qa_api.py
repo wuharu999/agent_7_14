@@ -354,7 +354,26 @@ class FakeDeepSeekClient:
 
     def complete(self, system: str, user: str) -> str:
         self.calls.append((system, user))
-        return self.router_response
+        if "Intent Planner" in system:
+            return (
+                '{"scope_analysis":{"active_scope":"scope","explicit_entities":[],'
+                '"resolved_references":[],"relation":"in_scope","reason":"test",'
+                '"confidence":0.9},"topic_relation":"continue","current_subject":null,'
+                '"history_used":[],"history_ignored":[],"standalone_question":'
+                '"Walker platform","intent":"concept","preferred_abstraction":'
+                '"application_or_workflow","search_queries":["Walker"]}'
+            )
+        selected = "concepts/walker.md" if "concepts/walker.md" in user else "walker.md"
+        return (
+            '{"scope_consistency":{"valid":true,'
+            '"unsupported_cross_scope_transfer":[]},"planner_faithful":true,'
+            '"unsupported_assumptions":[],"corrected_standalone_question":null,'
+            '"primary_solution":"Walker","selected_pages":["'
+            + selected
+            + '"],"selected_images":[],"need_more_search":false,'
+            '"additional_search_queries":[],"uncertainties_to_check":[],'
+            '"direct_answer_plan":"Answer from the Wiki.","supporting_points":[]}'
+        )
 
     def stream(self, system: str, user: str):
         self.calls.append((system, user))
@@ -382,11 +401,13 @@ def test_worker_stream_timeouts_remain_compatible_with_python_310() -> None:
     root = Path(__file__).resolve().parents[1]
     stream_sources = [
         (root / "worker" / "qa_api.py").read_text(encoding="utf-8"),
-        (root / "worker" / "reasoned_qa.py").read_text(encoding="utf-8"),
+        (root / "worker" / "langgraph_qa" / "interface.py").read_text(
+            encoding="utf-8"
+        ),
     ]
 
     assert all("asyncio.timeout(" not in source for source in stream_sources)
-    assert all("asyncio.wait_for(drain(), timeout=timeout)" in source for source in stream_sources)
+    assert all("asyncio.wait_for(drain(), timeout=" in source for source in stream_sources)
 
 
 @pytest.mark.anyio
@@ -417,14 +438,13 @@ async def test_deepseek_retrieval_preserves_language_team_history_and_response_b
     planner_prompt = client.calls[0][1]
     reasoner_prompt = client.calls[1][1]
     answer_prompt = client.calls[2][1]
-    assert "Selected scope: walker_s2" in planner_prompt
+    assert "Selected Robot Scope" in planner_prompt
+    assert "Walker_S2_EDU探索者" in client.calls[0][0]
     assert "它是什么？" in planner_prompt
-    assert "Current question" in planner_prompt
-    assert "Choose only paths from candidates" in reasoner_prompt
-    assert "Answer language: zh-CN" in answer_prompt
-    assert "CURRENT QUESTION" not in answer_prompt
-    assert "concepts/walker.md" not in answer_prompt
-    assert "WIKI PAGE: walker" not in answer_prompt
+    assert "Current User Question" in planner_prompt
+    assert "Candidate Wiki Pages" in reasoner_prompt
+    assert "target language 'zh-CN'" in answer_prompt
+    assert "Walker evidence" in answer_prompt
     assert answer == (
         "平台名称是Thinkerstudio遥操数采平台。\n\n"
         + AI_NOTICE_RESPONSES["zh-CN"]
@@ -458,7 +478,7 @@ async def test_deepseek_failure_becomes_localized_user_safe_response(monkeypatch
 
 
 @pytest.mark.anyio
-async def test_real_deepseek_client_failure_is_called_once_and_hidden(
+async def test_real_deepseek_client_failure_is_bounded_and_hidden(
     monkeypatch, tmp_path: Path
 ) -> None:
     write(tmp_path / "index.md", "[[walker]]")
@@ -468,6 +488,11 @@ async def test_real_deepseek_client_failure_is_called_once_and_hidden(
         def complete(self, system: str, user: str) -> str:
             self.calls.append((system, user))
             raise RuntimeError("secret provider failure detail")
+
+        def stream(self, system: str, user: str):
+            self.calls.append((system, user))
+            raise RuntimeError("secret provider failure detail")
+            yield ""  # pragma: no cover
 
     FailingDeepSeekClient.instances.clear()
     monkeypatch.setattr(qa_api, "DeepSeekClient", FailingDeepSeekClient)
@@ -486,7 +511,7 @@ async def test_real_deepseek_client_failure_is_called_once_and_hidden(
     )
 
     assert len(FailingDeepSeekClient.instances) == 1
-    assert len(FailingDeepSeekClient.instances[0].calls) == 1
+    assert len(FailingDeepSeekClient.instances[0].calls) == 3
     assert "secret provider failure detail" not in answer
     assert answer == GENERIC_ERROR_RESPONSES["en"] + "\n\n" + AI_NOTICE_RESPONSES["en"]
     assert chunks == [answer]
@@ -759,7 +784,20 @@ async def test_deepseek_router_mismatch_uses_deterministic_wiki_fallback(
     captured_prompts: list[str] = []
 
     class CapturingProvider(FakeDeepSeekClient):
-        router_response = '{"pages":["invented-page-that-does-not-exist"]}'
+        def complete(self, system: str, user: str) -> str:
+            if "Intent Planner" in system:
+                return super().complete(system, user)
+            self.calls.append((system, user))
+            return (
+                '{"scope_consistency":{"valid":true,'
+                '"unsupported_cross_scope_transfer":[]},"planner_faithful":true,'
+                '"unsupported_assumptions":[],"corrected_standalone_question":null,'
+                '"primary_solution":"Walker S2 navigation","selected_pages":'
+                '["concepts/walker-s2.md"],"selected_images":[],'
+                '"need_more_search":false,"additional_search_queries":[],'
+                '"uncertainties_to_check":[],"direct_answer_plan":"Explain navigation.",'
+                '"supporting_points":[]}'
+            )
 
         def stream(self, _system: str, user: str):
             captured_prompts.append(user)

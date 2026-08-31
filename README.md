@@ -39,7 +39,7 @@ settings only on the machines that need them.
 ## Layout
 
 - `ecs/` — public FastAPI application, authentication, uploads, and status UI.
-- `worker/` — private ingestion, retrieval, and streamed-answer service.
+- `worker/` — private ingestion and LangGraph Wiki Q&A service; final answers stream to the browser.
 - `shared/` — shared models and validation helpers.
 - `scripts/` — local setup, validation, packaging, and deployment utilities.
 - `tests/` — automated regression coverage.

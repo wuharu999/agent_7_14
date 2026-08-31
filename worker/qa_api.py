@@ -1156,7 +1156,7 @@ async def _retrieve_and_stream(
     on_token: Callable[[str], Awaitable[None]],
     on_reset: Callable[[], Awaitable[None]],
 ) -> str:
-    from worker.reasoned_qa import run_reasoned_qa_stream
+    from worker.langgraph_qa import stream_answer
 
     # These existing filters are output-boundary safeguards, not retrieval.
     # They keep a generated answer from exposing a path/reference or an
@@ -1170,7 +1170,7 @@ async def _retrieve_and_stream(
         if safe:
             await on_token(safe)
 
-    raw_answer = await run_reasoned_qa_stream(
+    raw_answer = await stream_answer(
         question=question,
         team=team,
         language=language,
