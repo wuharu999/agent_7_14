@@ -17,10 +17,10 @@ MIN_QA_IMAGE_DIMENSION = 64
 MIN_QA_IMAGE_PIXELS = 4_096
 
 _WIKI_IMAGE_MARKDOWN = re.compile(
-    r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<path>wiki/media/[^)>\n]+)>?\s*\)"
+    r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<path>(?:wiki/media/|/media/)[^)>\n]+)>?\s*\)"
 )
 _LOCAL_IMAGE_MARKDOWN = re.compile(
-    r"!\[[^\]\n]{0,200}\]\(\s*<?(?:wiki/media|raw/sources)/[^)>\n]+>?\s*\)"
+    r"!\[[^\]\n]{0,200}\]\(\s*<?(?:wiki/media/|/media/|raw/sources/)[^)>\n]+>?\s*\)"
 )
 _IMAGE_MIME_TYPES = {
     ".gif": "image/gif",
@@ -471,6 +471,8 @@ def extract_qa_images(
         if len(images) >= MAX_QA_IMAGES:
             break
         raw_path = unquote(match.group("path").strip())
+        if raw_path.startswith("/media/"):
+            raw_path = "wiki" + raw_path
         relative_path = Path(raw_path)
         if relative_path.is_absolute() or ".." in relative_path.parts:
             continue

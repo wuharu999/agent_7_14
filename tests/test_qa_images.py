@@ -67,6 +67,25 @@ def test_extracts_existing_bounded_wiki_image(tmp_path: Path) -> None:
     assert images[0]["fingerprint"] == hashlib.sha256(image_path.read_bytes()).hexdigest()
 
 
+def test_extracts_url_encoded_root_media_marker_from_generated_answer(
+    tmp_path: Path,
+) -> None:
+    image_name = "8-tienkung-16-天工行者无界架构图.png"
+    image_path = _media_file(tmp_path, image_name)
+    encoded_name = "8-tienkung-16-%E5%A4%A9%E5%B7%A5%E8%A1%8C%E8%80%85%E6%97%A0%E7%95%8C%E6%9E%B6%E6%9E%84%E5%9B%BE.png"
+    answer = (
+        "架构说明。\n\n"
+        f"![天工行者无界双主控架构](/media/{encoded_name})"
+    )
+
+    cleaned, images = qa_images.extract_qa_images(answer, tmp_path)
+
+    assert cleaned == "架构说明。"
+    assert len(images) == 1
+    assert images[0]["alt"] == "天工行者无界双主控架构"
+    assert base64.b64decode(str(images[0]["data"])) == image_path.read_bytes()
+
+
 def test_rejects_original_source_asset_image(tmp_path: Path) -> None:
     image_path = tmp_path / "raw" / "sources" / "tian_gong" / "upload-1" / "robot.png"
     image_path.parent.mkdir(parents=True, exist_ok=True)
