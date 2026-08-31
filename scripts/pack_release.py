@@ -7,6 +7,7 @@ def pack_release():
     zip_path = project_root / "release.zip"
     
     exclude_dirs = {
+        ".venv",
         ".venv-ecs",
         ".venv-worker",
         ".venv-dev",
@@ -16,7 +17,6 @@ def pack_release():
         ".pytest_cache",
         ".github",
         ".agents",
-        ".codex",
         ".vscode",
     }
     

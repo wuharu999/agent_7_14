@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+import concurrent.futures
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -9,7 +9,6 @@ from typing import ClassVar
 import pytest
 
 from worker import qa_api
-from worker.egress_region import EgressRegionDecision
 from worker.qa_response import AI_NOTICE_RESPONSES, GENERIC_ERROR_RESPONSES
 from worker.conversation_store import ConversationTurn
 from worker.prompt_security import GuardDecision
@@ -18,26 +17,6 @@ from worker.prompt_security import GuardDecision
 def write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
-
-
-class StaticRegionGate:
-    def __init__(self, country_code: str | None = "US", allowed: bool = True) -> None:
-        self.result = EgressRegionDecision(
-            country_code,
-            allowed,
-            "allowed_country" if allowed else "blocked_country",
-        )
-
-    def decision(self) -> EgressRegionDecision:
-        return self.result
-
-
-@pytest.fixture(autouse=True)
-def reset_provider_circuit(monkeypatch) -> Iterator[None]:
-    qa_api._CEREBRAS_CIRCUIT.reset()
-    monkeypatch.setattr(qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate())
-    yield
-    qa_api._CEREBRAS_CIRCUIT.reset()
 
 
 def test_wiki_reader_only_loads_indexed_pages_and_duplicate_slugs(tmp_path: Path) -> None:
@@ -363,8 +342,10 @@ class FakeTeamConfig:
     wiki_dir: Path
 
 
-class FakeCerebrasClient:
-    instances: ClassVar[list[FakeCerebrasClient]] = []
+class FakeDeepSeekClient:
+    instances: ClassVar[list[FakeDeepSeekClient]] = []
+    router_response: ClassVar[str] = '{"pages":["walker"]}'
+    stream_chunks: ClassVar[tuple[str, ...]] = ("平台名称是慧思", "开物平台。")
     timeout = 2
 
     def __init__(self) -> None:
@@ -373,37 +354,39 @@ class FakeCerebrasClient:
 
     def complete(self, system: str, user: str) -> str:
         self.calls.append((system, user))
-        return '{"pages":["walker"]}'
+        return self.router_response
 
     def stream(self, system: str, user: str):
         self.calls.append((system, user))
-        yield "平台名称是慧思"
-        yield "开物平台。"
+        yield from self.stream_chunks
 
 
 @pytest.mark.anyio
-async def test_streaming_works_without_python_311_asyncio_timeout(monkeypatch) -> None:
-    monkeypatch.delattr(asyncio, "timeout", raising=False)
+async def test_stream_bridge_works_with_one_default_executor_thread() -> None:
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1))
     chunks: list[str] = []
 
     async def on_token(token: str) -> None:
         chunks.append(token)
 
-    answer = await qa_api._stream_in_thread(iter(("one", "two")), on_token)
+    answer = await qa_api._stream_in_thread(
+        iter(("one", "two")), on_token, timeout=2
+    )
 
     assert answer == "onetwo"
     assert chunks == ["one", "two"]
 
 
 @pytest.mark.anyio
-async def test_retrieval_api_preserves_language_team_history_and_response_boundary(
+async def test_deepseek_retrieval_preserves_language_team_history_and_response_boundary(
     monkeypatch, tmp_path: Path
 ) -> None:
     write(tmp_path / "index.md", "[[walker]] [[unrelated]]")
     write(tmp_path / "concepts" / "walker.md", "Walker evidence")
     write(tmp_path / "concepts" / "unrelated.md", "Other evidence")
-    FakeCerebrasClient.instances.clear()
-    monkeypatch.setattr(qa_api, "CerebrasClient", FakeCerebrasClient)
+    FakeDeepSeekClient.instances.clear()
+    monkeypatch.setattr(qa_api, "DeepSeekClient", FakeDeepSeekClient)
     monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
     chunks: list[str] = []
 
@@ -419,18 +402,16 @@ async def test_retrieval_api_preserves_language_team_history_and_response_bounda
         guard_decision=GuardDecision(False, "none", "zh-CN"),
     )
 
-    client = FakeCerebrasClient.instances[0]
-    router_prompt = client.calls[0][1]
-    answer_prompt = client.calls[1][1]
-    assert "SELECTED ROBOT OR TOPIC: walker_s2" in router_prompt
-    assert "它是什么？" in router_prompt
-    assert "MOST RECENT TURN" in router_prompt
-    assert "primary source for resolving an omitted subject" in router_prompt
-    assert "RETRIEVABLE PAGE SLUGS" in router_prompt
-    assert "ANSWER LANGUAGE: Simplified Chinese (简体中文)" in answer_prompt
-    assert "MOST RECENT TURN" in answer_prompt
-    assert "Walker evidence" in answer_prompt
-    assert "Other evidence" not in answer_prompt
+    client = FakeDeepSeekClient.instances[0]
+    planner_prompt = client.calls[0][1]
+    reasoner_prompt = client.calls[1][1]
+    answer_prompt = client.calls[2][1]
+    assert "Selected scope: walker_s2" in planner_prompt
+    assert "它是什么？" in planner_prompt
+    assert "Current question" in planner_prompt
+    assert "Choose only paths from candidates" in reasoner_prompt
+    assert "Answer language: zh-CN" in answer_prompt
+    assert "CURRENT QUESTION" not in answer_prompt
     assert "concepts/walker.md" not in answer_prompt
     assert "WIKI PAGE: walker" not in answer_prompt
     assert answer == (
@@ -442,7 +423,7 @@ async def test_retrieval_api_preserves_language_team_history_and_response_bounda
 
 
 @pytest.mark.anyio
-async def test_cerebras_failure_becomes_localized_user_safe_response(monkeypatch) -> None:
+async def test_deepseek_failure_becomes_localized_user_safe_response(monkeypatch) -> None:
     async def fail(*_args, **_kwargs):
         raise qa_api.QAAPIError("provider key was rejected")
 
@@ -466,9 +447,44 @@ async def test_cerebras_failure_becomes_localized_user_safe_response(monkeypatch
 
 
 @pytest.mark.anyio
-async def test_predefined_response_does_not_call_cerebras(monkeypatch) -> None:
+async def test_real_deepseek_client_failure_is_called_once_and_hidden(
+    monkeypatch, tmp_path: Path
+) -> None:
+    write(tmp_path / "index.md", "[[walker]]")
+    write(tmp_path / "walker.md", "Walker evidence")
+
+    class FailingDeepSeekClient(FakeDeepSeekClient):
+        def complete(self, system: str, user: str) -> str:
+            self.calls.append((system, user))
+            raise RuntimeError("secret provider failure detail")
+
+    FailingDeepSeekClient.instances.clear()
+    monkeypatch.setattr(qa_api, "DeepSeekClient", FailingDeepSeekClient)
+    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
+    chunks: list[str] = []
+
+    async def on_chunk(text: str, _thinking: str, _tokens: int) -> None:
+        chunks.append(text)
+
+    answer = await qa_api.run_qa_api_stream(
+        "How do I start the robot?",
+        team="walker_s2",
+        language="en",
+        on_chunk=on_chunk,
+        guard_decision=GuardDecision(False, "none", "en"),
+    )
+
+    assert len(FailingDeepSeekClient.instances) == 1
+    assert len(FailingDeepSeekClient.instances[0].calls) == 1
+    assert "secret provider failure detail" not in answer
+    assert answer == GENERIC_ERROR_RESPONSES["en"] + "\n\n" + AI_NOTICE_RESPONSES["en"]
+    assert chunks == [answer]
+
+
+@pytest.mark.anyio
+async def test_predefined_response_does_not_call_deepseek(monkeypatch) -> None:
     async def forbidden(*_args, **_kwargs):
-        raise AssertionError("predefined response must not call Cerebras")
+        raise AssertionError("predefined response must not call DeepSeek")
 
     monkeypatch.setattr(qa_api, "_retrieve_and_stream", forbidden)
     chunks: list[str] = []
@@ -595,28 +611,19 @@ def test_unsupported_synthesis_strips_official_framing() -> None:
 
 
 @pytest.mark.anyio
-async def test_provider_stream_never_exposes_unsupported_synthesis(
+async def test_deepseek_stream_never_exposes_unsupported_synthesis(
     monkeypatch, tmp_path: Path
 ) -> None:
     write(tmp_path / "index.md", "[[walker]]")
     write(tmp_path / "concepts" / "walker.md", "Walker S2 directly supported evidence")
     monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    monkeypatch.setattr(
-        qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate("CN", False)
-    )
-    calls: list[str] = []
-
-    class UnsupportedConclusionProvider(FakeProvider):
-        def stream(self, _system: str, _user: str):
-            self.calls.append(f"{self.name}:stream")
+    class UnsupportedConclusionProvider(FakeDeepSeekClient):
+        def stream(self, system: str, user: str):
+            self.calls.append((system, user))
             yield "## 版本一致性\n\n配置相同。\n\n核"
             yield "心结论\n\nWalker S2 Edu 本质上是增强版，性价比更高。"
 
-    monkeypatch.setattr(
-        qa_api,
-        "_provider_client",
-        lambda name: UnsupportedConclusionProvider(name, calls),
-    )
+    monkeypatch.setattr(qa_api, "DeepSeekClient", UnsupportedConclusionProvider)
     visible: list[str] = []
 
     async def on_token(text: str) -> None:
@@ -640,7 +647,6 @@ async def test_provider_stream_never_exposes_unsupported_synthesis(
     assert "本质上" not in answer
     assert "性价比更高" not in streamed
     assert "性价比更高" not in answer
-    assert calls == ["deepseek:complete", "deepseek:stream"]
 
 
 def test_public_qa_manager_has_no_claude_code_answer_path() -> None:
@@ -731,240 +737,6 @@ def test_stream_filter_keeps_split_reference_private_until_closed(
     assert "Next sentence." in visible
 
 
-def test_circuit_breaker_uses_one_probe_and_recovers() -> None:
-    now = [100.0]
-    circuit = qa_api.ProviderCircuitBreaker(300, clock=lambda: now[0])
-    first = circuit.select()
-    circuit.failure(first)
-
-    assert circuit.select().provider == "deepseek"
-    now[0] = 401.0
-    probe = circuit.select()
-    concurrent = circuit.select()
-    assert probe == qa_api.CircuitDecision("cerebras", 1, probe=True)
-    assert concurrent.provider == "deepseek"
-
-    circuit.success(probe)
-    assert circuit.select().provider == "cerebras"
-
-
-class FakeProvider:
-    timeout = 2
-
-    def __init__(
-        self,
-        name: str,
-        calls: list[str],
-        *,
-        fail_complete: bool = False,
-        fail_stream: bool = False,
-        empty_stream: bool = False,
-        router_response: str = '{"pages":["walker"]}',
-    ) -> None:
-        self.name = name
-        self.calls = calls
-        self.fail_complete = fail_complete
-        self.fail_stream = fail_stream
-        self.empty_stream = empty_stream
-        self.router_response = router_response
-
-    def complete(self, _system: str, _user: str) -> str:
-        self.calls.append(f"{self.name}:complete")
-        if self.fail_complete:
-            raise RuntimeError("provider unavailable")
-        return self.router_response
-
-    def stream(self, _system: str, _user: str):
-        self.calls.append(f"{self.name}:stream")
-        if self.empty_stream:
-            return
-        yield f"{self.name} answer"
-        if self.fail_stream:
-            yield ". " + "x" * 700
-            raise RuntimeError("stream interrupted")
-
-
-@pytest.mark.anyio
-async def test_cerebras_failure_retries_complete_request_with_deepseek(
-    monkeypatch, tmp_path: Path
-) -> None:
-    write(tmp_path / "index.md", "[[walker]]")
-    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
-    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    calls: list[str] = []
-
-    def provider(name: str):
-        return FakeProvider(name, calls, fail_complete=name == "cerebras")
-
-    monkeypatch.setattr(qa_api, "_provider_client", provider)
-    chunks: list[str] = []
-    resets: list[bool] = []
-
-    async def on_token(text: str) -> None:
-        chunks.append(text)
-
-    async def on_reset() -> None:
-        chunks.clear()
-        resets.append(True)
-
-    answer = await qa_api._retrieve_and_stream(
-        "What is Walker?",
-        team="walker_s2",
-        language="en",
-        history=(),
-        on_token=on_token,
-        on_reset=on_reset,
-    )
-
-    assert answer == "deepseek answer"
-    assert "".join(chunks) == answer
-    assert resets == [True]
-    assert calls == ["cerebras:complete", "deepseek:complete", "deepseek:stream"]
-    assert qa_api._CEREBRAS_CIRCUIT.select().provider == "deepseek"
-
-
-@pytest.mark.anyio
-async def test_empty_cerebras_answer_is_malformed_and_uses_deepseek(
-    monkeypatch, tmp_path: Path
-) -> None:
-    write(tmp_path / "index.md", "[[walker]]")
-    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
-    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    calls: list[str] = []
-
-    def provider(name: str):
-        return FakeProvider(name, calls, empty_stream=name == "cerebras")
-
-    monkeypatch.setattr(qa_api, "_provider_client", provider)
-
-    async def discard(_text: str) -> None:
-        return None
-
-    answer = await qa_api._retrieve_and_stream(
-        "What is Walker?",
-        team="walker_s2",
-        language="en",
-        history=(),
-        on_token=discard,
-        on_reset=lambda: discard(""),
-    )
-
-    assert answer == "deepseek answer"
-    assert calls == [
-        "cerebras:complete",
-        "cerebras:stream",
-        "deepseek:complete",
-        "deepseek:stream",
-    ]
-
-
-@pytest.mark.anyio
-async def test_midstream_failure_clears_primary_text_before_deepseek(
-    monkeypatch, tmp_path: Path
-) -> None:
-    write(tmp_path / "index.md", "[[walker]]")
-    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
-    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    calls: list[str] = []
-
-    def provider(name: str):
-        return FakeProvider(name, calls, fail_stream=name == "cerebras")
-
-    monkeypatch.setattr(qa_api, "_provider_client", provider)
-    visible: list[str] = []
-    reset_snapshots: list[str] = []
-
-    async def on_token(text: str) -> None:
-        visible.append(text)
-
-    async def on_reset() -> None:
-        reset_snapshots.append("".join(visible))
-        visible.clear()
-
-    answer = await qa_api._retrieve_and_stream(
-        "What is Walker?",
-        team="walker_s2",
-        language="en",
-        history=(),
-        on_token=on_token,
-        on_reset=on_reset,
-    )
-
-    assert reset_snapshots and "cerebras answer" in reset_snapshots[0]
-    assert answer == "deepseek answer"
-    assert "".join(visible) == "deepseek answer"
-    assert calls == [
-        "cerebras:complete",
-        "cerebras:stream",
-        "deepseek:complete",
-        "deepseek:stream",
-    ]
-
-
-@pytest.mark.anyio
-async def test_open_circuit_bypasses_cerebras(monkeypatch, tmp_path: Path) -> None:
-    write(tmp_path / "index.md", "[[walker]]")
-    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
-    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    calls: list[str] = []
-    monkeypatch.setattr(
-        qa_api,
-        "_provider_client",
-        lambda name: FakeProvider(name, calls),
-    )
-    decision = qa_api._CEREBRAS_CIRCUIT.select()
-    qa_api._CEREBRAS_CIRCUIT.failure(decision)
-
-    async def discard(_text: str) -> None:
-        return None
-
-    answer = await qa_api._retrieve_and_stream(
-        "What is Walker?",
-        team="walker_s2",
-        language="en",
-        history=(),
-        on_token=discard,
-        on_reset=lambda: discard(""),
-    )
-
-    assert answer == "deepseek answer"
-    assert calls == ["deepseek:complete", "deepseek:stream"]
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("country_code", ["CN", "TW", "HK", "SG"])
-async def test_blocked_egress_region_never_initializes_cerebras(
-    monkeypatch, tmp_path: Path, country_code: str
-) -> None:
-    write(tmp_path / "index.md", "[[walker]]")
-    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
-    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    monkeypatch.setattr(
-        qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate(country_code, False)
-    )
-    calls: list[str] = []
-    monkeypatch.setattr(
-        qa_api,
-        "_provider_client",
-        lambda name: FakeProvider(name, calls),
-    )
-
-    async def discard(_text: str) -> None:
-        return None
-
-    answer = await qa_api._retrieve_and_stream(
-        "What is Walker?",
-        team="walker_s2",
-        language="en",
-        history=(),
-        on_token=discard,
-        on_reset=lambda: discard(""),
-    )
-
-    assert answer == "deepseek answer"
-    assert calls == ["deepseek:complete", "deepseek:stream"]
-
-
 @pytest.mark.anyio
 async def test_deepseek_router_mismatch_uses_deterministic_wiki_fallback(
     monkeypatch, tmp_path: Path
@@ -973,26 +745,16 @@ async def test_deepseek_router_mismatch_uses_deterministic_wiki_fallback(
     write(tmp_path / "concepts" / "walker-s2.md", "Walker S2 navigation evidence")
     write(tmp_path / "concepts" / "unrelated.md", "Unrelated product")
     monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    monkeypatch.setattr(
-        qa_api, "_CEREBRAS_REGION_GATE", StaticRegionGate("CN", False)
-    )
-    calls: list[str] = []
     captured_prompts: list[str] = []
 
-    class CapturingProvider(FakeProvider):
+    class CapturingProvider(FakeDeepSeekClient):
+        router_response = '{"pages":["invented-page-that-does-not-exist"]}'
+
         def stream(self, _system: str, user: str):
             captured_prompts.append(user)
             yield "deepseek answer"
 
-    monkeypatch.setattr(
-        qa_api,
-        "_provider_client",
-        lambda name: CapturingProvider(
-            name,
-            calls,
-            router_response='{"pages":["invented-page-that-does-not-exist"]}',
-        ),
-    )
+    monkeypatch.setattr(qa_api, "DeepSeekClient", CapturingProvider)
 
     async def discard(_text: str) -> None:
         return None
@@ -1012,16 +774,12 @@ async def test_deepseek_router_mismatch_uses_deterministic_wiki_fallback(
 
 
 @pytest.mark.anyio
-async def test_local_wiki_failure_does_not_invoke_either_provider(
+async def test_local_wiki_failure_does_not_invoke_deepseek(
     monkeypatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
     calls: list[str] = []
-    monkeypatch.setattr(
-        qa_api,
-        "_provider_client",
-        lambda name: calls.append(name),
-    )
+    monkeypatch.setattr(qa_api, "DeepSeekClient", lambda: calls.append("deepseek"))
 
     async def discard(_text: str) -> None:
         return None
@@ -1037,72 +795,3 @@ async def test_local_wiki_failure_does_not_invoke_either_provider(
         )
 
     assert calls == []
-
-
-@pytest.mark.anyio
-async def test_both_provider_failures_return_only_localized_generic_response(
-    monkeypatch, tmp_path: Path
-) -> None:
-    write(tmp_path / "index.md", "[[walker]]")
-    write(tmp_path / "concepts" / "walker.md", "Walker evidence")
-    monkeypatch.setattr(qa_api, "get_team_config", lambda _team: FakeTeamConfig(tmp_path))
-    calls: list[str] = []
-    monkeypatch.setattr(
-        qa_api,
-        "_provider_client",
-        lambda name: FakeProvider(name, calls, fail_complete=True),
-    )
-    chunks: list[str] = []
-
-    async def on_chunk(text: str, _thinking: str, _tokens: int) -> None:
-        chunks.append(text)
-
-    answer = await qa_api.run_qa_api_stream(
-        "What is Walker?",
-        team="walker_s2",
-        language="en",
-        on_chunk=on_chunk,
-        guard_decision=GuardDecision(False, "none", "en"),
-    )
-
-    assert answer == GENERIC_ERROR_RESPONSES["en"] + "\n\n" + AI_NOTICE_RESPONSES["en"]
-    assert chunks == [answer]
-    assert calls == ["cerebras:complete", "deepseek:complete"]
-    assert "provider unavailable" not in answer
-
-
-@pytest.mark.anyio
-async def test_public_stream_replaces_partial_primary_answer_before_fallback(
-    monkeypatch,
-) -> None:
-    primary = "Primary partial " + "x" * 600
-
-    async def failover(*_args, on_token, on_reset, **_kwargs):
-        await on_token(primary)
-        await on_reset()
-        await on_token("Fallback answer")
-        return "Fallback answer"
-
-    monkeypatch.setattr(qa_api, "_retrieve_and_stream", failover)
-    chunks: list[str] = []
-    replacements: list[str] = []
-
-    async def on_chunk(text: str, _thinking: str, _tokens: int) -> None:
-        chunks.append(text)
-
-    async def on_replace(text: str) -> None:
-        replacements.append(text)
-
-    answer = await qa_api.run_qa_api_stream(
-        "What is Walker?",
-        team="walker_s2",
-        language="en",
-        on_chunk=on_chunk,
-        on_replace=on_replace,
-        guard_decision=GuardDecision(False, "none", "en"),
-    )
-
-    assert replacements == [""]
-    assert chunks[0].startswith("Primary partial")
-    assert chunks[-1].startswith("Fallback answer")
-    assert answer == "Fallback answer\n\n" + AI_NOTICE_RESPONSES["en"]

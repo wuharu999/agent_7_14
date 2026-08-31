@@ -15,10 +15,10 @@ Browser
     -> Worker Manager on a new cloud computer
     -> local LLM Wiki project
     -> index-constrained Wiki retrieval
-    -> Cerebras chat-completion API with DeepSeek V4 Flash failover for QA
+    -> DeepSeek V4 Flash chat-completion API for QA
 ```
 
-The ECS is the public-facing gateway. The Worker computer owns the real knowledge-base files, runs LLM Wiki, performs bounded retrieval, and calls Cerebras with DeepSeek V4 Flash failover for public QA.
+The ECS is the public-facing gateway. The Worker computer owns the real knowledge-base files, runs LLM Wiki, performs bounded retrieval, and calls DeepSeek V4 Flash for public QA.
 
 ---
 
@@ -76,7 +76,8 @@ The latest intended product includes all of the following.
   - Spanish
 - Send the selected language with each question.
 - The UI language syncs automatically to the selected answer language.
-- The active Cerebras or DeepSeek provider must answer in the selected language.
+- DeepSeek must answer in the selected language.
+- Grill Me, scenario-session, capability-match, and scenario-report routes and UI are retired and must remain absent.
 - Public QA must not expose internal retrieval steps, launch local coding agents, read local agent instruction files, or search original source files.
 - Rate limiting applies on the QA page (10 req/min, 50 req/hour per IP).
 - Internal provider errors are logged internally and a generic translated message is shown to users.
@@ -214,25 +215,19 @@ The web must surface LLM Wiki errors such as DeepSeek network failures without r
 The normal Worker configuration is:
 
 ```env
-CEREBRAS_API_KEY=<Worker-only secret>
-CEREBRAS_MODEL=gpt-oss-120b
-CEREBRAS_TIMEOUT=240
-DEEPSEEK_API_KEY=<Worker-only fallback secret>
+DEEPSEEK_API_KEY=<Worker-only secret>
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
-QA_PROVIDER_COOLDOWN_SECONDS=300
-CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
-CEREBRAS_REGION_CHECK_TIMEOUT=5
-CEREBRAS_REGION_CACHE_SECONDS=300
-CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 WIKI_QA_MAX_PAGES=8
 WIKI_QA_MAX_PAGE_CHARS=24000
 CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
 
-The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the router sees `wiki/index.md` plus at most 20 filename/path matches for the selected robot/topic when the index is stale, Python validates returned slugs and reads only those permitted pages, and a second provider call streams the answer. Python safely normalizes path/case variants and uses deterministic Wiki-only selection if DeepSeek returns no usable slug. Cerebras is primary only after a fail-closed outbound-country check; permitted routes are rechecked before each Cerebras request, while CN/TW/HK/SG or an unverifiable region skips Cerebras and is cached briefly. Any Cerebras API failure opens a five-minute circuit and retries the complete request through DeepSeek V4 Flash. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
+The Worker implementation follows the read-only retrieval pattern demonstrated in `$HOME/Documents/agent_tests`: the DeepSeek router sees `wiki/index.md` plus at most 20 filename/path matches for the selected robot/topic when the index is stale, Python validates returned slugs and reads only those permitted pages, and a second DeepSeek call streams the answer. Python safely normalizes path/case variants and uses deterministic Wiki-only selection if DeepSeek returns no usable slug. Agent1 must not modify or depend on runtime files inside `agent_tests`. The Worker injects bounded recent history, answer language, and the selected robot/topic into its own prompts.
+
+Wiki images are filtered at the public QA boundary without mutating generated Wiki files. Selection stays within permitted Wiki pages and requires an explicit Markdown/Obsidian/HTML reference, meaningful alt text or section context, question relevance, final-answer evidence, safe paths, supported file types, dimensions, size, decorative-image, and duplicate checks. Unreferenced PDF-extracted media such as generic `img-N.png` files may remain on disk for auditability but must never be attached, even for explicit image requests. The normal QA path makes no provider image-classification call; any future optional classifier must be one bounded text-only call over descriptions/alt text and the final answer, with deterministic fail-closed behavior.
 
 Public QA is API-only. It must not launch local coding agents, import an agent
 runner, read local agent instruction files, or fall back to `raw/sources/`. Terminology rewriting
@@ -265,7 +260,7 @@ Public QA output requirements:
 
 - Maintain the outbound WebSocket connection to ECS
 - QA queues and QA lane routing
-- Perform bounded Wiki retrieval and call Cerebras with DeepSeek fallback
+- Perform bounded Wiki retrieval and call DeepSeek
 - Download uploaded files
 - Safe ZIP extraction
 - Atomic source publication
@@ -321,24 +316,13 @@ TRASH_DIR=$HOME/Documents/agent_7_14/agent1/agent/.agent1-trash
 QA_WORKERS=3
 DOWNLOAD_WORKERS=2
 FILE_OPERATION_WORKERS=1
-CAPABILITY_CATALOG_WORKERS=2
-CAPABILITY_CATALOG_QUEUE_MAX=8
-CAPABILITY_CATALOG_BATCH_CONCURRENCY=4
 FILE_MANAGER_MAX_ENTRIES=10000
-CEREBRAS_API_KEY=<Worker-only secret>
-CEREBRAS_MODEL=gpt-oss-120b
-CEREBRAS_TIMEOUT=240
-DEEPSEEK_API_KEY=<Worker-only fallback secret>
+DEEPSEEK_API_KEY=<Worker-only secret>
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
 DEEPSEEK_STRUCTURED_RETRIES=1
 DEEPSEEK_TRANSPORT_RETRIES=1
-QA_PROVIDER_COOLDOWN_SECONDS=300
-CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
-CEREBRAS_REGION_CHECK_TIMEOUT=5
-CEREBRAS_REGION_CACHE_SECONDS=300
-CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 WIKI_QA_MAX_PAGES=8
 WIKI_QA_MAX_PAGE_CHARS=24000
 DOWNLOAD_TIMEOUT=1800
@@ -617,15 +601,6 @@ The Worker must send a status update when any of these change, even if the broad
 - completion receipt
 - queue timestamp
 
-### DeepSeek scenario operations
-
-Scenario clarification, feasibility analysis, capability catalog
-organization, prompt classification, and contradiction review use the shared
-tool-free DeepSeek API client. Python owns retrieval, validation, persistence,
-hard gates, and publication.
-
----
-
 ## Development workflow for Codex
 
 For every task:
@@ -639,6 +614,15 @@ For every task:
 7. Update documentation when configuration or deployment changes.
 8. Produce a release ZIP without secrets or runtime data.
 9. Provide an exact upgrade path preserving `.env`, databases, virtual environments, and the live LLM Wiki project.
+
+### Project subagents
+
+Reusable roles are discovered from `.codex/agents/` and locked to `gpt-5.6-luna`:
+
+- `grill-session-removal`: retired Grill/session surface and compatibility cleanup.
+- `deepseek-only-provider-migration`: DeepSeek-only QA provider maintenance.
+- `wiki-image-curator`: deterministic Wiki image relevance and safety.
+- `final-integration-tester`: read-only final compatibility and regression evidence.
 
 Do not rewrite the entire project unless explicitly directed.
 
@@ -743,9 +727,10 @@ Do not point development tests at the live ECS or live Worker unless the user ex
 - eight languages transmitted and honored
 - router call receives the Wiki index, selected robot/topic, bounded history, and at most 20 topic-matched stale-index slugs
 - router-selected slugs are validated before Python reads local pages
-- answer call includes only selected pages and uses Cerebras or the configured DeepSeek fallback
+- answer call includes only selected pages and uses DeepSeek
 - answers contain no Wiki slugs, local paths, retrieval citations, or source lists
-- one Cerebras failure opens a five-minute circuit with one half-open recovery probe
+- DeepSeek failures return only the localized generic response and are logged internally
+- useful referenced Wiki images are retained while decorative, duplicate, unsafe, and irrelevant images are excluded
 - no permission-request text in normal answer
 - timeout and nonzero exit handling
 
@@ -844,7 +829,7 @@ Existing ecs/.env and SQLite data are preserved.
 A new Worker secret is identical on ECS and Worker.
 The old Worker is stopped.
 The new Worker is connected.
-The Worker has valid Cerebras and DeepSeek keys; live QA retrieves permitted Wiki pages, streams without internal references, and fails over automatically.
+The Worker has a valid DeepSeek key; live QA retrieves permitted Wiki pages and streams without internal references.
 LLM Wiki opens the migrated project on the new computer.
 Source Watch and Auto Ingest are enabled.
 Automatic Worker rescan is disabled.

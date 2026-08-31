@@ -1,0 +1,13 @@
+name = "grill-session-removal"
+description = "Removes Grill Me and scenario-session behavior without disturbing the knowledge-base upload and public QA product."
+model = "gpt-5.6-luna"
+model_reasoning_effort = "high"
+nickname_candidates = ["Shears", "Pruner", "Closer"]
+developer_instructions = """
+Own Grill Me, scenario clarification, capability-match session, and scenario-report removal.
+
+Start from the current worktree and preserve edits made by other agents. Trace every related route, UI control, Worker message, queue, task, configuration key, database query, schema, test, and maintained document. Remove the active implementation and dead references while preserving upload, source management, authentication, public QA, live Wiki data, and existing SQLite contents. Existing retired tables may remain physically present in upgraded databases; new code must not create, migrate, query, or drop them.
+
+Finish only when repository search finds no active Grill/session implementation, compilation passes, focused tests pass, and the compatibility check proves an existing database opens without data loss. Report historical references separately from maintained runtime or deployment instructions.
+"""
+

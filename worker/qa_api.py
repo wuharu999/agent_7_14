@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
-import queue
 import re
-import threading
-import time
 import unicodedata
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypeVar
 from urllib.parse import unquote
 
 from worker.qa_response import (
@@ -23,24 +21,15 @@ from worker.qa_response import (
     with_ai_notice,
 )
 from worker.config import (
-    CEREBRAS_API_KEY,
-    CEREBRAS_BLOCKED_COUNTRIES,
-    CEREBRAS_MODEL,
-    CEREBRAS_REGION_CACHE_SECONDS,
-    CEREBRAS_REGION_CHECK_TIMEOUT,
-    CEREBRAS_REGION_CHECK_URL,
-    CEREBRAS_TIMEOUT,
     DEEPSEEK_API_KEY,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_MODEL,
     DEEPSEEK_TIMEOUT,
-    QA_PROVIDER_COOLDOWN_SECONDS,
     WIKI_QA_MAX_PAGE_CHARS,
     WIKI_QA_MAX_PAGES,
     get_team_config,
 )
 from worker.conversation_store import ConversationTurn
-from worker.egress_region import EgressRegionGate
 from worker.prompt_security import GuardDecision, refusal_text
 from worker.qa_images import attach_relevant_qa_images, strip_qa_image_markdown
 from worker.terminology import (
@@ -98,7 +87,11 @@ UNSUPPORTED_SYNTHESIS_CLAIM_RE = re.compile(
     r"|\bwithout[ \t]+(?:supporting[ \t]+)?evidence\b",
     re.IGNORECASE,
 )
-_STREAM_QUEUE_SIZE = 100
+_BlockingResult = TypeVar("_BlockingResult")
+_BLOCKING_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=8,
+    thread_name_prefix="qa-blocking",
+)
 _MAX_TOPIC_SUPPLEMENTAL_PAGES = 20
 _MAX_CROSS_ROBOT_PAGES = 2
 _ROUTER_MAX_PAGES = 5
@@ -240,73 +233,6 @@ class ChatProvider(Protocol):
     def complete(self, system: str, user: str) -> str: ...
 
     def stream(self, system: str, user: str) -> Iterator[str]: ...
-
-
-@dataclass(frozen=True)
-class CircuitDecision:
-    provider: str
-    generation: int
-    probe: bool = False
-
-
-class ProviderCircuitBreaker:
-    """Process-wide Cerebras circuit with a single half-open probe."""
-
-    def __init__(
-        self,
-        cooldown_seconds: int,
-        *,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        self.cooldown_seconds = cooldown_seconds
-        self.clock = clock
-        self._lock = threading.Lock()
-        self._opened_until = 0.0
-        self._probe_in_flight = False
-        self._generation = 0
-
-    def select(self) -> CircuitDecision:
-        now = self.clock()
-        with self._lock:
-            if self._opened_until == 0:
-                return CircuitDecision("cerebras", self._generation)
-            if now < self._opened_until:
-                return CircuitDecision("deepseek", self._generation)
-            if self._probe_in_flight:
-                return CircuitDecision("deepseek", self._generation)
-            self._probe_in_flight = True
-            return CircuitDecision("cerebras", self._generation, probe=True)
-
-    def success(self, decision: CircuitDecision) -> None:
-        if decision.provider != "cerebras":
-            return
-        with self._lock:
-            if decision.probe and decision.generation == self._generation:
-                self._opened_until = 0
-                self._probe_in_flight = False
-
-    def failure(self, decision: CircuitDecision) -> None:
-        if decision.provider != "cerebras":
-            return
-        with self._lock:
-            self._generation += 1
-            self._opened_until = self.clock() + self.cooldown_seconds
-            self._probe_in_flight = False
-
-    def reset(self) -> None:
-        with self._lock:
-            self._opened_until = 0
-            self._probe_in_flight = False
-            self._generation += 1
-
-
-_CEREBRAS_CIRCUIT = ProviderCircuitBreaker(QA_PROVIDER_COOLDOWN_SECONDS)
-_CEREBRAS_REGION_GATE = EgressRegionGate(
-    check_url=CEREBRAS_REGION_CHECK_URL,
-    timeout=CEREBRAS_REGION_CHECK_TIMEOUT,
-    cache_seconds=CEREBRAS_REGION_CACHE_SECONDS,
-    blocked_countries=CEREBRAS_BLOCKED_COUNTRIES,
-)
 
 
 @dataclass(frozen=True)
@@ -822,41 +748,6 @@ class RetrievalReferenceStreamFilter:
         return safe
 
 
-class CerebrasClient:
-    def __init__(self, model: str = CEREBRAS_MODEL):
-        if not CEREBRAS_API_KEY:
-            raise QAAPIError("CEREBRAS_API_KEY is not configured")
-        try:
-            from cerebras.cloud.sdk import Cerebras
-        except ImportError as exc:
-            raise QAAPIError("cerebras-cloud-sdk is not installed") from exc
-        self.client = Cerebras(api_key=CEREBRAS_API_KEY, timeout=float(CEREBRAS_TIMEOUT))
-        self.model = model
-        self.timeout = CEREBRAS_TIMEOUT
-
-    def complete(self, system: str, user: str) -> str:
-        result = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=0,
-        )
-        content = result.choices[0].message.content
-        if not content:
-            raise QAAPIError("Cerebras returned an empty response")
-        return str(content)
-
-    def stream(self, system: str, user: str) -> Iterator[str]:
-        result = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=0,
-            stream=True,
-        )
-        for chunk in result:
-            if chunk.choices and (content := chunk.choices[0].delta.content):
-                yield str(content)
-
-
 class DeepSeekClient:
     def __init__(self, model: str = DEEPSEEK_MODEL):
         if not DEEPSEEK_API_KEY:
@@ -1072,69 +963,58 @@ def _answer_prompt(
     )
 
 
+async def _run_blocking(
+    function: Callable[..., _BlockingResult],
+    *args: object,
+    **kwargs: object,
+) -> _BlockingResult:
+    result = _BLOCKING_EXECUTOR.submit(function, *args, **kwargs)
+    try:
+        while not result.done():
+            await asyncio.sleep(0.005)
+        return result.result()
+    except asyncio.CancelledError:
+        result.cancel()
+        raise
+
+
 async def _stream_in_thread(
     iterator: Iterator[str],
     on_token: Callable[[str], Awaitable[None]],
     *,
-    timeout: int = CEREBRAS_TIMEOUT,
+    timeout: int = DEEPSEEK_TIMEOUT,
 ) -> str:
-    events: queue.Queue[tuple[str, object]] = queue.Queue(maxsize=_STREAM_QUEUE_SIZE)
-    stop = threading.Event()
+    sentinel = object()
 
-    def put(kind: str, value: object) -> None:
-        while not stop.is_set():
-            try:
-                events.put((kind, value), timeout=0.25)
-                return
-            except queue.Full:
-                continue
-
-    def produce() -> None:
+    def next_token() -> object:
         try:
-            for token in iterator:
-                if stop.is_set():
-                    return
-                put("token", token)
-        except Exception as exc:  # SDK boundary; converted to a safe internal error.
-            put("error", exc)
-        finally:
-            put("done", None)
+            return next(iterator)
+        except StopIteration:
+            return sentinel
 
-    producer = asyncio.create_task(asyncio.to_thread(produce))
     answer_parts: list[str] = []
-
-    async def consume() -> None:
-        while True:
-            try:
-                kind, value = await asyncio.to_thread(events.get, True, 0.25)
-            except queue.Empty:
-                continue
-            if kind == "done":
-                break
-            if kind == "error":
-                raise QAAPIError("Provider streaming failed") from value
-            token = str(value)
-            answer_parts.append(token)
-            try:
-                await on_token(token)
-            except Exception as exc:
-                raise StreamCallbackError("Local streaming callback failed") from exc
-
     try:
-        await asyncio.wait_for(consume(), timeout=timeout)
-        await producer
+        async with asyncio.timeout(timeout):
+            while True:
+                value = await _run_blocking(next_token)
+                if value is sentinel:
+                    break
+                token = str(value)
+                answer_parts.append(token)
+                try:
+                    await on_token(token)
+                except Exception as exc:
+                    raise StreamCallbackError("Local streaming callback failed") from exc
     except asyncio.TimeoutError as exc:
         raise QAAPIError("Provider streaming timed out") from exc
-    finally:
-        stop.set()
-        if not producer.done():
-            producer.cancel()
+    except StreamCallbackError:
+        raise
+    except Exception as exc:
+        raise QAAPIError("Provider streaming failed") from exc
     return "".join(answer_parts)
 
 
 def _provider_client(provider: str) -> ChatProvider:
-    if provider == "cerebras":
-        return CerebrasClient()
     if provider == "deepseek":
         return DeepSeekClient()
     raise ValueError(f"Unknown QA provider: {provider}")
@@ -1158,7 +1038,7 @@ async def _run_provider(
 
     try:
         router_response = await asyncio.wait_for(
-            asyncio.to_thread(
+            _run_blocking(
                 client.complete,
                 ROUTER_SYSTEM,
                 _router_prompt(question, team, history, wiki, candidate_slugs),
@@ -1170,9 +1050,7 @@ async def _run_provider(
     try:
         selected_slugs = parse_router_response(router_response, candidate_slugs)
     except QAAPIError as exc:
-        if provider != "deepseek":
-            raise ProviderCallError(provider, "retrieval response validation") from exc
-        selected_slugs = await asyncio.to_thread(
+        selected_slugs = await _run_blocking(
             wiki.fallback_slugs,
             question,
             team,
@@ -1185,7 +1063,7 @@ async def _run_provider(
             "DeepSeek retrieval response was unusable; selected Wiki pages deterministically"
         )
 
-    selected_slugs = await asyncio.to_thread(
+    selected_slugs = await _run_blocking(
         wiki.prioritize_robot_scope,
         selected_slugs,
         question=question,
@@ -1194,7 +1072,7 @@ async def _run_provider(
         allowed_slugs=candidate_slugs,
     )
 
-    selected_slugs = await asyncio.to_thread(
+    selected_slugs = await _run_blocking(
         wiki.expand_slugs,
         selected_slugs,
         question=question,
@@ -1202,7 +1080,7 @@ async def _run_provider(
         history=history,
         allowed_slugs=candidate_slugs,
     )
-    selected_slugs = await asyncio.to_thread(
+    selected_slugs = await _run_blocking(
         wiki.prioritize_robot_scope,
         selected_slugs,
         question=question,
@@ -1212,7 +1090,7 @@ async def _run_provider(
         add_missing_target=False,
     )
 
-    documents = await asyncio.to_thread(
+    documents = await _run_blocking(
         wiki.load,
         selected_slugs,
         allowed_slugs=candidate_slugs,
@@ -1254,7 +1132,7 @@ async def _run_provider(
     tail = synthesis_filter.feed(reference_filter.finish()) + synthesis_filter.finish()
     if tail:
         await on_token(tail)
-    return await asyncio.to_thread(
+    return await _run_blocking(
         attach_relevant_qa_images,
         sanitized_answer,
         question,
@@ -1273,66 +1151,35 @@ async def _retrieve_and_stream(
     on_token: Callable[[str], Awaitable[None]],
     on_reset: Callable[[], Awaitable[None]],
 ) -> str:
-    wiki = await asyncio.to_thread(Wiki, get_team_config(team).wiki_dir)
-    region = await asyncio.to_thread(_CEREBRAS_REGION_GATE.decision)
-    if not region.cerebras_allowed:
-        log.info(
-            "Skipping Cerebras region=%s reason=%s; using DeepSeek",
-            region.country_code or "unknown",
-            region.reason,
-        )
-        return await _run_provider(
-            "deepseek",
-            wiki,
-            question,
-            team=team,
-            language=language,
-            history=history,
-            on_token=on_token,
-        )
-    decision = _CEREBRAS_CIRCUIT.select()
-    if decision.provider == "deepseek":
-        return await _run_provider(
-            "deepseek",
-            wiki,
-            question,
-            team=team,
-            language=language,
-            history=history,
-            on_token=on_token,
-        )
+    from worker.reasoned_qa import run_reasoned_qa_stream
 
-    try:
-        answer = await _run_provider(
-            "cerebras",
-            wiki,
-            question,
-            team=team,
-            language=language,
-            history=history,
-            on_token=on_token,
-        )
-    except ProviderCallError as exc:
-        _CEREBRAS_CIRCUIT.failure(decision)
-        log.warning(
-            "Cerebras QA failed during %s; using DeepSeek for %s seconds",
-            exc.stage,
-            QA_PROVIDER_COOLDOWN_SECONDS,
-            exc_info=True,
-        )
-        await on_reset()
-        return await _run_provider(
-            "deepseek",
-            wiki,
-            question,
-            team=team,
-            language=language,
-            history=history,
-            on_token=on_token,
-        )
-    else:
-        _CEREBRAS_CIRCUIT.success(decision)
-        return answer
+    # These existing filters are output-boundary safeguards, not retrieval.
+    # They keep a generated answer from exposing a path/reference or an
+    # unsupported conclusion even if a provider ignores its final prompt.
+    wiki = await _run_blocking(Wiki, get_team_config(team).wiki_dir)
+    reference_filter = RetrievalReferenceStreamFilter(wiki, wiki.retrievable_slugs)
+    synthesis_filter = UnsupportedSynthesisStreamFilter()
+
+    async def safe_token(text: str) -> None:
+        safe = synthesis_filter.feed(reference_filter.feed(text))
+        if safe:
+            await on_token(safe)
+
+    raw_answer = await run_reasoned_qa_stream(
+        question=question,
+        team=team,
+        language=language,
+        history=history,
+        wiki_root=get_team_config(team).wiki_dir,
+        provider=DeepSeekClient(),
+        on_token=safe_token,
+    )
+    tail = synthesis_filter.feed(reference_filter.finish()) + synthesis_filter.finish()
+    if tail:
+        await on_token(tail)
+    return strip_unsupported_synthesis(
+        strip_retrieval_references(raw_answer, wiki, wiki.retrievable_slugs)
+    ).strip()
 
 
 async def run_qa_api_stream(

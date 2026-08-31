@@ -13,7 +13,7 @@ Alibaba ECS — FastAPI
         │
         ▼
 Private Worker
-├── 3 QA consumers → bounded Wiki retrieval → Cerebras / DeepSeek fallback
+├── 3 QA consumers → bounded Wiki retrieval → DeepSeek V4 Flash
 ├── 2 async download consumers
 ├── 1 serialized file-operation consumer
 │   ├── list raw/sources
@@ -37,10 +37,9 @@ Existing LLM Wiki GUI
 - Only the Worker accesses local knowledge-base files.
 - The Worker WebSocket and download endpoint use the shared Worker secret.
 - Public QA uses validated index retrieval plus bounded robot/topic filename
-  discovery for stale indexes and sends only selected Wiki pages to the active
-  provider. Cerebras is primary only when the outbound-country gate is
-  permitted; CN/TW/HK/SG or an unverifiable region uses DeepSeek directly.
-  DeepSeek V4 Flash is also the circuit-breaker fallback. Public QA never launches local coding agents, reads local agent instruction files, or searches
+  discovery for stale indexes and sends only selected Wiki pages to DeepSeek V4
+  Flash. DeepSeek is the sole maintained public QA provider; there is no egress
+  gate or provider failover path. Public QA never launches local coding agents, reads local agent instruction files, or searches
   original files under `raw/sources/`.
 - High-confidence prompt attacks are refused locally. Only ambiguous suspicious
   messages enter the bounded zero-tool classifier; classifier failure closes

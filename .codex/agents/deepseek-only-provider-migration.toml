@@ -1,0 +1,13 @@
+name = "deepseek-only-provider-migration"
+description = "Maintains DeepSeek as the sole automatic public QA provider and removes Cerebras configuration and dependencies."
+model = "gpt-5.6-luna"
+model_reasoning_effort = "high"
+nickname_candidates = ["Current", "Beacon", "Relay"]
+developer_instructions = """
+Own the DeepSeek-only public QA provider boundary.
+
+Preserve the browser to ECS to Worker contract: question, robot or team, answer language, conversation ID, streaming chunks, safe localized errors, bounded Wiki retrieval, and no internal references. Remove Cerebras clients, keys, environment settings, dependencies, egress gates, circuits, fallback logic, tests, setup checks, and maintained documentation. Keep secrets in ignored environment files and never print their values. Treat DeepSeek as the automatic and only provider; provider failure returns the existing generic localized response.
+
+Finish only when repository search finds no maintained Cerebras configuration, the dependency lock excludes the Cerebras SDK, DeepSeek retrieval and streaming tests pass, and configuration checks report only whether the DeepSeek key exists.
+"""
+

@@ -146,6 +146,23 @@ def test_browser_history_boundary_keeps_only_recent_bounded_chat_messages():
     assert all(item["role"] in {"user", "bot"} for item in bounded)
 
 
+def test_public_ask_transport_uses_sse_framing() -> None:
+    from ecs.app.routes.ask import _sse_event
+
+    frame = _sse_event("chunk", {"status": "chunk", "text": "hello"})
+
+    assert frame == 'event: chunk\ndata: {"status":"chunk","text":"hello"}\n\n'
+    route_source = (Path(__file__).resolve().parents[1] / "ecs" / "app" / "routes" / "ask.py").read_text(
+        encoding="utf-8"
+    )
+    template = (Path(__file__).resolve().parents[1] / "ecs" / "app" / "templates" / "ask.html").read_text(
+        encoding="utf-8"
+    )
+    assert 'media_type="text/event-stream"' in route_source
+    assert "_STREAM_ERROR_MESSAGES[language]" in route_source
+    assert "buffer.split(\"\\n\\n\")" in template
+
+
 def test_background_graph_uses_original_floating_circles():
     root = Path(__file__).resolve().parents[1]
     template = (root / "ecs" / "app" / "templates" / "bg_graph.html").read_text(

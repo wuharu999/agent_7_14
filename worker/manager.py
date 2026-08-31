@@ -17,27 +17,12 @@ from worker.qa_response import (
     with_ai_notice,
 )
 from worker.qa_api import run_qa_api, run_qa_api_stream
-from worker.capability_matcher import (
-    analyze_scenario,
-    grill_scenario,
-)
 from worker.deepseek_client import create_deepseek_client
-from worker.scenario_retrieval import anonymous_text, retrieve_scenario_evidence
-from worker.scenario_clarification import (
-    answer_report_question,
-    clarify_scenario,
-    classify_followup_intent,
-)
 from worker.conversation_store import ConversationStore, ConversationTurn
 from worker.config import (
-    CAPABILITY_MATCH_QUEUE_MAX,
-    CAPABILITY_MATCH_WORKERS,
-    CLARIFICATION_QUEUE_MAX,
-    CLARIFICATION_WORKERS,
     DOWNLOAD_WORKERS,
     FILE_OPERATION_WORKERS,
     QA_WORKERS,
-    SCENARIO_RETRIEVAL_CANDIDATES,
     STAGING_DIR,
     ensure_directories,
     get_team_config,
@@ -103,19 +88,11 @@ class WorkerManager:
         self.conversations = ConversationStore()
         self.download_queue: asyncio.Queue[DownloadJob] = asyncio.Queue(maxsize=50)
         self.file_operation_queue: asyncio.Queue[FileOperationJob] = asyncio.Queue(maxsize=50)
-        self.capability_match_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
-            maxsize=CAPABILITY_MATCH_QUEUE_MAX
-        )
-        self.clarification_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
-            maxsize=CLARIFICATION_QUEUE_MAX
-        )
         self.outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
         self.websocket = None
         self.connected = asyncio.Event()
         self.active_download_ids: set[str] = set()
         self.active_command_ids: set[str] = set()
-        self.active_capability_match_ids: set[str] = set()
-        self.active_clarification_ids: set[str] = set()
         self.monitor_tasks: set[asyncio.Task[None]] = set()
         self.wiki_snapshot_refresh = asyncio.Event()
 
@@ -150,20 +127,6 @@ class WorkerManager:
             )
             for index in range(FILE_OPERATION_WORKERS)
         )
-        tasks.extend(
-            asyncio.create_task(
-                self.capability_match_worker(index + 1),
-                name=f"capability-match-{index + 1}",
-            )
-            for index in range(CAPABILITY_MATCH_WORKERS)
-        )
-        tasks.extend(
-            asyncio.create_task(
-                self.clarification_worker(index + 1),
-                name=f"scenario-clarification-{index + 1}",
-            )
-            for index in range(CLARIFICATION_WORKERS)
-        )
         await asyncio.gather(*tasks)
 
     async def emit(self, message: dict[str, Any]) -> None:
@@ -197,8 +160,8 @@ class WorkerManager:
                 async with websockets.connect(
                     url,
                     additional_headers={"X-Worker-Secret": WORKER_SHARED_SECRET},
-                    ping_interval=20,
-                    ping_timeout=10,
+                    ping_interval=5,
+                    ping_timeout=5,
                     proxy=None,
                     max_size=16 * 1024 * 1024,
                 ) as websocket:
@@ -269,56 +232,6 @@ class WorkerManager:
                 conversation_id,
                 lane + 1,
             )
-            return
-
-        if message_type in {
-            "grill_scenario",
-            "classify_scenario_message",
-            "answer_scenario_report_question",
-        }:
-            command_id = str(data.get("id") or "")
-            if not command_id or command_id in self.active_clarification_ids:
-                return
-            self.active_clarification_ids.add(command_id)
-            try:
-                self.clarification_queue.put_nowait(data)
-            except asyncio.QueueFull:
-                self.active_clarification_ids.discard(command_id)
-                await self.emit(
-                    {
-                        "type": (
-                            "scenario_message_classification_result"
-                            if message_type == "classify_scenario_message"
-                            else (
-                                "scenario_report_answer_result"
-                                if message_type == "answer_scenario_report_question"
-                                else "grill_scenario_result"
-                            )
-                        ),
-                        "id": command_id,
-                        "status": "failed",
-                        "error": "Scenario clarification queue is full; try again shortly",
-                    }
-                )
-            return
-
-        if message_type == "analyze_scenario":
-            command_id = str(data.get("id") or "")
-            if not command_id or command_id in self.active_capability_match_ids:
-                return
-            self.active_capability_match_ids.add(command_id)
-            try:
-                self.capability_match_queue.put_nowait(data)
-            except asyncio.QueueFull:
-                self.active_capability_match_ids.discard(command_id)
-                await self.emit(
-                    {
-                        "type": "capability_match_result",
-                        "id": command_id,
-                        "status": "failed",
-                        "error": "Scenario analysis queue is full; try again shortly",
-                    }
-                )
             return
 
         if message_type == "download_file":
@@ -548,7 +461,7 @@ class WorkerManager:
                             "status": "done",
                         })
                     except Exception as stream_exc:
-                        log.exception("Cerebras Wiki Q&A streaming failed")
+                        log.exception("DeepSeek Wiki Q&A streaming failed")
                         await self.emit({
                             "type": "qa_stream_chunk",
                             "id": job.job_id,
@@ -599,204 +512,6 @@ class WorkerManager:
                     )
             finally:
                 queue.task_done()
-
-    async def capability_match_worker(self, worker_number: int) -> None:
-        while True:
-            data = await self.capability_match_queue.get()
-            command_id = str(data.get("id") or "")
-            try:
-                log.info("Capability match worker %d handling %s", worker_number, command_id)
-                scenario_state = data.get("scenario_state")
-                model_id = str(data.get("model_id") or "")
-                evidence_snapshot = await asyncio.to_thread(
-                    retrieve_scenario_evidence,
-                    json.dumps(scenario_state, ensure_ascii=False)
-                    if isinstance(scenario_state, dict)
-                    else str(data.get("scenario_text") or ""),
-                    model_id,
-                    limit=SCENARIO_RETRIEVAL_CANDIDATES,
-                )
-                evidence_context = [
-                    {
-                        "document_id": item.document_id,
-                        "kind": item.kind,
-                        "text": anonymous_text(item.text),
-                    }
-                    for item in evidence_snapshot.documents
-                ]
-                await self.emit(
-                    {
-                        "type": "scenario_analysis_progress",
-                        "id": command_id,
-                        "stage": "evidence_retrieval",
-                        "status": "completed",
-                        "approved_facts": {
-                            "documents_checked": len(evidence_context),
-                            "evidence_revision": evidence_snapshot.revision[:16],
-                        },
-                    }
-                )
-                await self.emit(
-                    {
-                        "type": "scenario_analysis_progress",
-                        "id": command_id,
-                        "stage": "requirement_extraction",
-                        "status": "running",
-                        "approved_facts": {},
-                    }
-                )
-                result = await analyze_scenario(
-                    str(data.get("scenario_text") or ""),
-                    model_id=str(data.get("model_id") or ""),
-                    language=str(data.get("language") or "en"),
-                    evidence_context=evidence_context,
-                )
-                result["evidence_revision"] = evidence_snapshot.revision
-                assessment_result = result.get("feasibility_assessment")
-                if isinstance(assessment_result, dict):
-                    assessment_result["capability_catalog_revision"] = evidence_snapshot.revision
-                requirements = result.get("atomic_requirements", [])
-                assessment = result.get("feasibility_assessment", {})
-                matches = assessment.get("matches", []) if isinstance(assessment, dict) else []
-                gaps = [
-                    gap
-                    for match in matches
-                    if isinstance(match, dict)
-                    for gap in match.get("gaps", [])
-                ]
-                await self.emit(
-                    {
-                        "type": "scenario_analysis_progress",
-                        "id": command_id,
-                        "stage": "gap_evaluation",
-                        "status": "completed",
-                        "approved_facts": {
-                            "requirements_identified": len(requirements)
-                            if isinstance(requirements, list)
-                            else 0,
-                            "matches": len(matches),
-                            "gaps": len(gaps),
-                        },
-                    }
-                )
-                await self.emit(
-                    {
-                        "type": "capability_match_result",
-                        "id": command_id,
-                        "status": "ok",
-                        "result": result,
-                    }
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("Scenario analysis command failed for %s", command_id)
-                await self.emit(
-                    {
-                        "type": "capability_match_result",
-                        "id": command_id,
-                        "status": "failed",
-                        "error": "Scenario analysis operation failed; see Worker logs",
-                    }
-                )
-            finally:
-                self.active_capability_match_ids.discard(command_id)
-                self.capability_match_queue.task_done()
-
-    async def clarification_worker(self, worker_number: int) -> None:
-        while True:
-            data = await self.clarification_queue.get()
-            command_id = str(data.get("id") or "")
-            try:
-                log.info("Scenario clarification worker %d handling %s", worker_number, command_id)
-                scenario_state = data.get("scenario_state")
-                if data.get("type") == "answer_scenario_report_question":
-                    result = await answer_report_question(
-                        model_id=str(data.get("model_id") or ""),
-                        language=str(data.get("language") or "en"),
-                        user_question=str(data.get("user_question") or ""),
-                        approved_report=(
-                            data.get("approved_report")
-                            if isinstance(data.get("approved_report"), dict)
-                            else {}
-                        ),
-                    )
-                    result_type = "scenario_report_answer_result"
-                elif data.get("type") == "classify_scenario_message" and isinstance(
-                    scenario_state, dict
-                ):
-                    result = await classify_followup_intent(
-                        scenario_state,
-                        model_id=str(data.get("model_id") or ""),
-                        language=str(data.get("language") or "en"),
-                        user_message=str(data.get("user_message") or ""),
-                        report_summary=(
-                            data.get("report_summary")
-                            if isinstance(data.get("report_summary"), dict)
-                            else None
-                        ),
-                    )
-                    result_type = "scenario_message_classification_result"
-                elif isinstance(scenario_state, dict):
-                    model_id = str(data.get("model_id") or "")
-                    evidence_snapshot = await asyncio.to_thread(
-                        retrieve_scenario_evidence,
-                        json.dumps(scenario_state, ensure_ascii=False),
-                        model_id,
-                        limit=6,
-                    )
-                    evidence_context = [
-                        {
-                            "document_id": item.document_id,
-                            "kind": item.kind,
-                            "text": anonymous_text(item.text),
-                        }
-                        for item in evidence_snapshot.documents
-                    ]
-                    result = await clarify_scenario(
-                        scenario_state,
-                        model_id=str(data.get("model_id") or ""),
-                        language=str(data.get("language") or "en"),
-                        user_message=str(data.get("user_message") or ""),
-                        evidence_context=evidence_context,
-                    )
-                    result_type = "grill_scenario_result"
-                else:
-                    result = await grill_scenario(
-                        str(data.get("scenario_text") or ""),
-                        model_id=str(data.get("model_id") or ""),
-                        language=str(data.get("language") or "en"),
-                        history=data.get("history") if isinstance(data.get("history"), list) else None,
-                        accumulated_specs=data.get("accumulated_specs") if isinstance(data.get("accumulated_specs"), dict) else None,
-                    )
-                    result_type = "grill_scenario_result"
-                await self.emit(
-                    {"type": result_type, "id": command_id, **result}
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("Scenario clarification command failed for %s", command_id)
-                await self.emit(
-                    {
-                        "type": (
-                            "scenario_message_classification_result"
-                            if data.get("type") == "classify_scenario_message"
-                            else (
-                                "scenario_report_answer_result"
-                                if data.get("type") == "answer_scenario_report_question"
-                                else "grill_scenario_result"
-                            )
-                        ),
-                        "id": command_id,
-                        "status": "failed",
-                        "error": "Scenario clarification failed; see Worker logs",
-                    }
-                )
-            finally:
-                self.active_clarification_ids.discard(command_id)
-                self.clarification_queue.task_done()
-
 
     async def file_operation_worker(self, worker_number: int) -> None:
         while True:

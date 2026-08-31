@@ -28,14 +28,6 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 WORKER_SHARED_SECRET = os.environ.get("WORKER_SHARED_SECRET", "")
 WORKER_TIMEOUT = int(os.environ.get("WORKER_TIMEOUT", "240"))
 FILE_COMMAND_TIMEOUT = int(os.environ.get("FILE_COMMAND_TIMEOUT", "60"))
-SCENARIO_REANALYSIS_POLL_SECONDS = max(
-    1, int(os.environ.get("SCENARIO_REANALYSIS_POLL_SECONDS", "5"))
-)
-CAPABILITY_CATALOG_TIMEOUT = max(
-    WORKER_TIMEOUT + 30,
-    86400,
-    int(os.environ.get("CAPABILITY_CATALOG_TIMEOUT", "86400")),
-)
 TEAM_MAX_UPLOAD_BYTES = int(os.environ.get("TEAM_MAX_UPLOAD_BYTES", str(20 * 1024**3)))
 
 ALLOWED_TEAMS = tuple(

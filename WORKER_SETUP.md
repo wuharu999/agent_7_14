@@ -12,13 +12,6 @@ The key new settings are:
 TRASH_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash
 FILE_OPERATION_WORKERS=1
 FILE_MANAGER_MAX_ENTRIES=10000
-CAPABILITY_MATCH_WORKERS=1
-CAPABILITY_MATCH_QUEUE_MAX=8
-CLARIFICATION_WORKERS=1
-CLARIFICATION_QUEUE_MAX=16
-CAPABILITY_CATALOG_WORKERS=2
-CAPABILITY_CATALOG_QUEUE_MAX=8
-CAPABILITY_CATALOG_BATCH_CONCURRENCY=4
 PROMPT_GUARD_ENABLED=true
 PROMPT_GUARD_TIMEOUT=20
 PROMPT_GUARD_CONCURRENCY=2
@@ -26,41 +19,19 @@ PROMPT_SCAN_MAX_FILE_BYTES=2097152
 PROMPT_SCAN_MAX_TOTAL_BYTES=10485760
 PROMPT_SCAN_MAX_WARNINGS=1000
 LLM_WIKI_RESCAN_AFTER_PUBLISH=false
-CEREBRAS_API_KEY=replace-with-a-worker-only-key
-CEREBRAS_MODEL=gpt-oss-120b
-CEREBRAS_TIMEOUT=240
 DEEPSEEK_API_KEY=replace-with-a-worker-only-key
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
-QA_PROVIDER_COOLDOWN_SECONDS=300
-CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
-CEREBRAS_REGION_CHECK_TIMEOUT=5
-CEREBRAS_REGION_CACHE_SECONDS=300
-CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 WIKI_QA_MAX_PAGES=5
 WIKI_QA_MAX_PAGE_CHARS=24000
 ```
 
-Capability organization is repository-wide and reads only generated `wiki/`
-text evidence. One catalog transaction runs at a time. A full scan creates a
-pre-scan backup and publishes a complete replacement only after validation; an
-incremental scan appends new capabilities without changing existing entries.
-Four bounded asynchronous extraction calls are used because provider requests
-are network-bound; separate operating-system processes are unnecessary.
-The ECS command supplies the registered robot IDs. DeepSeek can propose one of
-those IDs, but Python normalizes aliases and rewrites unknown robots to
-`unassigned`; capability scans never create robot records.
-
 The Worker reads `BASE_DIR/wiki/index.md`, supplements a stale index with at
 most 20 filename/path matches for the selected robot/topic (including Walker C1),
 validates router-selected slugs, and opens only those permitted Markdown pages.
-Cerebras remains primary only after an outbound-country check succeeds.
-CN, TW, HK, SG, and unknown/unverifiable regions bypass Cerebras completely;
-DeepSeek V4 Flash also handles provider failures during the five-minute circuit
-cooldown. Permitted routes are rechecked before every Cerebras request, while
-blocked/unknown results are cached for five minutes. The check never stores or
-logs the public IP. The browser continues
+DeepSeek V4 Flash is the sole public QA provider; no provider circuit or
+egress-country gate is configured. The browser continues
 to receive streamed chunks through the authenticated Worker WebSocket and never
 receives a Worker file path. `$HOME/Documents/agent_tests` is reference material
 only and is not part of deployment.
@@ -80,17 +51,7 @@ Keep LLM Wiki open with Source Watch and Auto Ingest enabled.
 The Worker never calls `/sources/rescan`; Source Watch is the only ingestion trigger.
 In Source Watch settings, include every format accepted by the website that you plan to use (especially `json`, `xml`, `yaml`, and `yml`, which are ingestable but are not selected in LLM Wiki's current defaults). Also set the Source Watch file-size limit high enough for the individual source files you upload.
 
-Scenario feasibility analysis has its own bounded queue. Keep one analysis
-worker initially because each item starts a read-only DeepSeek API request and may
-read many Wiki records. Increase `CAPABILITY_MATCH_WORKERS` only after checking
-memory, account concurrency, and latency; do not make the queue unbounded.
-
-Clarification has a separate short-work queue so one-question turns cannot
-starve immutable report analysis. Keep `CLARIFICATION_WORKERS=1` until the
-Worker host has been tested with additional concurrent DeepSeek API requests.
-
-Public QA uses bounded Python retrieval plus two calls to the selected provider.
-Capability workflows use the shared tool-free DeepSeek API client.
+Public QA uses bounded Python retrieval plus two DeepSeek calls.
 Ambiguous security-sensitive requests still use at most `PROMPT_GUARD_CONCURRENCY`
 concurrent schema-validated classifier calls. Text uploads are scanned within the
 byte limits above; warnings are informational and do not block atomic publication.

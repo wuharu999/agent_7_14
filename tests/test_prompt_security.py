@@ -293,7 +293,7 @@ class NoPersistenceTests(unittest.IsolatedAsyncioTestCase):
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)
 
-    async def test_unblocked_qa_starts_cerebras_retrieval_without_wiki_prescan(self) -> None:
+    async def test_unblocked_qa_starts_deepseek_retrieval_without_wiki_prescan(self) -> None:
         manager = WorkerManager()
         queue = manager.question_queues[0]
         job = QuestionJob(

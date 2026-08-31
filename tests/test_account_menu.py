@@ -104,7 +104,8 @@ def test_capability_navigation_is_removed() -> None:
     assert "SHOW_CAPABILITY_NAVIGATION" not in script
     assert "/capability-match" not in script
     assert "/admin/capabilities" not in script
-    assert 'id="grillPanel"' in page
+    assert 'id="grillPanel"' not in page
+    assert "scenarioAssessment" not in page
     assert 'href="/capability-match"' not in page
 
 

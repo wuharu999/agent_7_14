@@ -88,14 +88,7 @@ def get_team_config(team: str) -> TeamConfig:
 QA_WORKERS = int(os.environ.get("QA_WORKERS", "3"))
 DOWNLOAD_WORKERS = int(os.environ.get("DOWNLOAD_WORKERS", "2"))
 FILE_OPERATION_WORKERS = int(os.environ.get("FILE_OPERATION_WORKERS", "1"))
-CAPABILITY_MATCH_WORKERS = max(1, int(os.environ.get("CAPABILITY_MATCH_WORKERS", "1")))
-CAPABILITY_MATCH_QUEUE_MAX = max(1, int(os.environ.get("CAPABILITY_MATCH_QUEUE_MAX", "8")))
-CLARIFICATION_WORKERS = max(1, int(os.environ.get("CLARIFICATION_WORKERS", "1")))
-CLARIFICATION_QUEUE_MAX = max(1, int(os.environ.get("CLARIFICATION_QUEUE_MAX", "16")))
 FILE_MANAGER_MAX_ENTRIES = int(os.environ.get("FILE_MANAGER_MAX_ENTRIES", "10000"))
-CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "").strip()
-CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "gpt-oss-120b").strip() or "gpt-oss-120b"
-CEREBRAS_TIMEOUT = max(1, int(os.environ.get("CEREBRAS_TIMEOUT", "240")))
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_MODEL = (
     os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash").strip()
@@ -123,48 +116,15 @@ DEEPSEEK_STRUCTURED_RETRIES = max(
 DEEPSEEK_TRANSPORT_RETRIES = max(
     0, min(3, int(os.environ.get("DEEPSEEK_TRANSPORT_RETRIES", "1")))
 )
-QA_PROVIDER_COOLDOWN_SECONDS = max(
-    1, int(os.environ.get("QA_PROVIDER_COOLDOWN_SECONDS", "300"))
-)
-CEREBRAS_REGION_CHECK_URL = (
-    os.environ.get(
-        "CEREBRAS_REGION_CHECK_URL", "https://www.cloudflare.com/cdn-cgi/trace"
-    ).strip()
-    or "https://www.cloudflare.com/cdn-cgi/trace"
-)
-CEREBRAS_REGION_CHECK_TIMEOUT = max(
-    1, min(30, int(os.environ.get("CEREBRAS_REGION_CHECK_TIMEOUT", "5")))
-)
-CEREBRAS_REGION_CACHE_SECONDS = max(
-    30, int(os.environ.get("CEREBRAS_REGION_CACHE_SECONDS", "300"))
-)
-CEREBRAS_BLOCKED_COUNTRIES = frozenset(
-    value.strip().upper()
-    for value in os.environ.get("CEREBRAS_BLOCKED_COUNTRIES", "CN,TW,HK,SG").split(",")
-    if value.strip()
-)
 WIKI_QA_MAX_PAGES = max(1, min(10, int(os.environ.get("WIKI_QA_MAX_PAGES", "8"))))
 WIKI_QA_MAX_PAGE_CHARS = max(
     1_000, int(os.environ.get("WIKI_QA_MAX_PAGE_CHARS", "24000"))
 )
-SCENARIO_RETRIEVAL_CACHE_FILE = Path(
-    os.environ.get(
-        "SCENARIO_RETRIEVAL_CACHE_FILE",
-        str(WORKER_ROOT_DIR / ".agent1-worker" / "scenario-retrieval.sqlite3"),
-    )
-).expanduser().resolve()
-SCENARIO_RETRIEVAL_CANDIDATES = max(
-    10, min(100, int(os.environ.get("SCENARIO_RETRIEVAL_CANDIDATES", "40")))
+QA_REASONING_MAX_CANDIDATES = max(
+    10, min(25, int(os.environ.get("QA_REASONING_MAX_CANDIDATES", "15")))
 )
-SCENARIO_RETRIEVAL_MAX_DOCUMENTS = max(
-    1, min(20, int(os.environ.get("SCENARIO_RETRIEVAL_MAX_DOCUMENTS", "12")))
-)
-SCENARIO_RETRIEVAL_MAX_PAGE_CHARS = max(
-    2_000, int(os.environ.get("SCENARIO_RETRIEVAL_MAX_PAGE_CHARS", "24000"))
-)
-SCENARIO_RETRIEVAL_MAX_TOTAL_CHARS = max(
-    SCENARIO_RETRIEVAL_MAX_PAGE_CHARS,
-    int(os.environ.get("SCENARIO_RETRIEVAL_MAX_TOTAL_CHARS", "120000")),
+QA_REASONING_MAX_PAGES = max(
+    3, min(6, int(os.environ.get("QA_REASONING_MAX_PAGES", "6")))
 )
 CONVERSATION_MAX_TURNS = int(os.environ.get("CONVERSATION_MAX_TURNS", "6"))
 CONVERSATION_MAX_SESSIONS = int(os.environ.get("CONVERSATION_MAX_SESSIONS", "1000"))

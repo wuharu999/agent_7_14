@@ -117,13 +117,6 @@ TRASH_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash
 
 FILE_OPERATION_WORKERS=1
 FILE_MANAGER_MAX_ENTRIES=10000
-CAPABILITY_MATCH_WORKERS=1
-CAPABILITY_MATCH_QUEUE_MAX=8
-CLARIFICATION_WORKERS=1
-CLARIFICATION_QUEUE_MAX=16
-CAPABILITY_CATALOG_WORKERS=2
-CAPABILITY_CATALOG_QUEUE_MAX=8
-CAPABILITY_CATALOG_BATCH_CONCURRENCY=4
 PROMPT_GUARD_ENABLED=true
 PROMPT_GUARD_TIMEOUT=20
 PROMPT_GUARD_CONCURRENCY=2
@@ -131,18 +124,10 @@ PROMPT_SCAN_MAX_FILE_BYTES=2097152
 PROMPT_SCAN_MAX_TOTAL_BYTES=10485760
 PROMPT_SCAN_MAX_WARNINGS=1000
 
-CEREBRAS_API_KEY=<worker-only-key>
-CEREBRAS_MODEL=gpt-oss-120b
-CEREBRAS_TIMEOUT=240
-DEEPSEEK_API_KEY=<worker-only-fallback-key>
+DEEPSEEK_API_KEY=<worker-only-key>
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_TIMEOUT=240
-QA_PROVIDER_COOLDOWN_SECONDS=300
-CEREBRAS_REGION_CHECK_URL=https://www.cloudflare.com/cdn-cgi/trace
-CEREBRAS_REGION_CHECK_TIMEOUT=5
-CEREBRAS_REGION_CACHE_SECONDS=300
-CEREBRAS_BLOCKED_COUNTRIES=CN,TW,HK,SG
 
 LLM_WIKI_QUEUE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
 LLM_WIKI_CACHE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
@@ -287,7 +272,6 @@ then restart the Worker.
 No new Python package is required. The new Worker settings are optional because defaults are built in:
 
 ```env
-CEREBRAS_MODEL=gpt-oss-120b
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_TIMEOUT=240
 DEEPSEEK_STRUCTURED_RETRIES=1
@@ -296,11 +280,10 @@ CONVERSATION_MAX_TURNS=6
 CONVERSATION_MAX_SESSIONS=1000
 ```
 
-Public QA uses Cerebras with DeepSeek failover. Scenario clarification,
-feasibility analysis, catalog organization, prompt classification,
-and contradiction review call DeepSeek directly with thinking disabled and no
-tools. Existing obsolete command-line-agent variables are ignored and may be
-removed from deployed environment files.
+Public QA uses DeepSeek V4 Flash as its sole provider. Prompt classification
+also calls DeepSeek directly with thinking disabled and no tools. Existing
+obsolete command-line-agent variables are ignored and may be removed from
+deployed environment files.
 
 After copying this version over the existing code, restart both ECS and Worker so the new `/ask` protocol is loaded. Existing browsers automatically receive a conversation ID on their next question. Use **New conversation** on the question page to intentionally clear context.
 

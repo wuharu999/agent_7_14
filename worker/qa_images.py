@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
@@ -11,6 +12,8 @@ MAX_QA_IMAGES = 3
 MAX_QA_IMPLICIT_IMAGES = 1
 MAX_QA_IMAGE_BYTES = 8 * 1024**2
 MAX_QA_IMAGE_TOTAL_BYTES = 12 * 1024**2
+MIN_QA_IMAGE_DIMENSION = 64
+MIN_QA_IMAGE_PIXELS = 4_096
 
 _WIKI_IMAGE_MARKDOWN = re.compile(
     r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<path>wiki/media/[^)>\n]+)>?\s*\)"
@@ -25,6 +28,18 @@ _IMAGE_MIME_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
+_DECORATIVE_IMAGE_NAME = re.compile(
+    r"(?:^|[-_.\s])(?:avatar|bullet|favicon|icon|loading|pixel|placeholder|"
+    r"spacer|sprite|thumb|thumbnail)(?:$|[-_.\s])|"
+    r"(?:图标|圖標|アイコン|아이콘|ícone|icono|иконк)",
+    re.IGNORECASE,
+)
+_GENERIC_IMAGE_LABEL = re.compile(
+    r"^(?:img|image|picture|photo|figure|fig|scan|page|"
+    r"图|图片|圖|圖片|画像|写真|이미지|사진|imagen|foto|"
+    r"изображение|фото)[\s._-]*\d*$",
+    re.IGNORECASE,
+)
 
 _MARKDOWN_IMAGE = re.compile(
     r"!\[(?P<alt>[^\]\n]{0,200})\]\(\s*<?(?P<target>[^)>\n]+)>?\s*\)"
@@ -88,6 +103,7 @@ class _Candidate:
     alt: str
     score: int
     lexical_score: int
+    answer_score: int
     document_order: int
     image_order: int
 
@@ -114,6 +130,88 @@ def _contains_symlink(project_root: Path, relative_path: Path) -> bool:
     return False
 
 
+def _image_dimensions(image_bytes: bytes) -> tuple[int, int] | None:
+    """Read dimensions from bounded image headers without decoding pixels."""
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") and len(image_bytes) >= 24:
+        return struct.unpack(">II", image_bytes[16:24])
+    if image_bytes[:6] in (b"GIF87a", b"GIF89a") and len(image_bytes) >= 10:
+        return struct.unpack("<HH", image_bytes[6:10])
+    if image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
+        if len(image_bytes) < 30:
+            return None
+        chunk = image_bytes[12:16]
+        if chunk == b"VP8X":
+            width = 1 + int.from_bytes(image_bytes[24:27], "little")
+            height = 1 + int.from_bytes(image_bytes[27:30], "little")
+            return width, height
+        if chunk == b"VP8L" and len(image_bytes) >= 25 and image_bytes[20] == 0x2F:
+            bits = int.from_bytes(image_bytes[21:25], "little")
+            return 1 + (bits & 0x3FFF), 1 + ((bits >> 14) & 0x3FFF)
+        if chunk == b"VP8 ":
+            start = image_bytes.find(b"\x9d\x01\x2a", 20)
+            if start >= 0 and len(image_bytes) >= start + 7:
+                width, height = struct.unpack("<HH", image_bytes[start + 3 : start + 7])
+                return width & 0x3FFF, height & 0x3FFF
+        return None
+    if not image_bytes.startswith(b"\xff\xd8"):
+        return None
+    offset = 2
+    while offset + 3 < len(image_bytes):
+        if image_bytes[offset] != 0xFF:
+            offset += 1
+            continue
+        while offset < len(image_bytes) and image_bytes[offset] == 0xFF:
+            offset += 1
+        if offset >= len(image_bytes):
+            break
+        marker = image_bytes[offset]
+        offset += 1
+        if marker in (0xD8, 0xD9):
+            continue
+        if marker == 0xDA:
+            break
+        if offset + 2 > len(image_bytes):
+            break
+        segment_length = struct.unpack(">H", image_bytes[offset : offset + 2])[0]
+        if segment_length < 2 or offset + segment_length > len(image_bytes):
+            break
+        is_size_marker = (
+            marker in range(0xC0, 0xC4)
+            or marker in range(0xC5, 0xC8)
+            or marker in range(0xC9, 0xCC)
+            or marker in range(0xCD, 0xD0)
+        )
+        if is_size_marker:
+            if segment_length >= 7:
+                height, width = struct.unpack(">HH", image_bytes[offset + 3 : offset + 7])
+                return width, height
+        offset += segment_length
+    return None
+
+
+def _is_useful_image(path: Path, label: str = "") -> bool:
+    """Reject malformed, tiny, and clearly decorative assets before attachment."""
+    if _DECORATIVE_IMAGE_NAME.search(f"{path.stem} {label}"):
+        return False
+    try:
+        size = path.stat().st_size
+        if size <= 0 or size > MAX_QA_IMAGE_BYTES:
+            return False
+        # Every supported format has a small, bounded header containing dimensions.
+        with path.open("rb") as image_file:
+            dimensions = _image_dimensions(image_file.read(64 * 1024))
+    except OSError:
+        return False
+    if dimensions is None:
+        return False
+    width, height = dimensions
+    return (
+        width >= MIN_QA_IMAGE_DIMENSION
+        and height >= MIN_QA_IMAGE_DIMENSION
+        and width * height >= MIN_QA_IMAGE_PIXELS
+    )
+
+
 def _lexical_terms(value: str) -> set[str]:
     normalized = unquote(value).casefold()
     terms = {
@@ -126,11 +224,6 @@ def _lexical_terms(value: str) -> set[str]:
         if len(run) > 1:
             terms.update(run[index : index + 2] for index in range(len(run) - 1))
     return terms
-
-
-def _natural_image_order(path: Path) -> tuple[int, str]:
-    match = re.search(r"(\d+)(?!.*\d)", path.stem)
-    return (int(match.group(1)) if match else 1_000_000, path.name.casefold())
 
 
 def _sections(markdown: str) -> list[_Section]:
@@ -217,13 +310,14 @@ def _linked_images(document: RetrievedImageDocument, wiki_root: Path) -> list[tu
     found: list[tuple[int, str, Path]] = []
     for match in _MARKDOWN_IMAGE.finditer(document.text):
         path = _resolve_media_path(match.group("target"), document.path, wiki_root)
-        if path is not None:
-            found.append((match.start(), match.group("alt").strip(), path))
+        alt = match.group("alt").strip()
+        if path is not None and _is_useful_image(path, alt):
+            found.append((match.start(), alt, path))
     for match in _OBSIDIAN_IMAGE.finditer(document.text):
         raw_target = match.group("target")
         path = _resolve_media_path(raw_target, document.path, wiki_root)
-        if path is not None:
-            alias = raw_target.split("|", 1)[1].strip() if "|" in raw_target else ""
+        alias = raw_target.split("|", 1)[1].strip() if "|" in raw_target else ""
+        if path is not None and _is_useful_image(path, alias):
             found.append((match.start(), alias, path))
     for match in _HTML_IMAGE.finditer(document.text):
         attributes = {
@@ -231,49 +325,18 @@ def _linked_images(document: RetrievedImageDocument, wiki_root: Path) -> list[tu
             for attribute in _HTML_ATTRIBUTE.finditer(match.group("attrs"))
         }
         path = _resolve_media_path(attributes.get("src", ""), document.path, wiki_root)
-        if path is not None:
-            found.append((match.start(), attributes.get("alt", "").strip(), path))
+        alt = attributes.get("alt", "").strip()
+        if path is not None and _is_useful_image(path, alt):
+            found.append((match.start(), alt, path))
     return sorted(found, key=lambda item: item[0])
 
 
-def _document_title(document: RetrievedImageDocument) -> str:
-    heading = _HEADING.search(document.text)
-    return heading.group("title").strip() if heading else document.path.stem
-
-
-def _orphaned_page_images(
-    document: RetrievedImageDocument,
-    wiki_root: Path,
-    language: str,
-) -> list[tuple[str, Path]]:
-    media_directory = wiki_root / "media" / document.path.stem
-    if not media_directory.is_dir() or media_directory.is_symlink():
-        return []
-    label = {
-        "zh-CN": "图",
-        "zh-TW": "圖",
-        "ja": "画像",
-        "ko": "이미지",
-        "pt": "imagem",
-        "ru": "изображение",
-        "es": "imagen",
-    }.get(language, "image")
-    title = _document_title(document)
-    images = sorted(
-        (
-            path
-            for path in media_directory.iterdir()
-            if path.is_file()
-            and not path.is_symlink()
-            and path.suffix.casefold() in _IMAGE_MIME_TYPES
-            and 0 < path.stat().st_size <= MAX_QA_IMAGE_BYTES
-        ),
-        key=_natural_image_order,
-    )
-    return [
-        (f"{title} — {label} {index}", path)
-        for index, path in enumerate(images, start=1)
-    ]
+def _meaningful_image_label(value: str) -> bool:
+    """Require semantic text before a linked image can cross the QA boundary."""
+    label = value.strip()
+    if not label or _GENERIC_IMAGE_LABEL.fullmatch(label):
+        return False
+    return bool(_lexical_terms(label))
 
 
 def select_relevant_qa_images(
@@ -282,10 +345,20 @@ def select_relevant_qa_images(
     documents: Sequence[RetrievedImageDocument],
     *,
     language: str = "en",
+    answer: str = "",
 ) -> list[tuple[str, Path]]:
-    """Select validated images associated with the already-retrieved Wiki pages."""
+    """Select linked, semantically labelled images for the final answer.
+
+    PDF extraction can leave many generic ``img-N.png`` files in ``wiki/media``
+    without a Markdown reference or description. Those files remain on disk for
+    auditability, but they are never eligible for QA output. A linked image must
+    have meaningful alt text or section context and match the question. Once the
+    final answer is available, it must also contain matching evidence; this keeps
+    image selection deterministic and avoids an extra provider call per image.
+    """
     wiki_root = wiki_root.resolve()
     query_terms = _lexical_terms(question)
+    answer_terms = _lexical_terms(answer)
     explicit_image_request = bool(_IMAGE_INTENT.search(question))
     candidates: list[_Candidate] = []
     seen: set[Path] = set()
@@ -298,7 +371,15 @@ def select_relevant_qa_images(
             if path in seen:
                 continue
             section = _section_for_offset(sections, offset)
-            alt = alt or path.stem
+            linked_label = alt if _meaningful_image_label(alt) else ""
+            section_label = (
+                section.heading if _meaningful_image_label(section.heading) else ""
+            )
+            if not linked_label and not section_label:
+                continue
+            alt = linked_label or section_label
+            context = f"{alt} {section.heading} {section.text[:4000]} {path.stem}"
+            context_terms = _lexical_terms(context)
             heading_overlap = len(query_terms & _lexical_terms(section.heading))
             alt_overlap = len(query_terms & _lexical_terms(alt))
             filename_overlap = len(query_terms & _lexical_terms(path.stem))
@@ -309,69 +390,24 @@ def select_relevant_qa_images(
                 + filename_overlap * 8
                 + text_overlap * 3
             )
-            score = 100 - document_order * 5 + lexical_score
+            answer_score = len(answer_terms & context_terms)
+            # If called before answer generation, question relevance is the
+            # available gate. The production path supplies the final answer.
+            if not lexical_score or (answer_terms and not answer_score):
+                continue
+            score = 100 - document_order * 5 + lexical_score + answer_score * 4
             candidates.append(
                 _Candidate(
                     path,
                     alt,
                     score,
                     lexical_score,
+                    answer_score,
                     document_order,
                     image_order,
                 )
             )
             seen.add(path)
-
-    matched_candidates = [
-        candidate for candidate in candidates if candidate.lexical_score
-    ]
-    if matched_candidates:
-        candidates = matched_candidates
-    elif candidates:
-        # The retriever already established page relevance. If no individual
-        # section/alt text matches, still offer the first image from the first
-        # retrieved page instead of requiring the customer to ask for a photo.
-        first_document = min(candidate.document_order for candidate in candidates)
-        candidates = [
-            candidate
-            for candidate in candidates
-            if candidate.document_order == first_document
-        ]
-
-    # Some LLM Wiki versions extract PDF images to a folder named after the
-    # generated page but omit the corresponding Markdown references. For an
-    # ordinary question, use this weaker association only when the retrieved
-    # page itself overlaps the question. An explicit image request may use the
-    # first retrieved page even when its captions are absent.
-    if not candidates:
-        for document_order, document in enumerate(documents):
-            document_terms = _lexical_terms(
-                f"{_document_title(document)} {document.text[:6000]}"
-            )
-            if not explicit_image_request and not (query_terms & document_terms):
-                continue
-            orphaned_images = _orphaned_page_images(document, wiki_root, language)
-            if not orphaned_images:
-                continue
-            for image_order, (alt, path) in enumerate(
-                orphaned_images
-            ):
-                if path in seen:
-                    continue
-                candidates.append(
-                    _Candidate(
-                        path,
-                        alt,
-                        50 - document_order * 5,
-                        0,
-                        document_order,
-                        image_order,
-                    )
-                )
-                seen.add(path)
-            # Orphaned media has only page-level evidence. Never mix media
-            # folders from several retrieved pages in one answer.
-            break
 
     candidates.sort(
         key=lambda candidate: (
@@ -383,7 +419,7 @@ def select_relevant_qa_images(
     )
     image_limit = (
         MAX_QA_IMAGES
-        if explicit_image_request or matched_candidates
+        if explicit_image_request
         else min(MAX_QA_IMAGES, MAX_QA_IMPLICIT_IMAGES)
     )
     return [(candidate.alt, candidate.path) for candidate in candidates[:image_limit]]
@@ -405,6 +441,7 @@ def attach_relevant_qa_images(
         wiki_root,
         documents,
         language=language,
+        answer=answer,
     )
     if not selected:
         return answer
@@ -451,7 +488,7 @@ def extract_qa_images(
             continue
         image_bytes = image_path.read_bytes()
         size = len(image_bytes)
-        if size <= 0 or size > MAX_QA_IMAGE_BYTES:
+        if not _is_useful_image(image_path, match.group("alt")):
             continue
         if total_bytes + size > MAX_QA_IMAGE_TOTAL_BYTES:
             continue

@@ -11,6 +11,82 @@ from ecs.app.security_warnings import validated_security_warnings
 
 
 class SecurityMigrationTests(unittest.TestCase):
+    def test_retired_scenario_schema_is_not_created_or_migrated(self) -> None:
+        retired_tables = {
+            "scenario_assessments",
+            "scenario_sessions",
+            "scenario_state_versions",
+            "scenario_events",
+            "scenario_analysis_jobs",
+            "scenario_report_revisions",
+            "scenario_share_links",
+        }
+        retired_indexes = {
+            "idx_scenario_assessments_created",
+            "idx_scenario_assessments_model",
+            "idx_scenario_sessions_owner",
+            "idx_scenario_events_session_sequence",
+            "idx_scenario_jobs_session_status",
+            "idx_scenario_reports_session_ordinal",
+            "idx_scenario_sessions_pending_reanalysis",
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            fresh_path = Path(directory) / "fresh.db"
+            with patch.object(database, "DATABASE_PATH", fresh_path):
+                database.initialize_database()
+            with sqlite3.connect(fresh_path) as connection:
+                objects = {
+                    str(row[0])
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type IN ('table', 'index')"
+                    )
+                }
+            self.assertTrue(retired_tables.isdisjoint(objects))
+            self.assertTrue(retired_indexes.isdisjoint(objects))
+
+            old_path = Path(directory) / "old-scenario.db"
+            with sqlite3.connect(old_path) as connection:
+                for table in sorted(retired_tables):
+                    connection.execute(
+                        f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, marker TEXT NOT NULL)"
+                    )
+                    connection.execute(
+                        f"INSERT INTO {table} (id, marker) VALUES (1, 'preserve-me')"
+                    )
+                for index in sorted(retired_indexes):
+                    connection.execute(
+                        f"CREATE INDEX {index} ON scenario_assessments(marker)"
+                    )
+                connection.commit()
+                old_objects = {
+                    (str(row[0]), str(row[1]), str(row[2]))
+                    for row in connection.execute(
+                        "SELECT name, type, sql FROM sqlite_master "
+                        "WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'"
+                    )
+                    if str(row[0]) in retired_tables | retired_indexes
+                }
+
+            with patch.object(database, "DATABASE_PATH", old_path):
+                database.initialize_database()
+                database.initialize_database()
+            with sqlite3.connect(old_path) as connection:
+                for table in sorted(retired_tables):
+                    row = connection.execute(
+                        f"SELECT id, marker FROM {table}"
+                    ).fetchone()
+                    self.assertEqual(row, (1, "preserve-me"))
+                objects_after = {
+                    (str(row[0]), str(row[1]), str(row[2]))
+                    for row in connection.execute(
+                        "SELECT name, type, sql FROM sqlite_master "
+                        "WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'"
+                    )
+                    if str(row[0]) in retired_tables | retired_indexes
+                }
+            self.assertEqual(old_objects, objects_after)
+
     def test_old_database_migrates_additively_and_reruns_safely(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "old.db"
@@ -139,4 +215,3 @@ class SecurityMigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

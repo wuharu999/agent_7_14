@@ -11,8 +11,8 @@ def test_uv_metadata_and_lock_cover_both_runtimes() -> None:
     assert '[project.optional-dependencies]' in project
     assert 'ecs = [' in project
     assert 'worker = [' in project
-    assert '"cerebras-cloud-sdk>=1.0,<2"' in project
     assert '"openai>=1.0,<3"' in project
+    assert 'cloud-sdk' not in project
     assert (ROOT / "uv.lock").is_file()
 
 

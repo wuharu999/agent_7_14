@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -17,7 +16,6 @@ from ecs.app.routes import (
     auth,
     manage,
     pages,
-    scenario_sessions,
     status,
     uploads,
     wecom,
@@ -32,16 +30,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     ensure_directories()
     initialize_database()
     delete_expired_sessions()
-    reanalysis_task = asyncio.create_task(
-        scenario_sessions.scenario_reanalysis_dispatcher(),
-        name="scenario-reanalysis-dispatcher",
-    )
-    try:
-        yield
-    finally:
-        reanalysis_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await reanalysis_task
+    yield
 
 
 app = FastAPI(
@@ -78,4 +67,3 @@ app.include_router(status.router)
 app.include_router(worker_socket.router)
 app.include_router(wecom.router)
 app.include_router(admin_users.router)
-app.include_router(scenario_sessions.router)

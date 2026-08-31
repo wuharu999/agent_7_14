@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 import uuid
 import asyncio
+import json
+import logging
 
 import time
 from collections import defaultdict
@@ -17,11 +19,23 @@ from ecs.app.auth import require_roles
 from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 
+log = logging.getLogger(__name__)
+
 router = APIRouter()
 _CONVERSATION_ID = re.compile(r"^[A-Za-z0-9:_-]{1,128}$")
 _CLIENT_HISTORY_MESSAGES = 12
 _CLIENT_HISTORY_MESSAGE_CHARS = 8_000
 _CLIENT_HISTORY_TOTAL_CHARS = 48_000
+_STREAM_ERROR_MESSAGES = {
+    "zh-CN": "暂时无法生成回答，请稍后再试。",
+    "zh-TW": "暫時無法產生回答，請稍後再試。",
+    "ko": "현재 답변을 생성할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+    "ja": "現在回答を生成できません。しばらくしてからもう一度お試しください。",
+    "en": "Unable to answer right now. Please try again shortly.",
+    "pt": "Não foi possível responder agora. Tente novamente em instantes.",
+    "ru": "Сейчас не удаётся сформировать ответ. Повторите попытку позже.",
+    "es": "No se puede responder ahora. Inténtalo de nuevo en breve.",
+}
 
 
 def _bounded_client_history(value: object) -> list[dict[str, str]]:
@@ -71,6 +85,13 @@ class RateLimiter:
 
 limiter = RateLimiter()
 
+
+def _sse_event(event_name: str, payload: dict) -> str:
+    """Encode one browser event without exposing transport implementation."""
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event_name}\ndata: {data}\n\n"
+
+
 @router.post("/ask")
 async def ask(request: Request, body: dict):
     client_ip = request.client.host if request.client else "unknown"
@@ -113,12 +134,12 @@ async def ask(request: Request, body: dict):
 
     async def event_generator():
         try:
-            yield json.dumps({
+            yield _sse_event("metadata", {
                 "status": "metadata",
                 "conversation_id": conversation_id,
                 "language": language,
                 "team": team
-            }, ensure_ascii=False) + "\n"
+            })
 
             async for event in gateway.ask_stream(
                 question,
@@ -127,11 +148,20 @@ async def ask(request: Request, body: dict):
                 language=language,
                 history=history,
             ):
-                yield json.dumps(event, ensure_ascii=False) + "\n"
-        except Exception as exc:
-            yield json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False) + "\n"
+                event_name = str(event.get("status") or "chunk")
+                yield _sse_event(event_name, event)
+        except Exception:
+            log.exception("Public QA SSE stream failed")
+            yield _sse_event(
+                "error",
+                {"status": "error", "error": _STREAM_ERROR_MESSAGES[language]},
+            )
 
-    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/api/export/wiki")

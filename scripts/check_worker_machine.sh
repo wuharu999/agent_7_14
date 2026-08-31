@@ -7,7 +7,6 @@ PYTHON_BIN="$ROOT/.venv-worker/bin/python"
 [ -x "$PYTHON_BIN" ] || PYTHON_BIN="$(command -v python3)"
 "$PYTHON_BIN" - <<'PY'
 from worker.config import (
-    CEREBRAS_API_KEY,
     DEEPSEEK_API_KEY,
     LLM_WIKI_CACHE_FILE,
     LLM_WIKI_QUEUE_FILE,
@@ -26,6 +25,5 @@ print(f"LLM Wiki cache: {LLM_WIKI_CACHE_FILE}")
 print("queue file exists" if LLM_WIKI_QUEUE_FILE.is_file() else "queue file not present yet")
 print("cache file exists" if LLM_WIKI_CACHE_FILE.is_file() else "cache file not present yet")
 print(f"LLM Wiki rescan after publish: {str(LLM_WIKI_RESCAN_AFTER_PUBLISH).lower()}")
-print(f"Cerebras key configured: {str(bool(CEREBRAS_API_KEY)).lower()}")
-print(f"DeepSeek fallback key configured: {str(bool(DEEPSEEK_API_KEY)).lower()}")
+print(f"DeepSeek key configured: {str(bool(DEEPSEEK_API_KEY)).lower()}")
 PY
