@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,6 +64,7 @@ def test_extracts_existing_bounded_wiki_image(tmp_path: Path) -> None:
     assert images[0]["mime_type"] == "image/png"
     assert images[0]["size"] == image_path.stat().st_size
     assert base64.b64decode(str(images[0]["data"])) == image_path.read_bytes()
+    assert images[0]["fingerprint"] == hashlib.sha256(image_path.read_bytes()).hexdigest()
 
 
 def test_rejects_original_source_asset_image(tmp_path: Path) -> None:

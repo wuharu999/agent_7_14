@@ -164,13 +164,58 @@ const conversationKey='agent1_conversation_id';
 const languageKey='agent1_answer_language';
 const teamKey='agent1_team';
 const historyKey='agent1_chat_history';
+const imageHistoryKey='agent1_chat_image_fingerprints';
 
 let currentLang = 'zh-CN';
 let workerOnline = false;
 let currentChat = [];
+let shownImageFingerprints = new Set();
+let transientImageKeys = new Set();
 
 function saveHistory() {
   localStorage.setItem(historyKey, JSON.stringify(currentChat));
+}
+
+function loadShownImageFingerprints() {
+  const conversationId = getConversationId();
+  try {
+    const byConversation = JSON.parse(localStorage.getItem(imageHistoryKey) || '{}');
+    const values = Array.isArray(byConversation?.[conversationId]) ? byConversation[conversationId] : [];
+    shownImageFingerprints = new Set(values.filter(value=>typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)));
+  } catch {
+    shownImageFingerprints = new Set();
+  }
+  transientImageKeys = new Set();
+}
+
+function saveShownImageFingerprints() {
+  const conversationId = getConversationId();
+  let byConversation = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(imageHistoryKey) || '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) byConversation = parsed;
+  } catch {}
+  delete byConversation[conversationId];
+  byConversation[conversationId] = [...shownImageFingerprints].slice(-100);
+  const recent = Object.entries(byConversation).slice(-20);
+  localStorage.setItem(imageHistoryKey, JSON.stringify(Object.fromEntries(recent)));
+}
+
+function shouldShowConversationImage(image) {
+  const fingerprint = typeof image.fingerprint === 'string' && /^[a-f0-9]{64}$/i.test(image.fingerprint)
+    ? image.fingerprint.toLowerCase() : '';
+  if (fingerprint) {
+    if (shownImageFingerprints.has(fingerprint)) return false;
+    shownImageFingerprints.add(fingerprint);
+    saveShownImageFingerprints();
+    return true;
+  }
+  // Compatibility for a Worker that has not yet been upgraded: retain this
+  // fallback only in memory, so raw image data is never put into localStorage.
+  const transientKey = `${image.mime_type}:${image.data}`;
+  if (transientImageKeys.has(transientKey)) return false;
+  transientImageKeys.add(transientKey);
+  return true;
 }
 
 function appendInlineMarkdown(parent, source) {
@@ -578,7 +623,7 @@ async function submitQuestion(){
 
             if (event.image && typeof event.image.data === 'string') {
               const allowedTypes = new Set(['image/png','image/jpeg','image/gif','image/webp']);
-              if (allowedTypes.has(event.image.mime_type)) {
+              if (allowedTypes.has(event.image.mime_type) && shouldShowConversationImage(event.image)) {
                 let gallery = botBubble.querySelector('.answer-images');
                 if (!gallery) {
                   gallery = document.createElement('div');
@@ -608,7 +653,7 @@ async function submitQuestion(){
             }
             scrollToBottom();
           } catch(e) {
-            console.error("Failed to parse JSON line", line, e);
+            console.error("Failed to parse SSE event", data, e);
           }
         }
       }
@@ -636,6 +681,9 @@ askButton.onclick=submitQuestion;
 question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter') {event.preventDefault();submitQuestion();}});
 newConversationButton.onclick=()=>{
   localStorage.setItem(conversationKey,newConversationId());
+  shownImageFingerprints = new Set();
+  transientImageKeys = new Set();
+  saveShownImageFingerprints();
   clearChat();
   const t = i18n[currentLang] || i18n['en'];
   addMessage('system', t.newConvStarted);
@@ -645,6 +693,7 @@ newConversationButton.onclick=()=>{
 // Init
 translateUI();
 loadHistory();
+loadShownImageFingerprints();
 
 </script>
 </body></html>

@@ -102,6 +102,8 @@ def test_qa_pages_render_validated_image_payloads():
             encoding="utf-8"
         )
         assert "event.image.mime_type" in template
+        assert "shouldShowConversationImage(event.image)" in template
+        assert "imageHistoryKey='agent1_chat_image_fingerprints'" in template
         assert "answer-images" in template
         assert "event.replace_text" in template
 

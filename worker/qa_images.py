@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import re
 import struct
 from dataclasses import dataclass
@@ -498,6 +499,9 @@ def extract_qa_images(
             {
                 "alt": match.group("alt").strip() or image_path.stem,
                 "data": encoded,
+                # A content digest lets the browser suppress a repeated image
+                # in one conversation without receiving its local Wiki path.
+                "fingerprint": hashlib.sha256(image_bytes).hexdigest(),
                 "mime_type": mime_type,
                 "size": size,
             }
