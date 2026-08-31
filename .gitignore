@@ -32,6 +32,15 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+.envrc
+.direnv/
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
 ecs-data/
 
 # Local databases and database sidecars
@@ -47,10 +56,15 @@ ecs-data/
 
 # Logs and temporary files
 *.log
+*.pid
 *.tmp
 *.swp
 *.swo
 *~
+
+# Locally generated release artifacts
+release.zip
+release-*.zip
 
 # Editor and IDE runtime state
 .vscode/
