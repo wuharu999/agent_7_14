@@ -125,6 +125,9 @@ def test_main_qa_renders_safe_markdown_and_stream_replacements():
     assert "container.innerHTML" not in template
     assert "const priorConversation=currentChat" in template
     assert "history:priorConversation" in template
+    assert "className = 'stream-spinner'" in template
+    assert "const hideStreamSpinner = () => streamSpinner.remove();" in template
+    assert "hideStreamSpinner();\n              accumulatedText += event.text;" in template
 
 
 def test_browser_history_boundary_keeps_only_recent_bounded_chat_messages():
