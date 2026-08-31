@@ -36,6 +36,15 @@ _TEXT_TOKEN = re.compile(r"[\w\-+.]+", re.UNICODE)
 _IMAGE_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".webp"}
 _EXCLUDED_PAGES = {"index.md", "log.md", "overview.md", "unanswered.md"}
 _ARCHITECT_LOCK = threading.Lock()
+_HISTORY_REFERENCE_MARKERS = (
+    "它", "这个机器人", "该机器人", "这个平台", "该平台", "这款", "刚才那个", "上面提到的",
+    "it", "this robot", "that robot", "this platform", "that platform", "the above robot",
+)
+_TEAM_SEARCH_ALIASES = {
+    "tian_gong": ("tian gong", "tiangong", "tienkung", "天工"),
+    "walker_s2": ("walker s2", "walker-s2", "walker_s2", "s2"),
+    "walker_c1": ("walker c1", "walker-c1", "walker_c1", "c1"),
+}
 
 
 class ChatProvider(Protocol):
@@ -52,6 +61,13 @@ class GraphState(TypedDict, total=False):
     language: str
     history: list[Any]
     standalone_question: str
+    topic_relation: str
+    current_subject: str | None
+    history_used: list[str]
+    history_ignored: list[str]
+    scope_analysis: dict[str, Any]
+    clarification_required: bool
+    clarification_answer: str
     intent: str
     preferred_abstraction: str
     search_queries: list[str]
@@ -61,6 +77,10 @@ class GraphState(TypedDict, total=False):
     selected_pages: list[str]
     selected_images: list[dict[str, Any]]
     need_more_search: bool
+    planner_faithful: bool
+    unsupported_assumptions: list[str]
+    scope_consistency: dict[str, Any]
+    uncertainties_to_check: list[str]
     answer_plan: dict[str, Any]
     evidence: list[dict[str, str]]
     answer_system: str
@@ -150,9 +170,12 @@ def _tokenize(value: str) -> list[str]:
     return [word.strip() for word in words if word and _TEXT_TOKEN.fullmatch(word.strip())]
 
 
-def _fts_query(value: str) -> str:
-    terms = list(dict.fromkeys(_tokenize(value)))[:16]
-    return " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms)
+def _fts_terms(value: str) -> list[str]:
+    return [term.replace('"', "") for term in list(dict.fromkeys(_tokenize(value)))[:16] if term.strip()]
+
+
+def _fts_query(value: str, *, operator: str = "OR") -> str:
+    return f" {operator} ".join(f'"{term}"' for term in _fts_terms(value))
 
 
 def _title_for(path: Path, metadata: dict[str, Any], body: str) -> str:
@@ -343,18 +366,31 @@ class WikiArchitect:
         temporary.write_text(content, encoding="utf-8")
         temporary.replace(path)
 
-    def search(self, query: str, *, limit: int = QA_REASONING_MAX_CANDIDATES) -> list[dict[str, Any]]:
+    def search(
+        self, query: str, *, team: str, limit: int = QA_REASONING_MAX_CANDIDATES
+    ) -> list[dict[str, Any]]:
         self.ensure()
-        match_query = _fts_query(query)
-        if not match_query:
+        and_query = _fts_query(query, operator="AND")
+        or_query = _fts_query(query)
+        if not and_query:
             return []
         connection = sqlite3.connect(self.database_path)
         try:
-            rows = connection.execute(
+            statement = (
                 "SELECT path, bm25(wiki_fts, 5.0, 4.0, 3.0, 2.0, 1.0) AS rank "
-                "FROM wiki_fts WHERE wiki_fts MATCH ? ORDER BY rank LIMIT ?",
-                (match_query, limit),
-            ).fetchall()
+                "FROM wiki_fts WHERE wiki_fts MATCH ? ORDER BY rank LIMIT ?"
+            )
+            try:
+                rows = connection.execute(statement, (and_query, limit * 4)).fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+            if len(rows) < limit:
+                try:
+                    extra_rows = connection.execute(statement, (or_query, limit * 4)).fetchall()
+                except sqlite3.OperationalError:
+                    extra_rows = []
+                existing_paths = {str(path) for path, _ in rows}
+                rows.extend(row for row in extra_rows if str(row[0]) not in existing_paths)
             results = []
             for path, rank in rows:
                 metadata_row = connection.execute(
@@ -363,16 +399,22 @@ class WikiArchitect:
                 if metadata_row is None:
                     continue
                 metadata = json.loads(metadata_row[0])
-                results.append(
-                    SearchResult(
-                        path=metadata["path"], title=metadata["title"], snippet=metadata["summary"][:500],
-                        bm25_score=float(-rank), wiki_section=metadata["wiki_section"],
-                        document_role=metadata["document_role"], abstraction_level=int(metadata["abstraction_level"]),
-                        tags=list(metadata["tags"]), related=list(metadata["related"]),
-                        uncertainty=bool(metadata["uncertainty"]),
-                    ).as_dict()
-                )
-            return results
+                item = SearchResult(
+                    path=metadata["path"], title=metadata["title"], snippet=metadata["summary"][:500],
+                    bm25_score=float(-rank), wiki_section=metadata["wiki_section"],
+                    document_role=metadata["document_role"], abstraction_level=int(metadata["abstraction_level"]),
+                    tags=list(metadata["tags"]), related=list(metadata["related"]),
+                    uncertainty=bool(metadata["uncertainty"]),
+                ).as_dict()
+                aliases = _TEAM_SEARCH_ALIASES.get(team.casefold(), ())
+                searchable = " ".join(
+                    [item["path"], item["title"], *item.get("tags", []), *metadata.get("aliases", [])]
+                ).casefold()
+                if aliases and any(alias in searchable for alias in aliases):
+                    item["bm25_score"] += 0.3
+                    item["boosted"] = True
+                results.append(item)
+            return sorted(results, key=lambda item: float(item["bm25_score"]), reverse=True)[:limit]
         finally:
             connection.close()
 
@@ -453,12 +495,38 @@ def _json_object(value: str) -> dict[str, Any] | None:
 
 def _history_text(history: Sequence[Any]) -> str:
     parts = []
-    for turn in history[-2:]:
-        question = str(getattr(turn, "question", ""))[:800]
-        answer = str(getattr(turn, "answer", ""))[:800]
-        if question or answer:
-            parts.append(f"User: {question}\nAssistant: {answer}")
+    for turn in history[-4:]:
+        if isinstance(turn, dict):
+            role = str(turn.get("role") or "user")
+            content = str(turn.get("content") or "").strip()[:800]
+            if content:
+                parts.append(f"{role}: {content}")
+            continue
+        question = str(getattr(turn, "question", "")).strip()[:800]
+        answer = str(getattr(turn, "answer", "")).strip()[:800]
+        if question:
+            parts.append(f"user: {question}")
+        if answer:
+            parts.append(f"assistant: {answer}")
     return "\n\n".join(parts) or "(No previous conversation.)"
+
+
+def _needs_history_resolution(question: str) -> bool:
+    normalized = question.casefold()
+    return any(marker in normalized for marker in _HISTORY_REFERENCE_MARKERS)
+
+
+def _scope_stop_message(scope: str, entities: Sequence[Any], language: str) -> str:
+    mentioned = "、".join(str(entity) for entity in entities if str(entity).strip()) or "another product"
+    if language.casefold().startswith("en"):
+        return (
+            f"The selected knowledge scope is {scope}, but your question explicitly asks about {mentioned}. "
+            "Please switch scope or ask for a comparison."
+        )
+    return (
+        f"当前知识范围是「{scope}」，但这个问题明确询问的是「{mentioned}」。"
+        "请切换知识范围，或明确要求进行跨产品对比。"
+    )
 
 
 class ReasonedQA:
@@ -470,17 +538,33 @@ class ReasonedQA:
 
     def _plan(self, state: dict[str, Any]) -> dict[str, Any]:
         question = str(state["question"])
-        history = _history_text(state.get("history", ()))
+        raw_history = state.get("history", ())
+        history_items = list(raw_history)[-4:] if isinstance(raw_history, Sequence) and not isinstance(raw_history, str) else []
+        use_history = bool(history_items) and _needs_history_resolution(question)
+        history = _history_text(history_items) if use_history else "(Not used: no current-turn reference.)"
         fallback = {
             "standalone_question": question,
+            "topic_relation": "continue" if use_history else ("switch" if history_items else "ambiguous"),
+            "current_subject": None,
+            "history_used": ["recent conversation"] if use_history else [],
+            "history_ignored": ["recent conversation"] if history_items and not use_history else [],
+            "scope_analysis": {
+                "active_scope": state["team"], "explicit_entities": [], "resolved_references": [],
+                "relation": "ambiguous", "reason": "No scope classifier response was available.", "confidence": 0.0,
+            },
+            "clarification_required": False,
+            "clarification_answer": "",
             "intent": "explicit_api" if re.search(r"\b(api|topic|parameter|ros)\b|接口|话题|参数", question, re.I) else "how_to",
             "preferred_abstraction": "api_or_interface" if re.search(r"\b(api|topic|parameter|ros)\b|接口|话题|参数", question, re.I) else "application_or_workflow",
             "search_queries": [question],
         }
         prompt = (
-            "Return JSON only: standalone_question, intent, preferred_abstraction, search_queries. "
-            "Use history solely to resolve an explicit reference in the current question. "
-            "For general how-to requests prefer a supported application or workflow; use API level only when explicitly requested.\n\n"
+            "Return JSON only with scope_analysis, topic_relation, current_subject, history_used, history_ignored, "
+            "standalone_question, intent, preferred_abstraction, and search_queries. Current request and selected "
+            "scope are authoritative. Use history only to resolve an explicit reference in the current question; do "
+            "not anchor an underspecified new question to history. Classify scope_analysis.relation as in_scope, "
+            "related_scope, cross_scope, out_of_scope, or ambiguous. For general how-to requests prefer a supported "
+            "application or workflow; use API level only when explicitly requested.\n\n"
             f"Selected scope: {state['team']}\nHistory:\n{history}\n\nCurrent question:\n{question}"
         )
         try:
@@ -489,21 +573,42 @@ class ReasonedQA:
             raise RuntimeError("Reasoned QA planner request failed") from exc
         if response:
             queries = [str(item).strip() for item in response.get("search_queries", []) if str(item).strip()][:3]
+            scope_analysis = response.get("scope_analysis")
+            if not isinstance(scope_analysis, dict):
+                scope_analysis = fallback["scope_analysis"]
+            scope_analysis = {**scope_analysis, "active_scope": state["team"]}
+            specific_scope = state["team"].casefold() not in {"", "all", "default"}
+            clarification_required = specific_scope and str(scope_analysis.get("relation") or "") == "out_of_scope"
             fallback.update(
                 standalone_question=str(response.get("standalone_question") or question).strip(),
+                topic_relation=str(response.get("topic_relation") or fallback["topic_relation"]),
+                current_subject=(str(response["current_subject"]).strip() if response.get("current_subject") and use_history else None),
+                history_used=[str(item) for item in response.get("history_used", [])[:3]] if use_history else [],
+                history_ignored=[str(item) for item in response.get("history_ignored", [])[:3]] if not use_history else [],
+                scope_analysis=scope_analysis,
+                clarification_required=clarification_required,
+                clarification_answer=_scope_stop_message(
+                    state["team"], scope_analysis.get("explicit_entities", []), state["language"]
+                ) if clarification_required else "",
                 intent=str(response.get("intent") or fallback["intent"]),
                 preferred_abstraction=str(response.get("preferred_abstraction") or fallback["preferred_abstraction"]),
-                search_queries=queries or [question],
+                search_queries=[] if clarification_required else (queries or [question]),
             )
             return {**fallback, "llm_calls": state.get("llm_calls", 0) + 1}
         return fallback
 
     def _search(self, state: dict[str, Any]) -> dict[str, Any]:
-        queries = state.get("additional_queries") if state.get("retrieval_round", 0) else state.get("search_queries")
+        queries = (
+            state.get("additional_queries") or state.get("search_queries")
+            if state.get("retrieval_round", 0)
+            else state.get("search_queries")
+        )
         results_by_path = {item["path"]: item for item in state.get("search_results", [])}
         for query in (queries or [state["question"]])[:3]:
-            for item in self.architect.search(str(query)):
-                results_by_path.setdefault(item["path"], item)
+            for item in self.architect.search(str(query), team=str(state["team"])):
+                previous = results_by_path.get(item["path"])
+                if previous is None or float(item["bm25_score"]) > float(previous.get("bm25_score", 0)):
+                    results_by_path[item["path"]] = item
         return {
             "search_results": sorted(results_by_path.values(), key=lambda item: item["bm25_score"], reverse=True)[:QA_REASONING_MAX_CANDIDATES],
             "retrieval_round": state.get("retrieval_round", 0) + 1,
@@ -519,12 +624,19 @@ class ReasonedQA:
             {key: candidate.get(key) for key in ("path", "title", "snippet", "document_role", "abstraction_level", "uncertainty")}
             for candidate in candidates
         ]
+        image_candidates = self.architect.images_for([str(item.get("path") or "") for item in candidates])
         prompt = (
-            "Return JSON only: selected_pages, need_more_search, additional_search_queries, answer_plan. "
-            "Choose only paths from candidates. Prefer complete supported solutions for general how-to requests, "
+            "Return JSON only with planner_faithful, unsupported_assumptions, corrected_standalone_question, "
+            "scope_consistency, selected_pages, selected_images, need_more_search, additional_search_queries, "
+            "uncertainties_to_check, primary_solution, direct_answer_plan, and supporting_points. Choose only paths "
+            "from candidates. Set planner_faithful false if the standalone question added an entity or constraint not "
+            "in the current question or explicitly used history. Set scope_consistency.valid false if evidence would "
+            "transfer a capability across products. Prefer complete supported solutions for general how-to requests, "
             "and exact interface pages for explicit API requests. Do not invent facts or paths.\n\n"
             f"Question: {state['question']}\nStandalone goal: {state['standalone_question']}\n"
-            f"Intent: {state['intent']}\nCandidates: {json.dumps(compact, ensure_ascii=False)}"
+            f"Selected scope: {state['team']}\nIntent: {state['intent']}\n"
+            f"Candidates: {json.dumps(compact, ensure_ascii=False)}\n"
+            f"Candidate images: {json.dumps(image_candidates[:8], ensure_ascii=False)}"
         )
         try:
             response = _json_object(self.provider.complete("You select grounded Wiki evidence; do not answer the user.", prompt))
@@ -533,19 +645,51 @@ class ReasonedQA:
         valid_paths = {str(candidate["path"]) for candidate in candidates}
         selected = [str(path) for path in (response or {}).get("selected_pages", []) if str(path) in valid_paths][:QA_REASONING_MAX_PAGES]
         selected = selected or fallback_selected
-        another_round = bool((response or {}).get("need_more_search")) and state.get("retrieval_round", 1) < 2
+        planner_faithful = bool((response or {}).get("planner_faithful", True))
+        scope_consistency = (response or {}).get("scope_consistency")
+        if not isinstance(scope_consistency, dict):
+            scope_consistency = {"valid": True, "unsupported_cross_scope_transfer": []}
+        scope_valid = bool(scope_consistency.get("valid", True))
+        fidelity_retry = not planner_faithful and state.get("retrieval_round", 1) < 2
+        scope_retry = not scope_valid and state.get("retrieval_round", 1) < 2
+        another_round = (
+            bool((response or {}).get("need_more_search")) or fidelity_retry or scope_retry
+        ) and state.get("retrieval_round", 1) < 2
         extra_queries = [str(value).strip() for value in (response or {}).get("additional_search_queries", []) if str(value).strip()][:3]
         if another_round and not extra_queries:
             extra_queries = [state["standalone_question"]]
-        answer_plan = (response or {}).get("answer_plan")
-        if not isinstance(answer_plan, dict):
-            answer_plan = {"direct_answer": "Answer the current question from the selected evidence.", "supporting_points": []}
+        answer_plan = {
+            "primary_solution": str((response or {}).get("primary_solution") or ""),
+            "direct_answer_plan": str((response or {}).get("direct_answer_plan") or "Answer the current question from the selected evidence."),
+            "supporting_points": [str(value) for value in (response or {}).get("supporting_points", [])[:4] if str(value).strip()],
+        }
+        uncertainty_paths = [
+            str(value) for value in (response or {}).get("uncertainties_to_check", [])
+            if str(value) in valid_paths
+        ][:QA_REASONING_MAX_PAGES]
+        selected_image_paths = {
+            str(image.get("path")) for image in (response or {}).get("selected_images", [])
+            if isinstance(image, dict)
+        }
+        selected_images = [
+            image for image in image_candidates if str(image.get("path")) in selected_image_paths
+        ][:3]
+        if not selected_images:
+            selected_images = self.architect.images_for(selected)[:3]
         return {
             "selected_pages": selected,
-            "selected_images": [image for image in self.architect.images_for(selected)[:3]],
+            "selected_images": selected_images,
             "need_more_search": another_round,
             "additional_queries": extra_queries,
             "answer_plan": answer_plan,
+            "planner_faithful": planner_faithful,
+            "unsupported_assumptions": [str(value) for value in (response or {}).get("unsupported_assumptions", [])[:5]],
+            "scope_consistency": scope_consistency,
+            "uncertainties_to_check": uncertainty_paths,
+            **({
+                "standalone_question": str((response or {}).get("corrected_standalone_question") or state["question"]),
+                "search_results": [],
+            } if fidelity_retry or scope_retry else {}),
             "llm_calls": state.get("llm_calls", 0) + (1 if response is not None else 0),
         }
 
@@ -563,7 +707,9 @@ class ReasonedQA:
         return [path for _, path in sorted(scored, reverse=True)[:QA_REASONING_MAX_PAGES]]
 
     def _load(self, state: dict[str, Any]) -> dict[str, Any]:
-        return {"evidence": self.architect.load_evidence(state.get("selected_pages", []))}
+        paths = list(state.get("selected_pages", []))
+        paths.extend(path for path in state.get("uncertainties_to_check", []) if path not in paths)
+        return {"evidence": self.architect.load_evidence(paths)}
 
     def _final_request(self, state: dict[str, Any]) -> dict[str, Any]:
         evidence = "\n\n".join(
@@ -593,18 +739,28 @@ class ReasonedQA:
     def _next_after_reason(state: dict[str, Any]) -> str:
         return "search" if state.get("need_more_search") and state.get("retrieval_round", 0) < 2 else "load"
 
+    @staticmethod
+    def _next_after_plan(state: dict[str, Any]) -> str:
+        return "clarify" if state.get("clarification_required") else "search"
+
+    @staticmethod
+    def _clarify(state: dict[str, Any]) -> dict[str, Any]:
+        return {"clarification_answer": str(state.get("clarification_answer") or "")}
+
     def prepare(self, *, question: str, team: str, language: str, history: Sequence[Any]) -> dict[str, Any]:
         from langgraph.graph import END, START, StateGraph
 
         graph = StateGraph(GraphState)
         graph.add_node("plan", self._plan)
+        graph.add_node("clarify", self._clarify)
         graph.add_node("search", self._search)
         graph.add_node("expand", self._expand)
         graph.add_node("reason", self._reason)
         graph.add_node("load", self._load)
         graph.add_node("final_answer", self._final_request)
         graph.add_edge(START, "plan")
-        graph.add_edge("plan", "search")
+        graph.add_conditional_edges("plan", self._next_after_plan, {"clarify": "clarify", "search": "search"})
+        graph.add_edge("clarify", END)
         graph.add_edge("search", "expand")
         graph.add_edge("expand", "reason")
         graph.add_conditional_edges("reason", self._next_after_reason, {"search": "search", "load": "load"})
@@ -654,6 +810,10 @@ async def run_reasoned_qa_stream(
     state = await asyncio.to_thread(
         engine.prepare, question=question, team=team, language=language, history=history
     )
+    clarification = str(state.get("clarification_answer") or "").strip()
+    if clarification:
+        await on_token(clarification)
+        return clarification
     answer = await _stream(
         provider.stream(state["answer_system"], state["answer_user"]), on_token, provider.timeout or DEEPSEEK_TIMEOUT
     )

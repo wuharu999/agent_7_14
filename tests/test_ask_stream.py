@@ -126,7 +126,12 @@ def test_main_qa_renders_safe_markdown_and_stream_replacements():
     assert "const priorConversation=currentChat" in template
     assert "history:priorConversation" in template
     assert "className = 'stream-spinner'" in template
-    assert "const hideStreamSpinner = () => streamSpinner.remove();" in template
+    assert "streamStatus.className = 'stream-status'" in template
+    assert "const hideStreamSpinner = () => streamStatus.remove();" in template
+    assert template.index("const botBubble = addMessage('bot', '');") < template.index("await fetch('/ask'")
+    assert "loadingBubble" not in template
+    assert "event.thinking" not in template
+    assert 'buffer = buffer.replace(/\\r\\n?/g, "\\n");' in template
     assert "hideStreamSpinner();\n              accumulatedText += event.text;" in template
 
 

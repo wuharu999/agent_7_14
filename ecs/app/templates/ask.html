@@ -63,20 +63,10 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .footer-links{text-align:center;font-size:14px;}
 .footer-links a{color:#2563eb;text-decoration:none;margin:0 8px;}
 
-.typing-indicator {display:flex;align-items:center;gap:4px;padding:8px 12px;}
-.dot {width:6px;height:6px;background:#94a3b8;border-radius:50%;animation:bounce 1.4s infinite ease-in-out both;}
-.dot:nth-child(1) {animation-delay:-0.32s;}
-.dot:nth-child(2) {animation-delay:-0.16s;}
-@keyframes bounce {0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)}}
-.stream-spinner{width:14px;height:14px;margin:2px;border:2px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:streamSpin .7s linear infinite;}
+.stream-status{display:inline-flex;align-items:center;min-height:18px;}
+.stream-spinner{display:block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:streamSpin .7s linear infinite;}
 @keyframes streamSpin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.stream-spinner{animation:none;border-top-color:#cbd5e1;}}
-.thinking-dots{display:inline-block;margin-left:3px;}
-.thinking-dots span{display:inline-block;animation:thinkingDot 1.4s infinite ease-in-out both;font-weight:bold;}
-.thinking-dots span:nth-child(1){animation-delay:0s;}
-.thinking-dots span:nth-child(2){animation-delay:0.2s;}
-.thinking-dots span:nth-child(3){animation-delay:0.4s;}
-@keyframes thinkingDot{0%,80%,100%{opacity:0.2;transform:scale(0.8)}40%{opacity:1;transform:scale(1.2)}}
 </style>
 </head>
 <body>
@@ -504,14 +494,17 @@ async function submitQuestion(){
   question.value='';
 
   addMessage('user', q);
-
-  const loadingBubble = document.createElement('div');
-  loadingBubble.className = 'bubble bot typing-indicator';
-  loadingBubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
-  chatHistory.appendChild(loadingBubble);
-  scrollToBottom();
-
-  let thinkingDiv = null;
+  const botBubble = addMessage('bot', '');
+  const streamStatus = document.createElement('div');
+  streamStatus.className = 'stream-status';
+  const streamSpinner = document.createElement('span');
+  streamSpinner.className = 'stream-spinner';
+  streamSpinner.setAttribute('role', 'status');
+  streamSpinner.setAttribute('aria-label', 'Waiting for answer');
+  streamStatus.appendChild(streamSpinner);
+  botBubble.appendChild(streamStatus);
+  const hideStreamSpinner = () => streamStatus.remove();
+  let accumulatedText = "";
 
   try{
     const r=await fetch('/ask',{
@@ -528,35 +521,23 @@ async function submitQuestion(){
 
     if(!r.ok) {
       const d=await r.json();
-      if(loadingBubble && loadingBubble.parentNode) {
-        loadingBubble.remove();
-      }
-      addMessage('bot', d.error || 'Request failed');
+      hideStreamSpinner();
+      accumulatedText = d.error || 'Request failed';
+      renderAnswerText(ensureTextContainer(botBubble), accumulatedText);
       return;
     }
 
-    if(loadingBubble && loadingBubble.parentNode) {
-      loadingBubble.remove();
-    }
-
-    const botBubble = addMessage('bot', '');
-    const streamSpinner = document.createElement('span');
-    streamSpinner.className = 'stream-spinner';
-    streamSpinner.setAttribute('role', 'status');
-    streamSpinner.setAttribute('aria-label', 'Waiting for answer');
-    botBubble.appendChild(streamSpinner);
-    const hideStreamSpinner = () => streamSpinner.remove();
     const reader = r.body.getReader();
     const decoder = new TextDecoder();
     let done = false;
     let buffer = "";
-    let accumulatedText = "";
 
     while(!done) {
       const { value, done: readerDone } = await reader.read();
       done = readerDone;
       if (value) {
         buffer += decoder.decode(value, { stream: !done });
+        buffer = buffer.replace(/\r\n?/g, "\n");
         const frames = buffer.split("\n\n");
         buffer = frames.pop();
 
@@ -590,43 +571,6 @@ async function submitQuestion(){
               continue;
             }
 
-            if (event.thinking) {
-              if (!thinkingDiv) {
-                thinkingDiv = document.createElement('div');
-                thinkingDiv.className = 'thinking-block';
-                thinkingDiv.style.fontStyle = 'italic';
-                thinkingDiv.style.opacity = '0.7';
-                thinkingDiv.style.marginBottom = '8px';
-                thinkingDiv.style.padding = '8px';
-                thinkingDiv.style.borderLeft = '3px solid var(--accent-light, #3b82f6)';
-                thinkingDiv.style.backgroundColor = 'rgba(0,0,0,0.03)';
-                thinkingDiv.style.borderRadius = '0 4px 4px 0';
-                thinkingDiv.dataset.raw = '';
-                botBubble.insertBefore(thinkingDiv, botBubble.firstChild);
-              }
-              thinkingDiv.dataset.raw = (thinkingDiv.dataset.raw || '') + event.thinking;
-              thinkingDiv.textContent = thinkingDiv.dataset.raw;
-              thinkingDiv.style.display = thinkingDiv.dataset.raw.trim() ? 'block' : 'none';
-            }
-
-            if (event.thinking_tokens && !event.thinking && !event.text && !thinkingDiv?.dataset.raw) {
-              if (!thinkingDiv) {
-                thinkingDiv = document.createElement('div');
-                thinkingDiv.className = 'thinking-block';
-                thinkingDiv.style.fontStyle = 'italic';
-                thinkingDiv.style.opacity = '0.7';
-                thinkingDiv.style.marginBottom = '8px';
-                thinkingDiv.style.padding = '8px';
-                thinkingDiv.style.borderLeft = '3px solid var(--accent-light, #3b82f6)';
-                thinkingDiv.style.backgroundColor = 'rgba(0,0,0,0.03)';
-                thinkingDiv.style.borderRadius = '0 4px 4px 0';
-                botBubble.insertBefore(thinkingDiv, botBubble.firstChild);
-              }
-              const isZh = (typeof language !== 'undefined' && language.value === 'zh-CN') || (typeof uiLanguage !== 'undefined' && uiLanguage.value === 'zh-CN');
-              const labelText = isZh ? '思考中' : 'Thinking';
-              thinkingDiv.innerHTML = `${labelText} <span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>`;
-            }
-
             if (typeof event.replace_text === 'string') {
               hideStreamSpinner();
               accumulatedText = event.replace_text;
@@ -636,7 +580,6 @@ async function submitQuestion(){
             if (event.image && typeof event.image.data === 'string') {
               const allowedTypes = new Set(['image/png','image/jpeg','image/gif','image/webp']);
               if (allowedTypes.has(event.image.mime_type) && shouldShowConversationImage(event.image)) {
-                hideStreamSpinner();
                 let gallery = botBubble.querySelector('.answer-images');
                 if (!gallery) {
                   gallery = document.createElement('div');
@@ -673,19 +616,16 @@ async function submitQuestion(){
       }
     }
 
+  }catch(e){
+    hideStreamSpinner();
+    const t = i18n[currentLang] || i18n['en'];
+    accumulatedText = t.genericError || 'An error occurred. Please try again.';
+    renderAnswerText(ensureTextContainer(botBubble), accumulatedText);
+  }finally{
+    hideStreamSpinner();
     if (currentChat.length > 0 && currentChat[currentChat.length - 1].role === 'bot') {
       currentChat[currentChat.length - 1].content = accumulatedText || 'No response';
       saveHistory();
-    }
-  }catch(e){
-    if(loadingBubble && loadingBubble.parentNode) {
-      loadingBubble.remove();
-    }
-    const t = i18n[currentLang] || i18n['en'];
-    addMessage('bot', t.genericError || 'An error occurred. Please try again.');
-  }finally{
-    if (thinkingDiv) {
-      thinkingDiv.style.display = 'none';
     }
     askButton.disabled=false;
     newConversationButton.disabled=false;
