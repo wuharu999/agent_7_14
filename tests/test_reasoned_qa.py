@@ -83,7 +83,7 @@ def test_reasoned_graph_is_an_explicit_optional_dependency() -> None:
     assert isinstance(reasoned_qa.langgraph_available(), bool)
 
 
-class ScopeStopProvider:
+class GenericQuestionProvider:
     timeout = 10
 
     def __init__(self) -> None:
@@ -91,40 +91,56 @@ class ScopeStopProvider:
 
     def complete(self, system: str, user: str) -> str:
         self.calls.append((system, user))
+        if "plan bounded" not in system:
+            return json.dumps(
+                {
+                    "selected_pages": ["entities/developer-tools.md"],
+                    "need_more_search": False,
+                    "planner_faithful": True,
+                    "scope_consistency": {"valid": True},
+                    "uncertainties_to_check": [],
+                    "primary_solution": "Developer tools",
+                    "direct_answer_plan": "Use the documented tools.",
+                    "supporting_points": [],
+                }
+            )
         return json.dumps(
             {
-                "standalone_question": "How do I use Walker C1?",
+                "standalone_question": "What developer tools are available?",
                 "scope_analysis": {
                     "relation": "out_of_scope",
-                    "explicit_entities": ["Walker C1"],
+                    "explicit_entities": [],
                 },
                 "intent": "how_to",
                 "preferred_abstraction": "application_or_workflow",
-                "search_queries": ["Walker C1"],
+                "search_queries": ["developer tools"],
             }
         )
 
     def stream(self, system: str, user: str):
-        raise AssertionError("A scope stop must not call the final-answer provider")
-        yield ""
+        self.calls.append((system, user))
+        assert "entities/developer-tools.md" in user
+        yield "The documented developer tools are available in this knowledge base."
 
 
 @pytest.mark.anyio
-async def test_reasoned_graph_stops_before_retrieval_for_an_explicit_scope_conflict(
+async def test_reasoned_graph_does_not_reject_a_generic_question_for_the_selected_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     wiki = tmp_path / "wiki"
-    wiki.mkdir()
+    page = wiki / "entities" / "developer-tools.md"
+    page.parent.mkdir(parents=True)
+    page.write_text("# Developer tools\nDocumented developer tools.", encoding="utf-8")
     monkeypatch.setattr(reasoned_qa, "WORKER_ROOT_DIR", tmp_path / "worker-runtime")
-    provider = ScopeStopProvider()
+    provider = GenericQuestionProvider()
     chunks: list[str] = []
 
     async def on_token(token: str) -> None:
         chunks.append(token)
 
     answer = await reasoned_qa.run_reasoned_qa_stream(
-        question="How do I use Walker C1?",
-        team="walker_s2",
+        question="What developer tools are available?",
+        team="tian_gong",
         language="en",
         history=(),
         wiki_root=wiki,
@@ -132,10 +148,12 @@ async def test_reasoned_graph_stops_before_retrieval_for_an_explicit_scope_confl
         on_token=on_token,
     )
 
-    assert "Walker C1" in answer
-    assert "walker_s2" in answer
+    assert answer == "The documented developer tools are available in this knowledge base."
     assert chunks == [answer]
-    assert len(provider.calls) == 1
+    assert len(provider.calls) == 3
+    source = Path(reasoned_qa.__file__).read_text(encoding="utf-8")
+    assert "_scope_stop_message" not in source
+    assert "another product" not in source
 
 
 class SecondRoundProvider(FakeProvider):

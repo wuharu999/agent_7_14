@@ -65,9 +65,6 @@ class GraphState(TypedDict, total=False):
     current_subject: str | None
     history_used: list[str]
     history_ignored: list[str]
-    scope_analysis: dict[str, Any]
-    clarification_required: bool
-    clarification_answer: str
     intent: str
     preferred_abstraction: str
     search_queries: list[str]
@@ -516,19 +513,6 @@ def _needs_history_resolution(question: str) -> bool:
     return any(marker in normalized for marker in _HISTORY_REFERENCE_MARKERS)
 
 
-def _scope_stop_message(scope: str, entities: Sequence[Any], language: str) -> str:
-    mentioned = "、".join(str(entity) for entity in entities if str(entity).strip()) or "another product"
-    if language.casefold().startswith("en"):
-        return (
-            f"The selected knowledge scope is {scope}, but your question explicitly asks about {mentioned}. "
-            "Please switch scope or ask for a comparison."
-        )
-    return (
-        f"当前知识范围是「{scope}」，但这个问题明确询问的是「{mentioned}」。"
-        "请切换知识范围，或明确要求进行跨产品对比。"
-    )
-
-
 class ReasonedQA:
     """A finite graph: plan -> search -> expand -> reason -> load -> stream."""
 
@@ -548,23 +532,16 @@ class ReasonedQA:
             "current_subject": None,
             "history_used": ["recent conversation"] if use_history else [],
             "history_ignored": ["recent conversation"] if history_items and not use_history else [],
-            "scope_analysis": {
-                "active_scope": state["team"], "explicit_entities": [], "resolved_references": [],
-                "relation": "ambiguous", "reason": "No scope classifier response was available.", "confidence": 0.0,
-            },
-            "clarification_required": False,
-            "clarification_answer": "",
             "intent": "explicit_api" if re.search(r"\b(api|topic|parameter|ros)\b|接口|话题|参数", question, re.I) else "how_to",
             "preferred_abstraction": "api_or_interface" if re.search(r"\b(api|topic|parameter|ros)\b|接口|话题|参数", question, re.I) else "application_or_workflow",
             "search_queries": [question],
         }
         prompt = (
-            "Return JSON only with scope_analysis, topic_relation, current_subject, history_used, history_ignored, "
-            "standalone_question, intent, preferred_abstraction, and search_queries. Current request and selected "
-            "scope are authoritative. Use history only to resolve an explicit reference in the current question; do "
-            "not anchor an underspecified new question to history. Classify scope_analysis.relation as in_scope, "
-            "related_scope, cross_scope, out_of_scope, or ambiguous. For general how-to requests prefer a supported "
-            "application or workflow; use API level only when explicitly requested.\n\n"
+            "Return JSON only with topic_relation, current_subject, history_used, history_ignored, standalone_question, "
+            "intent, preferred_abstraction, and search_queries. The selected knowledge base is a retrieval preference, "
+            "not a reason to reject a generic question. Use history only to resolve an explicit reference in the current "
+            "question; do not anchor an underspecified new question to history. For general how-to requests prefer a "
+            "supported application or workflow; use API level only when explicitly requested.\n\n"
             f"Selected scope: {state['team']}\nHistory:\n{history}\n\nCurrent question:\n{question}"
         )
         try:
@@ -573,26 +550,15 @@ class ReasonedQA:
             raise RuntimeError("Reasoned QA planner request failed") from exc
         if response:
             queries = [str(item).strip() for item in response.get("search_queries", []) if str(item).strip()][:3]
-            scope_analysis = response.get("scope_analysis")
-            if not isinstance(scope_analysis, dict):
-                scope_analysis = fallback["scope_analysis"]
-            scope_analysis = {**scope_analysis, "active_scope": state["team"]}
-            specific_scope = state["team"].casefold() not in {"", "all", "default"}
-            clarification_required = specific_scope and str(scope_analysis.get("relation") or "") == "out_of_scope"
             fallback.update(
                 standalone_question=str(response.get("standalone_question") or question).strip(),
                 topic_relation=str(response.get("topic_relation") or fallback["topic_relation"]),
                 current_subject=(str(response["current_subject"]).strip() if response.get("current_subject") and use_history else None),
                 history_used=[str(item) for item in response.get("history_used", [])[:3]] if use_history else [],
                 history_ignored=[str(item) for item in response.get("history_ignored", [])[:3]] if not use_history else [],
-                scope_analysis=scope_analysis,
-                clarification_required=clarification_required,
-                clarification_answer=_scope_stop_message(
-                    state["team"], scope_analysis.get("explicit_entities", []), state["language"]
-                ) if clarification_required else "",
                 intent=str(response.get("intent") or fallback["intent"]),
                 preferred_abstraction=str(response.get("preferred_abstraction") or fallback["preferred_abstraction"]),
-                search_queries=[] if clarification_required else (queries or [question]),
+                search_queries=queries or [question],
             )
             return {**fallback, "llm_calls": state.get("llm_calls", 0) + 1}
         return fallback
@@ -739,28 +705,18 @@ class ReasonedQA:
     def _next_after_reason(state: dict[str, Any]) -> str:
         return "search" if state.get("need_more_search") and state.get("retrieval_round", 0) < 2 else "load"
 
-    @staticmethod
-    def _next_after_plan(state: dict[str, Any]) -> str:
-        return "clarify" if state.get("clarification_required") else "search"
-
-    @staticmethod
-    def _clarify(state: dict[str, Any]) -> dict[str, Any]:
-        return {"clarification_answer": str(state.get("clarification_answer") or "")}
-
     def prepare(self, *, question: str, team: str, language: str, history: Sequence[Any]) -> dict[str, Any]:
         from langgraph.graph import END, START, StateGraph
 
         graph = StateGraph(GraphState)
         graph.add_node("plan", self._plan)
-        graph.add_node("clarify", self._clarify)
         graph.add_node("search", self._search)
         graph.add_node("expand", self._expand)
         graph.add_node("reason", self._reason)
         graph.add_node("load", self._load)
         graph.add_node("final_answer", self._final_request)
         graph.add_edge(START, "plan")
-        graph.add_conditional_edges("plan", self._next_after_plan, {"clarify": "clarify", "search": "search"})
-        graph.add_edge("clarify", END)
+        graph.add_edge("plan", "search")
         graph.add_edge("search", "expand")
         graph.add_edge("expand", "reason")
         graph.add_conditional_edges("reason", self._next_after_reason, {"search": "search", "load": "load"})
@@ -815,10 +771,6 @@ async def run_reasoned_qa_stream(
     state = await asyncio.to_thread(
         engine.prepare, question=question, team=team, language=language, history=history
     )
-    clarification = str(state.get("clarification_answer") or "").strip()
-    if clarification:
-        await on_token(clarification)
-        return clarification
     answer = await _stream(
         provider.stream(state["answer_system"], state["answer_user"]), on_token, provider.timeout or DEEPSEEK_TIMEOUT
     )
