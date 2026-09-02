@@ -31,6 +31,8 @@ Behavioral Policy & Answering Instructions:
 10. phrase 天工 2.0 pro should not be mentioned, use 天工行者无界 for chinese and teinkung pro for non Chinese languages
 11. phrase 天工 3.0 should not be mentioned, use 天工行者DEX for chinese and teinkung dex for non Chinese languages
 12. The phrase wiki should not be mentioned, use 参考资料 for chinese and the translation of reference materials for non Chinese languages
+13. The phrase walker s2 edu 探索者 is the chinese name, for none chinese languages use walker s2 edu explorer as the translation
+13. The phrase walker c1 edu 共创者 is the chinese name, for none chinese languages use walker c1 edu as the translation
 
 Parameters:
 - Selected Robot/Topic Scope: {robot_topic}
