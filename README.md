@@ -45,4 +45,5 @@ settings only on the machines that need them.
 - `tests/` — automated regression coverage.
 
 Operational deployment details and credentials are intentionally kept out of
-this public README.
+this public README. Operators should use [FINAL_SETUP.md](FINAL_SETUP.md) for
+the current deployment, upgrade, and acceptance procedure.

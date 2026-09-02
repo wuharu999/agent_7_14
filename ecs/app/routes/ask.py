@@ -16,6 +16,7 @@ from ecs.app.config import DATA_ROOT, WORKER_SHARED_SECRET
 import shutil
 
 from ecs.app.auth import require_roles
+from ecs.app.database import record_qa_question
 from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
 
@@ -98,18 +99,7 @@ async def ask(request: Request, body: dict):
     allowed, msg = limiter.is_allowed(client_ip)
     if not allowed:
         return JSONResponse({"error": msg}, status_code=429)
-        
-    from ecs.app.auth import current_session
-    from ecs.app.database import _DB_LOCK, _connect, utc_now
-    session = current_session(request)
-    user_id = session["user_id"] if session else None
-    
-    with _DB_LOCK, _connect() as connection:
-        connection.execute(
-            "INSERT INTO qa_visitors (ip_address, user_id, visited_at) VALUES (?, ?, ?)",
-            (client_ip, user_id, utc_now())
-        )
-        
+
     question = str(body.get("question") or "").strip()
     if not question:
         return JSONResponse({"error": "Question cannot be empty"}, status_code=400)
@@ -135,6 +125,16 @@ async def ask(request: Request, body: dict):
 
         robot = get_robot_by_name(team)
         topic_label = str((robot or {}).get("display_name_zh") or team)
+
+    await asyncio.to_thread(
+        record_qa_question,
+        ip_address=client_ip,
+        conversation_id=conversation_id,
+        team=team,
+        topic_label=topic_label,
+        language=language,
+        question=question,
+    )
 
     from fastapi.responses import StreamingResponse
     import json

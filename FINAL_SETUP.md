@@ -1,290 +1,121 @@
-# Final setup and upgrade guide
+# Deployment and upgrade guide
 
-## 1. Security warning before deployment
+This is the single operational guide for the two-machine deployment. The
+public ECS gateway owns HTTP, authentication, uploads, and SQLite data. The
+private Worker owns the LLM Wiki project, source files, and DeepSeek access.
 
-The login system protects application permissions, but passwords sent over plain `http://` can still be observed in transit. For temporary testing on port 8000:
+## Before starting
 
-- restrict the Alibaba security group to trusted IP addresses;
-- keep `COOKIE_SECURE=false`;
-- do not treat the plain-HTTP deployment as production-ready.
+- Keep the existing ECS `.env`, `ecs-data/`, and virtual environment.
+- Keep the Worker `.env`, `agent1/agent/raw/`, `agent1/agent/wiki/`, and
+  `agent1/agent/.llm-wiki/`.
+- Run exactly one Worker. The ECS accepts one active Worker connection.
+- Do not put Worker or DeepSeek credentials in the ECS configuration or a
+  release archive.
+- Plain HTTP on port 8000 is for controlled testing only. Restrict access and
+  keep `COOKIE_SECURE=false` until HTTPS is configured; set it to `true` when
+  HTTPS is enabled.
 
-For production, place Uvicorn behind HTTPS and set:
+## First ECS setup
 
-```env
-COOKIE_SECURE=true
-```
-
-## 2. ECS upgrade
-
-Back up the current configuration and database before replacing code:
-
-```bash
-cd /root/agent_7_14
-cp ecs/.env /root/agent_7_14-ecs.env.backup
-cp -a ecs-data /root/agent_7_14-ecs-data.backup
-```
-
-Extract the new package. Restore your `.env` because release ZIPs intentionally do not contain secrets:
+On the ECS at `/root/agent_7_14`:
 
 ```bash
-cp /root/agent_7_14-ecs.env.backup /root/agent_7_14/ecs/.env
-```
-
-Add these settings if they are not already present:
-
-```env
-FILE_COMMAND_TIMEOUT=60
-SESSION_COOKIE_NAME=agent1_session
-SESSION_HOURS=8
-COOKIE_SECURE=false
-COOKIE_SAMESITE=lax
-```
-
-Install/update dependencies:
-
-```bash
-cd /root/agent_7_14
-chmod +x scripts/*.sh scripts/create_user.py
-# Install uv first if `uv --version` is not available:
-# https://docs.astral.sh/uv/getting-started/installation/
 ./scripts/bootstrap_ecs.sh
+cp ecs/.env.example ecs/.env  # only if bootstrap did not create it
+chmod 600 ecs/.env
 ```
 
-The bootstrap uses the committed `uv.lock` and keeps the ECS environment at
-`.venv-ecs`. It does not use `pip install` or a requirements file.
-
-The database migration runs automatically at ECS startup and adds the new authentication/audit tables without deleting old upload records. On a fresh database, startup creates the `admin` account using `DEFAULT_ADMIN_PASSWORD` or the default `Admin#2026!Secured89`. Change that password immediately at `/admin/users`.
-
-Create more accounts when needed:
+Set `PUBLIC_BASE_URL`, `DATA_ROOT`, `DATABASE_PATH`, `ALLOWED_TEAMS`, and a
+strong `WORKER_SHARED_SECRET` in `ecs/.env`. Generate the secret with:
 
 ```bash
-python3 scripts/create_user.py --username uploader --role editor
+python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 ```
 
-The command asks for the password without displaying it. Passwords must be at least 10 characters and are stored using salted `scrypt`, not plaintext. Running the command again for an existing username updates its password and role.
+The same value must be configured on the Worker. On first startup, ECS creates
+the configured default administrator when no administrator exists. Change that
+password immediately at `/admin/users`.
 
-Start ECS:
+Start the gateway and verify it:
 
 ```bash
 tmux new -s agent-7-14-ecs
-cd /root/agent_7_14
 ./scripts/run_ecs.sh
+curl -fsS http://127.0.0.1:8000/health
 ```
 
-Detach with `Ctrl+B`, then `D`.
+## First Worker setup
 
-Verify:
+On the Worker at `$HOME/Documents/agent_7_14`:
 
 ```bash
-curl http://127.0.0.1:8000/health
-```
-
-## 3. Worker upgrade
-
-From the development checkout, the repeatable remote deployment is:
-
-```bash
-WORKER_SSH_TARGET=user@worker-host ./scripts/deploy_worker.sh
-```
-
-The script builds `release.zip`, uploads it, backs up `worker/.env` and the
-live project metadata, stops the existing Worker tmux session, replaces code
-while preserving virtualenvs and `raw/`, `wiki/`, `.llm-wiki/`, trash, and
-runtime state, synchronizes the locked Worker dependencies with `uv`, then
-starts the Worker again. Set `WORKER_REMOTE_ROOT` when the
-remote project is not `$HOME/Documents/agent_7_14`; set `START_WORKER=false` to
-deploy without starting it.
-
-Back up the existing Worker environment before replacing code:
-
-```bash
-cd ~/Documents/agent_7_14
-cp worker/.env ~/agent_7_14-worker.env.backup
-```
-
-Restore it after extracting the new release:
-
-```bash
-cp ~/agent_7_14-worker.env.backup ~/Documents/agent_7_14/worker/.env
-```
-
-Add or verify:
-
-```env
-BASE_DIR=/home/eason/Documents/agent_7_14/agent1/agent
-STAGING_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-worker/staging
-TRASH_DIR=/home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash
-
-FILE_OPERATION_WORKERS=1
-FILE_MANAGER_MAX_ENTRIES=10000
-PROMPT_GUARD_ENABLED=true
-PROMPT_GUARD_TIMEOUT=20
-PROMPT_GUARD_CONCURRENCY=2
-PROMPT_SCAN_MAX_FILE_BYTES=2097152
-PROMPT_SCAN_MAX_TOTAL_BYTES=10485760
-PROMPT_SCAN_MAX_WARNINGS=1000
-
-DEEPSEEK_API_KEY=<worker-only-key>
-DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_TIMEOUT=240
-
-LLM_WIKI_QUEUE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-queue.json
-LLM_WIKI_CACHE_FILE=/home/eason/Documents/agent_7_14/agent1/agent/.llm-wiki/ingest-cache.json
-LLM_WIKI_RESCAN_AFTER_PUBLISH=false
-```
-
-The ECS and Worker `WORKER_SHARED_SECRET` values must still match exactly.
-
-Install/update dependencies:
-
-```bash
-cd ~/Documents/agent_7_14
-chmod +x scripts/*.sh
-# Install uv first if `uv --version` is not available:
-# https://docs.astral.sh/uv/getting-started/installation/
 ./scripts/bootstrap_worker.sh
+cp worker/.env.example worker/.env  # only if bootstrap did not create it
+chmod 600 worker/.env
 ```
 
-The existing Python interpreter in `.venv-worker` is retained during upgrades,
-including Python 3.10 installations. `uv` synchronizes that environment from
-`uv.lock` without downloading or switching Python.
+Set `SERVER_URL` to the ECS WebSocket URL and set the identical
+`WORKER_SHARED_SECRET`. Replace every `/home/<username>/...` path in the
+example with the Worker computer's actual absolute path; dotenv does not
+expand a literal `$HOME`. Keep `DEEPSEEK_API_KEY` only in `worker/.env`, and
+leave `LLM_WIKI_RESCAN_AFTER_PUBLISH=false`.
 
-Open LLM Wiki and select exactly:
-
-```text
-/home/eason/Documents/agent_7_14/agent1/agent
-```
-
-Enable:
-
-```text
-Source Watch: ON
-Auto Ingest: ON
-```
-
-The LLM Wiki local API may remain enabled, but the Worker does not call `/sources/rescan` and does not need an API token for monitoring.
-
-Start the Worker:
+Open LLM Wiki on the configured `BASE_DIR` and enable **Source Watch** and
+**Auto Ingest**. Then validate and start the Worker:
 
 ```bash
+./scripts/check_worker_machine.sh
 tmux new -s agent-7-14-worker
-cd ~/Documents/agent_7_14
 ./scripts/run_worker.sh
 ```
 
-Detach with `Ctrl+B`, then `D`.
+Confirm the ECS health response reports `worker_online: true`.
 
-## 4. Browser test
+## Upgrade an existing deployment
 
-From any computer allowed by the ECS security group:
-
-```text
-http://47.239.12.206:8000/login
-```
-
-Sign in with the seeded `admin` account or an account created by `create_user.py`.
-
-Test in this order:
-
-1. Open `/manage`; confirm the current `raw/sources` directory tree appears.
-2. Open `/upload`; select two small supported files for one team and confirm
-   both appear in the inline queue with separate detail links.
-3. Confirm both detail pages reach the expected LLM Wiki completion or show
-   the original processing error.
-4. Return to `/manage`; confirm the new team/upload folder and file appear.
-5. Remove the file. Confirm it disappears from `raw/sources` and appears under `.agent1-trash` on the Worker.
-
-Worker verification:
+Run the guarded upgrade script on each respective machine. Each script backs
+up live configuration/data, fast-forwards the requested branch, synchronizes
+the locked dependencies, compiles the relevant code, and restarts its tmux
+session.
 
 ```bash
-find /home/eason/Documents/agent_7_14/agent1/agent/raw/sources -type f -print
-find /home/eason/Documents/agent_7_14/agent1/agent/.agent1-trash -type f -print
+# ECS
+./scripts/pull_and_restart_ecs.sh
+
+# Worker
+./scripts/pull_and_restart_worker.sh
 ```
 
-## 5. Permissions
+The scripts intentionally preserve the ECS database and the Worker's live LLM
+Wiki project. Review the Git worktree and choose the deployment branch before
+running either script.
 
-| Route/action | Public | Viewer | Editor | Admin |
-|---|---:|---:|---:|---:|
-| Ask questions | Yes | Yes | Yes | Yes |
-| Health | Yes | Yes | Yes | Yes |
-| List sources | No | Yes | Yes | Yes |
-| View upload status | No | Yes | Yes | Yes |
-| Upload | No | No | Yes | Yes |
-| Remove file/folder | No | No | Yes | Yes |
+## Acceptance checks
 
-## 6. Removal behavior
-
-The browser sends a relative path such as:
-
-```text
-tian_gong/7f3c.../manual.pdf
-```
-
-The Worker validates it against `BASE_DIR/raw/sources`, blocks path traversal and active ingestion, then moves it to:
-
-```text
-BASE_DIR/.agent1-trash/<timestamp>/tian_gong/7f3c.../manual.pdf
-```
-
-LLM Wiki Source Watch observes that the source disappeared from `raw/sources` and applies its source-removal lifecycle.
-
-## 7. Troubleshooting
-
-### `/manage` says Worker offline
+After ECS, LLM Wiki, and exactly one Worker are running:
 
 ```bash
-curl http://47.239.12.206:8000/health
+./scripts/check_ecs.sh http://127.0.0.1:8000
 ```
 
-Confirm `worker_online` is true and inspect the Worker tmux session.
+1. Sign in at `/login` and verify `/manage` shows `raw/sources/`.
+2. Upload a small supported file and confirm its detail page separates the
+   current upload from the global LLM Wiki status.
+3. Ask an indexed question in a non-default language, then send a follow-up;
+   verify the answer streams and keeps the selected language/context.
+4. Start a new conversation and verify the following question has no earlier
+   conversation context.
+5. Soft-delete a non-processing source and verify it moved to
+   `.agent1-trash/` on the Worker.
 
-### Removal returns 409
+Local regression validation before packaging or deployment is:
 
-The source or a file inside the selected folder is currently `processing` in LLM Wiki. Wait until ingestion finishes, refresh, and remove again.
-
-### Login loops back to `/login`
-
-Check the ECS clock and `SESSION_HOURS`. If using plain HTTP, `COOKIE_SECURE` must be false. After HTTPS is installed, change it to true.
-
-### The same source ingests twice
-
-Confirm:
-
-```env
-LLM_WIKI_RESCAN_AFTER_PUBLISH=false
+```bash
+python3 -m compileall -q ecs worker shared scripts
+./scripts/uv_sync.sh dev
+.venv-dev/bin/python -m pytest -q
 ```
 
-and do not manually call `/sources/rescan` while Source Watch + Auto Ingest are active.
-
-### Source manager exceeds the entry limit
-
-Increase carefully:
-
-```env
-FILE_MANAGER_MAX_ENTRIES=20000
-```
-
-then restart the Worker.
-
-## QA conversation/language upgrade
-
-No new Python package is required. The new Worker settings are optional because defaults are built in:
-
-```env
-DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_TIMEOUT=240
-DEEPSEEK_STRUCTURED_RETRIES=1
-DEEPSEEK_TRANSPORT_RETRIES=1
-CONVERSATION_MAX_TURNS=6
-CONVERSATION_MAX_SESSIONS=1000
-```
-
-Public QA uses DeepSeek V4 Flash as its sole provider. Prompt classification
-also calls DeepSeek directly with thinking disabled and no tools. Existing
-obsolete command-line-agent variables are ignored and may be removed from
-deployed environment files.
-
-After copying this version over the existing code, restart both ECS and Worker so the new `/ask` protocol is loaded. Existing browsers automatically receive a conversation ID on their next question. Use **New conversation** on the question page to intentionally clear context.
-
-The same browser conversation is routed to the same QA worker lane. Context continuity is supplied by the Worker's bounded recent-turn history. That history is in memory and resets when the Worker process restarts.
+Passing local tests does not prove live DeepSeek, LLM Wiki Source Watch, or
+browser behavior; perform the acceptance checks on the deployment machines.

@@ -619,7 +619,6 @@ For every task:
 
 Reusable roles are discovered from `.codex/agents/` and locked to `gpt-5.6-luna`:
 
-- `grill-session-removal`: retired Grill/session surface and compatibility cleanup.
 - `deepseek-only-provider-migration`: DeepSeek-only QA provider maintenance.
 - `wiki-image-curator`: deterministic Wiki image relevance and safety.
 - `final-integration-tester`: read-only final compatibility and regression evidence.

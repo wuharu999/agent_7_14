@@ -155,12 +155,21 @@ def initialize_database() -> None:
             connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
         connection.executescript(
             """
-            CREATE TABLE IF NOT EXISTS qa_visitors (
+            CREATE TABLE IF NOT EXISTS qa_question_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ip_address TEXT NOT NULL,
-                user_id INTEGER,
-                visited_at TEXT NOT NULL
+                conversation_id TEXT NOT NULL,
+                team TEXT NOT NULL,
+                topic_label TEXT NOT NULL,
+                language TEXT NOT NULL,
+                question TEXT NOT NULL,
+                asked_at TEXT NOT NULL
             );
+
+            CREATE INDEX IF NOT EXISTS idx_qa_question_records_asked_at
+                ON qa_question_records(asked_at);
+            CREATE INDEX IF NOT EXISTS idx_qa_question_records_conversation
+                ON qa_question_records(conversation_id, asked_at);
 
             CREATE TABLE IF NOT EXISTS robots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -502,6 +511,63 @@ def delete_session_by_hash(token_hash: str) -> None:
 def delete_expired_sessions() -> None:
     with _DB_LOCK, _connect() as connection:
         connection.execute("DELETE FROM sessions WHERE expires_at <= ?", (utc_now(),))
+
+
+def _qa_question_record_cutoff() -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+
+
+def _purge_expired_qa_question_records(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "DELETE FROM qa_question_records WHERE asked_at < ?",
+        (_qa_question_record_cutoff(),),
+    )
+
+
+def record_qa_question(
+    *,
+    ip_address: str,
+    conversation_id: str,
+    team: str,
+    topic_label: str,
+    language: str,
+    question: str,
+) -> None:
+    """Store one accepted public QA question and renew records after 14 days."""
+    with _DB_LOCK, _connect() as connection:
+        _purge_expired_qa_question_records(connection)
+        connection.execute(
+            """
+            INSERT INTO qa_question_records (
+                ip_address, conversation_id, team, topic_label, language,
+                question, asked_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ip_address,
+                conversation_id,
+                team,
+                topic_label,
+                language,
+                question,
+                utc_now(),
+            ),
+        )
+
+
+def list_recent_qa_question_records() -> list[dict[str, Any]]:
+    """Return the current two-week question-record window in display order."""
+    with _DB_LOCK, _connect() as connection:
+        _purge_expired_qa_question_records(connection)
+        rows = connection.execute(
+            """
+            SELECT ip_address, conversation_id, team, topic_label, language,
+                   question, asked_at
+            FROM qa_question_records
+            ORDER BY conversation_id, ip_address, asked_at
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def write_audit(

@@ -69,12 +69,12 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
     <h3 data-i18n="recentAuditLog">Recent Audit Log</h3>
     <div class="actions" style="margin-bottom: 10px;">
         <button id="refresh-audit" class="button secondary" data-i18n="refreshAudit">Refresh Log</button>
-        <button id="generate-report" class="button" data-i18n="generateReportBtn">Generate User Activity Report</button>
+        <button id="generate-report" class="button" data-i18n="generateReportBtn">Generate question report</button>
     </div>
     <div id="audit-log" style="max-height: 300px; overflow-y: auto; overflow-x: hidden; word-break: break-all; background: #f8fafc; padding: 10px; border-radius: 8px; font-size: 13px; margin-bottom: 15px;"></div>
 
     <div id="report-section" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
-        <h4 data-i18n="reportTitle" style="margin-top: 0;">User Activity & Geolocation Report</h4>
+        <h4 data-i18n="reportTitle" style="margin-top: 0;">Question records (last 14 days)</h4>
         <textarea id="report-content" rows="12" style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 13px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; padding: 8px;" readonly></textarea>
         <button id="close-report" class="button secondary" data-i18n="closeReportBtn">Close Report</button>
     </div>
@@ -156,8 +156,8 @@ const translations = {
     auditTarget: 'Target',
     auditResult: 'Result',
     loadingEditors: 'Loading editors...',
-    generateReportBtn: 'Generate User Activity Report',
-    reportTitle: 'User Activity & Geolocation Report',
+    generateReportBtn: 'Generate question report',
+    reportTitle: 'Question records (last 14 days)',
     closeReportBtn: 'Close Report',
     generatingReport: 'Generating Report...',
     failedToGenerateReport: 'Failed to generate report.',
@@ -226,8 +226,8 @@ const translations = {
     auditTarget: '目标',
     auditResult: '结果',
     loadingEditors: '正在加载编辑者……',
-    generateReportBtn: '生成用户活动报告',
-    reportTitle: '用户活动与地理位置分析报告',
+    generateReportBtn: '生成问答记录报告',
+    reportTitle: '最近 14 天问答记录',
     closeReportBtn: '关闭报告',
     generatingReport: '正在生成报告……',
     failedToGenerateReport: '生成报告失败。',
@@ -812,7 +812,7 @@ if (role === 'admin') {
     window.loadRobots = loadRobots;
 }
 
-if (role === 'admin' || role === 'editor') {
+if (role === 'admin') {
     document.getElementById('activity-panel').style.display = 'block';
 
     async function loadAuditLog() {
@@ -845,7 +845,7 @@ if (role === 'admin' || role === 'editor') {
         const originalText = generateBtn.textContent;
         generateBtn.textContent = tr('generatingReport');
         try {
-            const r = await fetch('/api/manage/generate_report', {
+            const r = await fetch('/api/manage/question_report', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

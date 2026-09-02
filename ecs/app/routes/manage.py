@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
@@ -18,6 +20,7 @@ from ecs.app.database import (
     get_robot_editors,
     get_user_by_id,
     list_audit_log,
+    list_recent_qa_question_records,
     list_active_editors,
     mark_sources_deleted,
     reconcile_robots_with_source_tree,
@@ -34,6 +37,46 @@ router = APIRouter()
 
 class DeleteSourceRequest(BaseModel):
     path: str = Field(min_length=1, max_length=1000)
+
+
+def _markdown_cell(value: object) -> str:
+    return str(value).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>").replace("|", "\\|")
+
+
+def _question_report_markdown(records: list[dict[str, object]]) -> str:
+    grouped: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
+    for record in records:
+        grouped[(str(record["conversation_id"]), str(record["ip_address"]))].append(record)
+
+    lines = [
+        "# 最近 14 天问答记录报告",
+        f"生成时间：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        "",
+        f"- **问题总数**：{len(records)}",
+        f"- **会话数**：{len({str(record['conversation_id']) for record in records})}",
+        f"- **IP 地址数**：{len({str(record['ip_address']) for record in records})}",
+    ]
+    for (conversation_id, ip_address), questions in grouped.items():
+        lines.extend(
+            [
+                "",
+                f"## 会话 `{_markdown_cell(conversation_id)}` · IP `{_markdown_cell(ip_address)}`",
+                f"- **问题数**：{len(questions)}",
+                "",
+                "| 时间 | 机器人 / 主题 | 语言 | 问题 |",
+                "| --- | --- | --- | --- |",
+            ]
+        )
+        for question in questions:
+            lines.append(
+                "| {asked_at} | {topic} | {language} | {text} |".format(
+                    asked_at=_markdown_cell(question["asked_at"]),
+                    topic=_markdown_cell(question["topic_label"]),
+                    language=_markdown_cell(question["language"]),
+                    text=_markdown_cell(question["question"]),
+                )
+            )
+    return "\n".join(lines)
 
 
 def _robot_names_from_source_tree(tree: object) -> list[str]:
@@ -504,82 +547,15 @@ async def get_audit_log(request: Request):
     return {"audit_log": list_audit_log()}
 
 
-@router.post("/api/manage/generate_report")
-async def generate_report_endpoint(
+@router.post("/api/manage/question_report")
+async def question_report_endpoint(
     request: Request,
     x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
 ):
-    session = require_roles(request, {"admin", "editor"})
+    session = require_roles(request, {"admin"})
     verify_csrf(session, x_csrf_token)
-
-    from ecs.app.database import _connect, _DB_LOCK
-    from datetime import datetime
-    import urllib.request
-    import asyncio
-
-    with _DB_LOCK, _connect() as connection:
-        visitors = connection.execute(
-            "SELECT ip_address, visited_at FROM qa_visitors ORDER BY visited_at DESC"
-        ).fetchall()
-        audit_logs = connection.execute(
-            "SELECT username, action, source_path, result, created_at FROM file_audit_log ORDER BY created_at DESC"
-        ).fetchall()
-
-    unique_ips = set()
-    ip_counts = {}
-    for v in visitors:
-        ip = v["ip_address"]
-        unique_ips.add(ip)
-        ip_counts[ip] = ip_counts.get(ip, 0) + 1
-
-    geolocations = {}
-
-    def resolve_geo(ip: str):
-        if ip in ("127.0.0.1", "localhost", "unknown"):
-            return "本地 / 内网"
-        try:
-            with urllib.request.urlopen(f"http://ip-api.com/json/{ip}", timeout=3) as res:
-                data = json.loads(res.read().decode())
-                if data.get("status") == "success":
-                    country = data.get("country", "未知")
-                    region = data.get("regionName", "未知")
-                    city = data.get("city", "未知")
-                    org = data.get("org", "未知")
-                    return f"{country}（{region}，{city}）- {org}"
-                else:
-                    return "地理位置解析失败"
-        except Exception:
-            return "地理定位出错"
-
-    for ip in unique_ips:
-        geolocations[ip] = await asyncio.to_thread(resolve_geo, ip)
-
-    lines = []
-    lines.append("# 用户活动与地理位置分析报告")
-    lines.append(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append("")
-    lines.append("## 问答访客统计")
-    lines.append(f"- **已记录的问答访问总数**：{len(visitors)}")
-    lines.append("")
-    lines.append("| IP 地址 | 访问次数 | 解析位置 / 运营商 |")
-    lines.append("| --- | --- | --- |")
-    for ip, count in sorted(ip_counts.items(), key=lambda x: x[1], reverse=True):
-        geo = geolocations.get(ip, "未知")
-        lines.append(f"| `{ip}` | {count} | {geo} |")
-    lines.append("")
-
-    lines.append("## 近期管理操作与文件审计日志")
-    lines.append(f"- **操作日志总数**：{len(audit_logs)}")
-    lines.append("")
-    lines.append("| 时间 | 用户 | 操作 | 目标 | 结果 |")
-    lines.append("| --- | --- | --- | --- | --- |")
-    for log in audit_logs[:50]:
-        lines.append(
-            f"| {log['created_at']} | {log['username']} | `{log['action']}` | `{log['source_path']}` | {log['result']} |"
-        )
-
-    report_markdown = "\n".join(lines)
-    return {"report": report_markdown}
+    records = list_recent_qa_question_records()
+    return {"report": _question_report_markdown(records)}
 
 
 @router.get("/api/manage/contradictions")
