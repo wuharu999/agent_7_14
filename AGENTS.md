@@ -27,7 +27,7 @@ The ECS is the public-facing gateway. The Worker computer owns the real knowledg
 ### Existing ECS server
 
 ```text
-Public IP: 47.239.12.206
+Public IP: 120.77.250.227
 Project root: /root/agent_7_14
 HTTP test port: 8000
 ECS environment: /root/agent_7_14/ecs/.env
@@ -288,7 +288,7 @@ Expected keys include:
 
 ```env
 APP_NAME=Agent1 Knowledge Base
-PUBLIC_BASE_URL=http://47.239.12.206:8000
+PUBLIC_BASE_URL=http://120.77.250.227:8000
 DATA_ROOT=/root/agent_7_14/ecs-data
 DATABASE_PATH=/root/agent_7_14/ecs-data/agent_jobs.db
 ALLOWED_TEAMS=tian_gong,walker_s2,walker_c1
@@ -308,7 +308,7 @@ Use `COOKIE_SECURE=false` only during plain-HTTP testing. Change it to `true` af
 Resolve paths from the real `$HOME` on the new Worker computer.
 
 ```env
-SERVER_URL=ws://47.239.12.206:8000/ws/client
+SERVER_URL=ws://120.77.250.227:8000/ws/client
 WORKER_SHARED_SECRET=<exact same value as ECS>
 BASE_DIR=$HOME/Documents/agent_7_14/agent1/agent
 STAGING_DIR=$HOME/Documents/agent_7_14/agent1/agent/.agent1-worker/staging
