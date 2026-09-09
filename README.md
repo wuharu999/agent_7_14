@@ -41,9 +41,9 @@ settings only on the machines that need them.
 - `ecs/` — public FastAPI application, authentication, uploads, and status UI.
 - `worker/` — private ingestion and LangGraph Wiki Q&A service; final answers stream to the browser.
 - `shared/` — shared models and validation helpers.
-- `scripts/` — local setup, validation, packaging, and deployment utilities.
+- `scripts/` — local setup, validation, and deployment utilities.
 - `tests/` — automated regression coverage.
 
 Operational deployment details and credentials are intentionally kept out of
-this public README. Operators should use [FINAL_SETUP.md](FINAL_SETUP.md) for
-the current deployment, upgrade, and acceptance procedure.
+this public README. Operators should refer to `AGENTS.md` for deployment
+targets, configuration, and operational procedures.

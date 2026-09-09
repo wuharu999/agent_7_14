@@ -5,13 +5,22 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 : "${WORKER_SSH_TARGET:?Set WORKER_SSH_TARGET, for example user@worker-host}"
 REMOTE_ROOT="${WORKER_REMOTE_ROOT:-__REMOTE_HOME__/Documents/agent_7_14}"
-REMOTE_TMP="${WORKER_REMOTE_TMP:-/tmp/agent_7_14-release.zip}"
+REMOTE_TMP="${WORKER_REMOTE_TMP:-/tmp/agent_7_14-worker.zip}"
 REMOTE_SESSION="${WORKER_TMUX_SESSION:-agent-7-14-worker}"
 START_WORKER="${START_WORKER:-true}"
 
-python3 scripts/pack_release.py
-echo "Uploading release.zip to ${WORKER_SSH_TARGET}:${REMOTE_TMP}"
-scp release.zip "${WORKER_SSH_TARGET}:${REMOTE_TMP}"
+RELEASE_ARCHIVE="${1:-${WORKER_RELEASE_ARCHIVE:-}}"
+
+if [ -z "$RELEASE_ARCHIVE" ] || [ ! -f "$RELEASE_ARCHIVE" ]; then
+  if [ -n "$RELEASE_ARCHIVE" ]; then
+    echo "Release archive not found: $RELEASE_ARCHIVE" >&2
+  fi
+  echo "Usage: $0 [archive.zip]" >&2
+  exit 1
+fi
+
+echo "Uploading $RELEASE_ARCHIVE to ${WORKER_SSH_TARGET}:${REMOTE_TMP}"
+scp "$RELEASE_ARCHIVE" "${WORKER_SSH_TARGET}:${REMOTE_TMP}"
 
 ssh "$WORKER_SSH_TARGET" \
   "REMOTE_ROOT=$(printf '%q' "$REMOTE_ROOT") REMOTE_TMP=$(printf '%q' "$REMOTE_TMP") REMOTE_SESSION=$(printf '%q' "$REMOTE_SESSION") START_WORKER=$(printf '%q' "$START_WORKER") bash -s" <<'REMOTE_SCRIPT'

@@ -9,7 +9,7 @@ BACKUP_PARENT="${WORKER_BACKUP_ROOT:-$HOME/agent_7_14-worker-backups}"
 START_WORKER="${START_WORKER:-true}"
 
 if [ "$#" -gt 1 ]; then
-  echo "Usage: $0 [release.zip]" >&2
+  echo "Usage: $0 [archive.zip]" >&2
   exit 2
 fi
 

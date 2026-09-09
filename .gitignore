@@ -63,7 +63,6 @@ ecs-data/
 *~
 
 # Locally generated release artifacts
-release.zip
 release-*.zip
 
 # Editor and IDE runtime state
@@ -71,10 +70,6 @@ release-*.zip
 .idea/
 *.code-workspace
 .agents/
-.codex/*
-!.codex/config.toml
-!.codex/agents/
-!.codex/agents/*.toml
 .agent1-deploy-backups/
 .agent1-release.*/
 
