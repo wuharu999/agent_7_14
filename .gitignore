@@ -36,6 +36,8 @@ Thumbs.db
 .direnv/
 secrets/
 credentials/
+FINAL_SETUP.md
+DEPLOYMENT*.md
 *.pem
 *.key
 *.p12
