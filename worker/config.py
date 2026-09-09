@@ -63,18 +63,12 @@ class TeamConfig:
     llm_wiki_cache_file: Path
     llm_wiki_api_url: str
 
+LLM_WIKI_API_URL = os.environ.get(
+    "LLM_WIKI_API_URL", "http://127.0.0.1:19828/api/v1"
+).strip() or "http://127.0.0.1:19828/api/v1"
+
 def get_team_config(team: str) -> TeamConfig:
     team = normalize_team_name(team)
-    teams_json_path = PROJECT_ROOT / "worker" / "teams.json"
-    port = 19828 # default fallback
-    if teams_json_path.is_file():
-        try:
-            teams_data = json.loads(teams_json_path.read_text())
-            if team in teams_data and "port" in teams_data[team]:
-                port = teams_data[team]["port"]
-        except Exception:
-            pass
-
     return TeamConfig(
         team_name=team,
         base_dir=WORKER_ROOT_DIR,
@@ -82,7 +76,7 @@ def get_team_config(team: str) -> TeamConfig:
         wiki_dir=WORKER_ROOT_DIR / "wiki",
         llm_wiki_queue_file=LLM_WIKI_QUEUE_FILE,
         llm_wiki_cache_file=LLM_WIKI_CACHE_FILE,
-        llm_wiki_api_url=f"http://127.0.0.1:{port}/api/v1"
+        llm_wiki_api_url=LLM_WIKI_API_URL,
     )
 
 QA_WORKERS = int(os.environ.get("QA_WORKERS", "3"))

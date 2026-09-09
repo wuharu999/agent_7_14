@@ -54,8 +54,6 @@ stamp="$(date +%Y%m%d-%H%M%S)"
 backup_dir="$BACKUP_PARENT/$stamp"
 mkdir -p "$backup_dir"
 cp "$PROJECT_ROOT/worker/.env" "$backup_dir/worker.env"
-[ ! -f "$PROJECT_ROOT/worker/teams.json" ] || \
-  cp "$PROJECT_ROOT/worker/teams.json" "$backup_dir/teams.json"
 sha256sum "$ZIP_PATH" > "$backup_dir/release.sha256"
 
 live_items=()
@@ -87,7 +85,6 @@ rsync -a \
   --exclude='.git/' \
   --exclude='ecs/.env' \
   --exclude='worker/.env' \
-  --exclude='worker/teams.json' \
   --exclude='.venv-ecs/' \
   --exclude='.venv-worker/' \
   --exclude='.venv-dev/' \
