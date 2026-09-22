@@ -10,8 +10,9 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
 <style>
 .admin-create{display:block;margin-bottom:20px}.robot-create-form{max-width:420px}.assignment-board{display:grid;grid-template-columns:minmax(220px,1fr) minmax(360px,2fr);gap:18px;align-items:start}.editor-pool-panel,.robots-panel{border:1px solid #dbe2ee;border-radius:12px;background:#f8fafc;padding:14px}.editor-pool{display:flex;flex-direction:column;gap:8px;min-height:90px}.editor-chip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:650;cursor:grab}.editor-chip:active{cursor:grabbing}.editor-chip small{color:#64748b;font-weight:500}.assigned-editor{display:inline-flex;width:auto;margin:4px 6px 4px 0;cursor:grab}.assigned-editor button{height:auto;padding:0 2px;background:none;color:#b91c1c;font-size:17px;line-height:1}.robot-card{margin-bottom:12px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;transition:border-color .15s,background .15s}.robot-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.robot-card-header>div{flex-wrap:wrap;justify-content:flex-end}.robot-card-header .danger{height:32px;padding:0 11px;font-size:12px}.robot-order-controls{display:inline-flex;gap:4px}.robot-order-button{width:32px;height:32px;padding:0;font-size:17px}.robot-order-button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}.robot-order-hint{margin:0 0 10px;font-size:12px;color:#64748b}.robot-card.drag-over{border-color:#2563eb;background:#eff6ff}.robot-drop-hint{font-size:12px;color:#64748b;margin:6px 0}.robot-editors{min-height:35px;padding-top:4px}@media(max-width:760px){.assignment-board{grid-template-columns:1fr}.editor-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
 </style>
+<link rel="stylesheet" href="/static/site_theme.css?v=20260922">
 </head>
-<body>
+<body class="support-page">
 <div class="top">
   <div>
     <h1 data-i18n="header">Knowledge source manager</h1>

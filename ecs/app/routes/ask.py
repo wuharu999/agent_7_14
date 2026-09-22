@@ -15,7 +15,8 @@ from pathlib import Path
 from ecs.app.config import DATA_ROOT, WORKER_SHARED_SECRET
 import shutil
 
-from ecs.app.auth import require_roles
+from ecs.app.auth import current_session, require_roles, verify_csrf
+from ecs.app import chat_history
 from ecs.app.database import record_qa_question
 from ecs.app.gateway import gateway
 from ecs.app.languages import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
@@ -111,13 +112,31 @@ async def ask(request: Request, body: dict):
         return JSONResponse({"error": "Unsupported answer language"}, status_code=400)
 
     team = str(body.get("team") or "").strip()
-    if not team:
+    if not team or len(team) > 128:
         return JSONResponse({"error": "Team cannot be empty"}, status_code=400)
 
     conversation_id = str(body.get("conversation_id") or "").strip()
-    if not _CONVERSATION_ID.fullmatch(conversation_id):
-        conversation_id = f"web:{uuid.uuid4().hex}"
-    history = _bounded_client_history(body.get("history"))
+    session = current_session(request)
+    turn_id = None
+    if session:
+        verify_csrf(session, request.headers.get("X-CSRF-Token"))
+        # Client-provided transcripts never replace account-owned history.
+        try:
+            conversation_id, turn_id, stored_history = await asyncio.to_thread(
+                chat_history.begin_turn, int(session["user_id"]), conversation_id,
+                question, team, language,
+            )
+        except LookupError:
+            return JSONResponse({"error": "Conversation not found"}, status_code=404)
+        history = _bounded_client_history(stored_history)
+    else:
+        # Account IDs are also Worker session IDs. Never let an anonymous
+        # request resume a signed-in user's in-memory Worker conversation.
+        if conversation_id.startswith("chat:") or request.headers.get("X-CSRF-Token"):
+            return JSONResponse({"error": "Login required"}, status_code=401)
+        if not _CONVERSATION_ID.fullmatch(conversation_id):
+            conversation_id = f"web:{uuid.uuid4().hex}"
+        history = _bounded_client_history(body.get("history"))
     if team == "all":
         topic_label = "全部机器人"
     else:
@@ -140,6 +159,18 @@ async def ask(request: Request, body: dict):
     import json
 
     async def event_generator():
+        answer = ""
+        images = []
+        image_bytes = 0
+        saved = False
+
+        async def save_turn(status: str):
+            nonlocal saved
+            if turn_id is not None:
+                await asyncio.to_thread(chat_history.finish_turn, int(session["user_id"]),
+                                        turn_id, answer, images, status)
+                saved = True
+
         try:
             yield _sse_event("metadata", {
                 "status": "metadata",
@@ -157,13 +188,44 @@ async def ask(request: Request, body: dict):
                 history=history,
             ):
                 event_name = str(event.get("status") or "chunk")
+                if isinstance(event.get("replace_text"), str):
+                    answer = event["replace_text"]
+                if isinstance(event.get("text"), str):
+                    answer += event["text"]
+                image = event.get("image")
+                if (turn_id is not None and isinstance(image, dict)
+                        and image.get("mime_type") in {"image/png", "image/jpeg", "image/webp", "image/gif"}
+                        and isinstance(image.get("data"), str) and len(images) < 3):
+                    # Match the Worker's 8 MiB per-image / 12 MiB total limits,
+                    # accounting for base64 expansion. Persist no provider metadata.
+                    size = len(image["data"])
+                    if size <= 11_184_812 and image_bytes + size <= 16_777_216:
+                        images.append({key: image[key] for key in ("data", "mime_type", "alt", "fingerprint")
+                                       if key in image})
+                        image_bytes += size
+                if event_name == "error":
+                    answer = str(event.get("error") or _STREAM_ERROR_MESSAGES[language])
+                    await save_turn("error")
+                elif event_name == "done":
+                    # A browser receiving done can immediately read this answer
+                    # from another device, without racing a background save.
+                    await save_turn("complete")
                 yield _sse_event(event_name, event)
+                if event_name in {"done", "error"}:
+                    break
         except Exception:
             log.exception("Public QA SSE stream failed")
+            answer = _STREAM_ERROR_MESSAGES[language]
+            await save_turn("error")
             yield _sse_event(
                 "error",
                 {"status": "error", "error": _STREAM_ERROR_MESSAGES[language]},
             )
+        finally:
+            if turn_id is not None and not saved:
+                # StreamingResponse cancellation must still preserve the question
+                # and any text received before the browser disconnected.
+                await asyncio.shield(save_turn("interrupted"))
 
     return StreamingResponse(
         event_generator(),

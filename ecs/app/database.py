@@ -131,6 +131,34 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
             CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
             CREATE INDEX IF NOT EXISTS idx_audit_created ON file_audit_log(created_at);
+
+            CREATE TABLE IF NOT EXISTS chat_conversations (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                team TEXT NOT NULL,
+                language TEXT NOT NULL,
+                imported_from TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(user_id, imported_from)
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_conversations_owner
+                ON chat_conversations(user_id, updated_at DESC, id);
+            CREATE TABLE IF NOT EXISTS chat_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL DEFAULT '',
+                images TEXT NOT NULL DEFAULT '[]',
+                team TEXT NOT NULL,
+                language TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('streaming', 'complete', 'error', 'interrupted')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_turns_conversation
+                ON chat_turns(conversation_id, id);
             """
         )
         # Migrate databases created by the earlier prototype.

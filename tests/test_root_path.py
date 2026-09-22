@@ -22,12 +22,17 @@ def test_root_path_normalization(configured: str, expected: str) -> None:
     assert normalize_root_path(configured) == expected
 
 
-def test_configured_root_path_serves_prefixed_and_unprefixed_routes() -> None:
+def test_configured_root_path_serves_prefixed_and_unprefixed_routes(tmp_path) -> None:
     script = """
 import re
 from fastapi.testclient import TestClient
 from ecs.app.main import app
 from ecs.app.web_paths import render_template, rooted_path
+from ecs.app.config import ensure_directories
+from ecs.app.database import initialize_database
+
+ensure_directories()
+initialize_database()
 
 assert app.root_path == "/v1/faq-platform"
 assert rooted_path("/login") == "/v1/faq-platform/login"
@@ -39,6 +44,10 @@ for path in (
     "/v1/faq-platform/login",
     "/v1/faq-platform/health",
     "/v1/faq-platform/static/account_menu.js",
+    "/v1/faq-platform/static/site_theme.css",
+    "/v1/faq-platform/static/qa.css",
+    "/v1/faq-platform/static/qa_i18n.js",
+    "/v1/faq-platform/static/qa_history.js",
     "/",
     "/login",
     "/health",
@@ -58,6 +67,7 @@ assert 'const appRoot = "/v1/faq-platform"' in ask.text
 protected = client.get("/v1/faq-platform/manage", follow_redirects=False)
 assert protected.status_code == 303
 assert protected.headers["location"] == "/v1/faq-platform/login?next=/manage"
+assert client.get("/v1/faq-platform/api/conversations").status_code == 401
 
 invalid_login = client.post(
     "/v1/faq-platform/login",
@@ -90,6 +100,8 @@ for name in (
 """
     environment = os.environ.copy()
     environment["ROOT_PATH"] = "/v1/faq-platform"
+    environment["DATA_ROOT"] = str(tmp_path)
+    environment["DATABASE_PATH"] = str(tmp_path / "agent_jobs.db")
     result = subprocess.run(
         [sys.executable, "-c", script],
         cwd=os.getcwd(),

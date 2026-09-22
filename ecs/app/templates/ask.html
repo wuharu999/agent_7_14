@@ -1,130 +1,92 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Uchat Knowledge Base</title>
+<meta name="theme-color" content="#07152d">
+<title>优必答 知识库</title>
 <link rel="stylesheet" href="/static/account_menu.css">
+<link rel="stylesheet" href="/static/site_theme.css?v=20260922">
+<link rel="stylesheet" href="/static/qa.css?v=20260922-history">
 <script src="/static/account_menu.js?v=20260814-2" defer></script>
-<style>
-body{font-family:system-ui,sans-serif;margin:0;padding:0;background:#f5f7fb;color:#172033;display:flex;min-height:100vh;overflow-x:hidden}
-.layout{display:flex;width:100%;justify-content:center;align-items:center;min-height:100vh;}
-.chat-section{flex:1;max-width:800px;width:100%;padding:20px;display:flex;flex-direction:column;height:100vh;box-sizing:border-box;}
-.header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0;}
-.header-titles h1 {margin:0;font-size:24px;}
-.header-titles p {margin:4px 0 0;font-size:14px;color:#64748b;}
-.badge{padding:5px 10px;border-radius:99px;font-size:13px;white-space:nowrap;}
-.on{background:#dcfce7;color:#166534}
-.off{background:#fee2e2;color:#991b1b}
-
-.chat-card{background:#fff;border:1px solid #dbe2ee;border-radius:14px;display:flex;flex-direction:column;flex:1;box-shadow:0 8px 30px #1f293711;overflow:hidden;margin-bottom:12px;}
-.chat-history{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;background:#f8fafc;}
-.chat-input-area{padding:16px;background:#fff;border-top:1px solid #e2e8f0;display:flex;flex-direction:column;gap:12px;}
-
-.bubble{max-width:85%;padding:12px 16px;border-radius:18px;font-size:15px;line-height:1.58;overflow-wrap:anywhere;white-space:pre-wrap;}
-.bubble.user{align-self:flex-end;background:#2563eb;color:#fff;border-bottom-right-radius:4px;}
-.bubble.bot{align-self:flex-start;max-width:94%;background:#fff;border:1px solid #cbd5e1;color:#1e293b;border-bottom-left-radius:4px;white-space:normal;}
-.bubble.system{align-self:center;background:transparent;color:#64748b;font-size:13px;padding:4px 8px;border:none;}
-.text-content{display:block;min-width:0;}
-.text-content>:first-child{margin-top:0;}
-.text-content>:last-child{margin-bottom:0;}
-.text-content h2,.text-content h3,.text-content h4{margin:1.05em 0 .48em;color:#0f172a;line-height:1.3;}
-.text-content h2{font-size:1.2em;padding-bottom:.35em;border-bottom:1px solid #e2e8f0;}
-.text-content h3{font-size:1.08em;}
-.text-content h4{font-size:1em;}
-.text-content p{margin:.62em 0;}
-.text-content ul,.text-content ol{margin:.55em 0;padding-left:1.45em;}
-.text-content li{margin:.28em 0;padding-left:.12em;}
-.text-content strong{font-weight:750;color:#0f172a;}
-.text-content code{padding:.08em .32em;border-radius:4px;background:#eef2ff;color:#3730a3;font:0.9em ui-monospace,SFMono-Regular,Consolas,monospace;}
-.text-content a{color:#1d4ed8;text-decoration:underline;text-underline-offset:2px;}
-.text-content blockquote{margin:.7em 0;padding:.45em .8em;border-left:3px solid #93c5fd;background:#eff6ff;color:#334155;}
-.answer-table-wrap{max-width:100%;overflow-x:auto;margin:.75em 0;border:1px solid #dbe3ef;border-radius:10px;}
-.answer-table{width:100%;min-width:520px;border-collapse:collapse;background:#fff;font-size:.93em;line-height:1.48;}
-.answer-table th,.answer-table td{padding:9px 11px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top;}
-.answer-table th:last-child,.answer-table td:last-child{border-right:0;}
-.answer-table tr:last-child td{border-bottom:0;}
-.answer-table th{background:#eff6ff;color:#1e3a8a;font-weight:750;white-space:nowrap;}
-.answer-table tbody tr:nth-child(even){background:#f8fafc;}
-.answer-images{display:grid;gap:10px;margin-top:10px;}
-.answer-image{margin:0;}
-.answer-image img{display:block;max-width:min(100%,680px);max-height:520px;width:auto;height:auto;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;object-fit:contain;}
-.answer-image figcaption{margin-top:4px;color:#64748b;font-size:12px;}
-
-textarea{width:100%;min-height:60px;max-height:150px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;box-sizing:border-box;font:inherit;resize:vertical;}
-.controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;}
-.field{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;}
-.field label{font-size:13px;font-weight:700;color:#475569}
-select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;font:inherit;width:100%;}
-button{padding:10px 18px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;transition:transform 0.1s;white-space:nowrap;}
-button:hover{transform:translateY(-1px)}
-button.secondary{background:#64748b}
-button:disabled{opacity:.55;cursor:not-allowed}
-
-.footer-links{text-align:center;font-size:14px;}
-.footer-links a{color:#2563eb;text-decoration:none;margin:0 8px;}
-
-.stream-status{display:inline-flex;align-items:center;min-height:18px;}
-.stream-spinner{display:block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:streamSpin .7s linear infinite;}
-@keyframes streamSpin{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.stream-spinner{animation:none;border-top-color:#cbd5e1;}}
-</style>
 </head>
-<body>
-<div class="layout">
-<div class="chat-section">
-  <div class="header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
-    <div style="display: flex; align-items: center; gap: 14px;">
-      <div class="header-titles">
-        <h1 data-i18n="title">Uchat Knowledge Base</h1>
-        <p data-i18n="subtitle">Ask questions against the local wiki.</p>
-      </div>
+<body class="qa-page">
+<div class="app-shell">
+  <aside class="sidebar" id="conversationSidebar" aria-label="对话导航" data-i18n-aria="conversationNav">
+    <a class="brand-lockup" href="/">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span data-i18n="brand">优必答</span>
+    </a>
+    <button class="sidebar-close" id="closeSidebar" type="button" aria-label="关闭导航" data-i18n-aria="closeNav">×</button>
+    <button class="new-chat" id="newConversation" type="button">
+      <span class="plus" aria-hidden="true">+</span><span data-i18n="newConvBtn">新对话</span><kbd id="newChatShortcut">Ctrl K</kbd>
+    </button>
+    <nav class="history" aria-labelledby="recentHeading">
+      <p id="recentHeading" data-i18n="recentChats">最近对话</p>
+      <div id="recentConversations"></div>
+      <button class="history-action" id="moreConversations" type="button" data-i18n="moreConversations" hidden>更多对话</button>
+      <div class="history-empty" id="historyEmpty" data-i18n="emptyHistory">开始提问后，对话会显示在这里。</div>
+    </nav>
+    <div class="sidebar-footer">
+      <p id="historyStorageNote">最近对话仅保存在此浏览器中。</p>
+      <button class="history-action" id="importHistory" type="button" data-i18n="importHistory" hidden>将本机历史保存到我的账户</button>
+      <small>UBTECH ROBOTICS</small>
     </div>
-    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-      <span id="health" class="badge" data-i18n="healthChecking">Checking Worker…</span>
-      <div class="nav-links" id="nav-links-container" style="font-size: 13px; display: flex; align-items: center; gap: 12px; margin-top: 4px;">
+  </aside>
+  <button class="mobile-scrim" id="mobileScrim" type="button" tabindex="-1" aria-label="关闭导航" data-i18n-aria="closeNav"></button>
+  <main class="main-panel" id="mainPanel">
+    <header class="topbar">
+      <button class="menu-toggle" id="mobileMenu" type="button" aria-label="打开对话导航" data-i18n-aria="openNav" aria-expanded="false" aria-controls="conversationSidebar"><span></span><span></span></button>
+      <div class="mobile-brand"><span data-i18n="brand">优必答</span></div>
+      <div class="crumb"><span data-i18n="knowledgeBase">知识库</span><b aria-hidden="true">/</b><span data-i18n="technicalSupport">机器人技术支持</span></div>
+      <div class="status-group">
+        <span id="health" class="health" role="status" data-i18n="healthChecking">正在检查服务…</span>
+        <button class="mobile-new-chat" id="mobileNewConversation" type="button" data-i18n="newConvBtn">新对话</button>
         <div data-account-menu></div>
       </div>
-    </div>
-  </div>
-
-  <div class="chat-card">
-    <div class="chat-selectors" style="display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #cbd5e1; background: #fff; flex-shrink: 0; align-items: center; flex-wrap: wrap;">
-      <div class="field" style="flex: 1; min-width: 140px; display: flex; flex-direction: row; align-items: center; gap: 8px;">
-        <label for="team" data-i18n="teamLabel" style="font-size: 13px; font-weight: 700; color: #475569; white-space: nowrap;">Robot:</label>
-        <select id="team" style="padding: 6px 10px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font: inherit; flex: 1; height: 36px;"></select>
-      </div>
-      <div class="field" style="flex: 1; min-width: 140px; display: flex; flex-direction: row; align-items: center; gap: 8px;">
-        <label for="language" data-i18n="langLabel" style="font-size: 13px; font-weight: 700; color: #475569; white-space: nowrap;">Language:</label>
-        <select id="language" style="padding: 6px 10px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font: inherit; flex: 1; height: 36px;">
-          <option value="zh-CN">简体中文</option>
-          <option value="zh-TW">繁體中文</option>
-          <option value="ko">한국어</option>
-          <option value="ja">日本語</option>
-          <option value="en">English</option>
-          <option value="pt">Português</option>
-          <option value="ru">Русский</option>
-          <option value="es">Español</option>
-        </select>
-      </div>
-    </div>
-    <div class="chat-history" id="chatHistory">
-      <!-- Chat bubbles will go here -->
-    </div>
-    <div class="chat-input-area" style="padding: 12px; background: #fff; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
-      <div style="display: flex; gap: 8px; align-items: center;">
-        <textarea id="question" placeholder="Enter a question" style="flex: 1; min-height: 40px; height: 40px; max-height: 80px; padding: 8px 12px; margin: 0; border-radius: 8px; box-sizing: border-box; resize: none;"></textarea>
-        <button id="ask" data-i18n="askBtn" style="padding: 8px 16px; height: 40px; border-radius: 8px; margin: 0;">Ask</button>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button id="newConversation" class="secondary" type="button" data-i18n="newConvBtn" style="padding: 6px 12px; font-size: 13px; border-radius: 8px; margin: 0;">New conversation</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Links moved to the top bar -->
+    </header>
+    <section class="workspace" aria-label="机器人知识库问答" data-i18n-aria="title">
+      <h1 class="workspace-caption" data-i18n="technicalSupport">机器人技术支持</h1>
+      <p id="historyNotice" class="history-notice" role="status" hidden></p>
+      <section class="chat-card">
+        <div class="chat-toolbar">
+          <div class="scope"><span class="scope-icon" aria-hidden="true">◈</span><span data-i18n="robotKnowledge">机器人知识库</span></div>
+          <label for="team"><span data-i18n="teamLabel">回答范围</span><select id="team"></select></label>
+          <label for="language"><span data-i18n="langLabel">回答语言</span>
+            <select id="language">
+              <option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option>
+              <option value="ko">한국어</option><option value="ja">日本語</option>
+              <option value="en">English</option><option value="pt">Português</option>
+              <option value="ru">Русский</option><option value="es">Español</option>
+            </select>
+          </label>
+        </div>
+        <button class="older-messages" id="olderMessages" type="button" data-i18n="olderMessages" hidden>加载更早的消息</button>
+        <div class="chat-content chat-history" id="chatHistory" role="log" aria-label="对话内容" data-i18n-aria="conversationLog" aria-live="polite" tabindex="0">
+          <div class="welcome" id="welcome">
+            <div class="welcome-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
+            <h2 data-i18n="welcomeTitle">今天想了解什么？</h2>
+            <p data-i18n="welcomeCopy">可询问产品能力、部署指引、运维处理或开发接口。</p>
+            <div class="suggestions">
+              <button type="button" data-suggestion="productQuestion"><small data-i18n="productCategory">产品能力</small><span data-i18n="productQuestion">这款机器人适合在哪些场景部署？</span><b aria-hidden="true">↗</b></button>
+              <button type="button" data-suggestion="supportQuestion"><small data-i18n="supportCategory">运维支持</small><span data-i18n="supportQuestion">机器人离线后应如何排查？</span><b aria-hidden="true">↗</b></button>
+              <button type="button" data-suggestion="devQuestion"><small data-i18n="devCategory">开发接入</small><span data-i18n="devQuestion">如何开始使用 ROSA 开发框架？</span><b aria-hidden="true">↗</b></button>
+            </div>
+          </div>
+        </div>
+        <form class="composer" id="askForm">
+          <label class="input-wrap" for="question">
+            <span aria-hidden="true">⌘</span>
+            <textarea id="question" rows="1" maxlength="20000" placeholder="输入你的机器人问题…" aria-label="输入你的机器人问题" data-i18n-aria="placeholder"></textarea>
+            <em data-i18n="composerHint">Enter 发送 · Shift + Enter 换行</em>
+          </label>
+          <button class="send" id="ask" type="submit" aria-label="发送问题" data-i18n-aria="askBtn"><span aria-hidden="true">↑</span></button>
+        </form>
+      </section>
+      <p class="notice" data-i18n="notice">回答由内部知识库生成，请以产品手册和现场规范为准。</p>
+    </section>
+  </main>
 </div>
-</div>
-
+<script src="/static/qa_i18n.js?v=20260922-history"></script>
+<script src="/static/qa_history.js?v=20260922-history"></script>
 <script>
 const i18n = {
   'zh-CN': { title: '优必答 知识库', subtitle: '向本地知识库提问。', placeholder: '输入您的问题', teamLabel: '机器人 (知识库)', langLabel: '回答语言', askBtn: '提问', newConvBtn: '新对话', hint: '在此浏览器中的后续问题会保留近期的对话上下文。“新对话”会清除该上下文。', waiting: '等待 Worker 处理中...', healthChecking: '正在检查 Worker...', healthOnline: 'Worker 在线', healthOffline: 'Worker 离线', signIn: '登录', manageSources: '管理源文件', uploadDocs: '上传文档', wecomLink: '企业微信版本', newConvStarted: '已开始新对话。', allRobots: '全部机器人', exportWikiTitle: '导出到我的AI', exportDenied: '仅编辑者和管理员可导出知识库。', genericError: '与助手通信时出错。请稍后再试。',
@@ -145,6 +107,8 @@ const i18n = {
     'lang_zh-CN': 'Chino Simplificado', 'lang_zh-TW': 'Chino Tradicional', 'lang_ko': 'Coreano', 'lang_ja': 'Japonés', 'lang_en': 'Inglés', 'lang_pt': 'Portugués', 'lang_ru': 'Ruso', 'lang_es': 'Español' }
 };
 
+Object.entries(qaTranslations).forEach(([lang, copy]) => Object.assign(i18n[lang], copy));
+
 const health=document.getElementById('health');
 const askButton=document.getElementById('ask');
 const newConversationButton=document.getElementById('newConversation');
@@ -158,18 +122,23 @@ const languageKey='agent1_answer_language';
 const teamKey='agent1_team';
 const historyKey='agent1_chat_history';
 const imageHistoryKey='agent1_chat_image_fingerprints';
+const recentKey='agent1_recent_conversations';
+const welcome=document.getElementById('welcome');
+const recentList=document.getElementById('recentConversations');
+const mobileNewConversation=document.getElementById('mobileNewConversation');
 
 let currentLang = 'zh-CN';
 let workerOnline = false;
 let currentChat = [];
 let shownImageFingerprints = new Set();
 let transientImageKeys = new Set();
-
-function saveHistory() {
-  localStorage.setItem(historyKey, JSON.stringify(currentChat));
-}
-
 function loadShownImageFingerprints() {
+  if (historyAccount) {
+    shownImageFingerprints = new Set(currentChat.flatMap(message => message.images || [])
+      .map(image => image.fingerprint).filter(value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)));
+    transientImageKeys = new Set();
+    return;
+  }
   const conversationId = getConversationId();
   try {
     const byConversation = JSON.parse(localStorage.getItem(imageHistoryKey) || '{}');
@@ -182,6 +151,7 @@ function loadShownImageFingerprints() {
 }
 
 function saveShownImageFingerprints() {
+  if (historyAccount) return;
   const conversationId = getConversationId();
   let byConversation = {};
   try {
@@ -368,30 +338,67 @@ function renderMessageContent(bubble, role, content) {
   else bubble.textContent = content;
 }
 
+function appendAnswerImage(bubble, image) {
+  if (!image || typeof image.data !== 'string' ||
+      !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(image.mime_type)) return;
+  let gallery = bubble.querySelector('.answer-images');
+  if (!gallery) {
+    gallery = document.createElement('div');
+    gallery.className = 'answer-images';
+    bubble.appendChild(gallery);
+  }
+  const figure = document.createElement('figure');
+  figure.className = 'answer-image';
+  const img = document.createElement('img');
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.alt = String(image.alt || 'Knowledge-base image');
+  img.src = `data:${image.mime_type};base64,${image.data}`;
+  figure.appendChild(img);
+  if (image.alt) {
+    const caption = document.createElement('figcaption');
+    caption.textContent = String(image.alt);
+    figure.appendChild(caption);
+  }
+  gallery.appendChild(figure);
+}
+
 function loadHistory() {
   const data = localStorage.getItem(historyKey);
   if (data) {
     try {
-      currentChat = JSON.parse(data);
-      renderChat();
+      currentChat = validMessages(JSON.parse(data));
     } catch(e) {
       currentChat = [];
     }
   }
+  renderChat();
 }
 
 function renderChat() {
-  chatHistory.innerHTML = '';
+  chatHistory.replaceChildren(welcome);
+  welcome.hidden = currentChat.length > 0;
   currentChat.forEach(msg => {
     const d = document.createElement('div');
     d.className = 'bubble ' + msg.role;
     renderMessageContent(d, msg.role, msg.content);
+    if (msg.role === 'bot') {
+      (msg.images || []).forEach(image => appendAnswerImage(d, image));
+      if (msg.status === 'interrupted' || msg.status === 'streaming') {
+        const state = document.createElement('p');
+        state.className = 'message-state';
+        state.dataset.i18n = msg.status === 'streaming' ? 'historyInProgress' : 'historyInterrupted';
+        state.textContent = historyText(state.dataset.i18n);
+        d.appendChild(state);
+      }
+    }
     chatHistory.appendChild(d);
   });
   scrollToBottom();
 }
 
 function addMessage(role, content) {
+  welcome.hidden = true;
   currentChat.push({role, content});
   saveHistory();
   const d = document.createElement('div');
@@ -405,7 +412,7 @@ function addMessage(role, content) {
 function clearChat() {
   currentChat = [];
   saveHistory();
-  chatHistory.innerHTML = '';
+  renderChat();
 }
 
 function scrollToBottom() {
@@ -415,6 +422,7 @@ function scrollToBottom() {
 function translateUI() {
   const t = i18n[currentLang] || i18n['en'];
   document.title = t.title;
+  document.documentElement.lang = currentLang;
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     if (t[key]) {
@@ -429,6 +437,12 @@ function translateUI() {
     }
   });
   question.placeholder = t.placeholder;
+  document.querySelectorAll('[data-i18n-aria]').forEach(element => {
+    element.setAttribute('aria-label', t[element.dataset.i18nAria] || i18n.en[element.dataset.i18nAria]);
+  });
+  team.setAttribute('aria-label', t.teamLabel);
+  language.setAttribute('aria-label', t.langLabel);
+  updateHistoryUI();
   updateHealthStatus();
 }
 
@@ -443,9 +457,9 @@ function renderRobotOptions(){const selected=team.value||localStorage.getItem(te
 renderRobotOptions();
 
 function newConversationId(){return 'web:'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));}
-function getConversationId(){let id=localStorage.getItem(conversationKey);if(!id){id=newConversationId();localStorage.setItem(conversationKey,id)}return id;}
+function getConversationId(){if(historyAccount)return accountConversationId;let id=localStorage.getItem(conversationKey);if(!id){id=newConversationId();localStorage.setItem(conversationKey,id)}return id;}
 
-language.value=localStorage.getItem(languageKey)||'zh-CN';
+language.value=i18n[localStorage.getItem(languageKey)] ? localStorage.getItem(languageKey) : 'zh-CN';
 currentLang = language.value;
 renderRobotOptions();
 
@@ -465,7 +479,9 @@ team.addEventListener('change',()=>localStorage.setItem(teamKey,team.value));
 function updateHealthStatus() {
   const t = i18n[currentLang] || i18n['en'];
   health.textContent = workerOnline ? t.healthOnline : t.healthOffline;
-  health.className = 'badge ' + (workerOnline ? 'on' : 'off');
+  health.className = 'health ' + (workerOnline ? 'on' : 'off');
+  health.title = health.textContent;
+  health.setAttribute('aria-label', health.textContent);
 }
 
 async function checkHealth(){
@@ -482,8 +498,21 @@ checkHealth();setInterval(checkHealth,5000);
 
 async function submitQuestion(){
   if(askButton.disabled)return;
+  if (!historyReady) {
+    await initializeHistory();
+    if (!historyReady) return;
+  }
   const q=question.value.trim();
   if(!q)return;
+  setHistoryLoading(true);
+  try {
+    if (!await verifyHistorySession()) return;
+  } catch {
+    setHistoryNotice('historyLoadError');
+    setHistoryLoading(false);
+    return;
+  }
+  setHistoryNotice('');
   const priorConversation=currentChat
     .filter(message=>message&&['user','bot'].includes(message.role)&&typeof message.content==='string')
     .slice(-12)
@@ -491,7 +520,12 @@ async function submitQuestion(){
 
   askButton.disabled=true;
   newConversationButton.disabled=true;
+  mobileNewConversation.disabled=true;
+  team.disabled=true;
+  language.disabled=true;
+  chatHistory.setAttribute('aria-busy', 'true');
   question.value='';
+  resizeQuestion();
 
   addMessage('user', q);
   const botBubble = addMessage('bot', '');
@@ -509,7 +543,8 @@ async function submitQuestion(){
   try{
     const r=await fetch('/ask',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
+      headers:{'Content-Type':'application/json','Accept':'text/event-stream',
+        ...(historyAccount ? {'X-CSRF-Token': historyAccount.csrf_token} : {})},
       body:JSON.stringify({
         question:q,
         language:language.value,
@@ -524,6 +559,7 @@ async function submitQuestion(){
       hideStreamSpinner();
       accumulatedText = d.error || 'Request failed';
       renderAnswerText(ensureTextContainer(botBubble), accumulatedText);
+      if (r.status === 401 || r.status === 403) await verifyHistorySession();
       return;
     }
 
@@ -552,7 +588,8 @@ async function submitQuestion(){
 
             if (event.status === "metadata") {
               if(event.conversation_id) {
-                localStorage.setItem(conversationKey, event.conversation_id);
+                setConversationId(event.conversation_id);
+                saveHistory();
               }
               continue;
             }
@@ -580,26 +617,11 @@ async function submitQuestion(){
             if (event.image && typeof event.image.data === 'string') {
               const allowedTypes = new Set(['image/png','image/jpeg','image/gif','image/webp']);
               if (allowedTypes.has(event.image.mime_type) && shouldShowConversationImage(event.image)) {
-                let gallery = botBubble.querySelector('.answer-images');
-                if (!gallery) {
-                  gallery = document.createElement('div');
-                  gallery.className = 'answer-images';
-                  botBubble.appendChild(gallery);
+                appendAnswerImage(botBubble, event.image);
+                if (historyAccount) {
+                  const message = currentChat[currentChat.length - 1];
+                  (message.images ||= []).push(event.image);
                 }
-                const figure = document.createElement('figure');
-                figure.className = 'answer-image';
-                const img = document.createElement('img');
-                img.loading = 'lazy';
-                img.decoding = 'async';
-                img.alt = String(event.image.alt || 'Knowledge-base image');
-                img.src = `data:${event.image.mime_type};base64,${event.image.data}`;
-                figure.appendChild(img);
-                if (event.image.alt) {
-                  const caption = document.createElement('figcaption');
-                  caption.textContent = String(event.image.alt);
-                  figure.appendChild(caption);
-                }
-                gallery.appendChild(figure);
               }
             }
 
@@ -629,25 +651,117 @@ async function submitQuestion(){
     }
     askButton.disabled=false;
     newConversationButton.disabled=false;
+    mobileNewConversation.disabled=false;
+    team.disabled=false;
+    language.disabled=false;
+    chatHistory.setAttribute('aria-busy', 'false');
+    setHistoryLoading(false);
+    if (historyAccount) {
+      try { await refreshAccountHistory(); }
+      catch { setHistoryNotice('historyLoadError'); }
+    }
   }
 }
-askButton.onclick=submitQuestion;
-question.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter') {event.preventDefault();submitQuestion();}});
-newConversationButton.onclick=()=>{
-  localStorage.setItem(conversationKey,newConversationId());
+document.getElementById('askForm').addEventListener('submit', event => {
+  event.preventDefault();
+  submitQuestion();
+});
+function resizeQuestion() {
+  question.style.height = 'auto';
+  const maxHeight = parseFloat(getComputedStyle(question).lineHeight) * 4;
+  question.style.height = Math.min(question.scrollHeight, maxHeight) + 'px';
+  question.style.overflowY = question.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+question.addEventListener('input', resizeQuestion);
+question.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+    event.preventDefault();
+    submitQuestion();
+  }
+});
+newConversationButton.onclick=async()=>{
+  if (askButton.disabled) return;
+  if (!historyReady) {
+    await initializeHistory();
+    if (!historyReady) return;
+  }
+  saveHistory();
+  setConversationId(historyAccount ? '' : newConversationId());
+  hasOlderTurns = false;
+  olderTurnId = null;
+  updateHistoryUI();
   shownImageFingerprints = new Set();
   transientImageKeys = new Set();
   saveShownImageFingerprints();
   clearChat();
-  const t = i18n[currentLang] || i18n['en'];
-  addMessage('system', t.newConvStarted);
+  question.value='';
+  resizeQuestion();
+  setMobileMenu(false);
   question.focus()
 };
+mobileNewConversation.onclick=()=>newConversationButton.click();
+document.querySelectorAll('[data-suggestion]').forEach(button => {
+  button.addEventListener('click', () => {
+    if (askButton.disabled) return;
+    question.value = i18n[currentLang][button.dataset.suggestion];
+    resizeQuestion();
+    submitQuestion();
+  });
+});
+
+const sidebar = document.getElementById('conversationSidebar');
+const mobileMenu = document.getElementById('mobileMenu');
+const mobileScrim = document.getElementById('mobileScrim');
+const mobileViewport = window.matchMedia('(max-width: 760px)');
+function setMobileMenu(open) {
+  open = Boolean(open && mobileViewport.matches);
+  const wasOpen = sidebar.classList.contains('is-open');
+  sidebar.classList.toggle('is-open', open);
+  mobileScrim.classList.toggle('is-visible', open);
+  mobileMenu.setAttribute('aria-expanded', String(open));
+  document.getElementById('mainPanel').inert = open;
+  if (open) document.getElementById('closeSidebar').focus();
+  else if (wasOpen) mobileMenu.focus();
+}
+mobileMenu.onclick=()=>setMobileMenu(true);
+mobileScrim.onclick=()=>setMobileMenu(false);
+document.getElementById('closeSidebar').onclick=()=>setMobileMenu(false);
+mobileViewport.addEventListener('change', ()=>setMobileMenu(false));
+document.getElementById('newChatShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K';
+document.addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    newConversationButton.click();
+  }
+  if (!sidebar.classList.contains('is-open')) return;
+  if (event.key === 'Escape') { event.preventDefault(); setMobileMenu(false); }
+  if (event.key === 'Tab') {
+    const focusable = [...sidebar.querySelectorAll('a, button:not(:disabled)')]
+      .filter(element => element.getClientRects().length > 0 && !element.hidden);
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+});
 
 // Init
 translateUI();
-loadHistory();
-loadShownImageFingerprints();
+initializeHistory();
+resizeQuestion();
+document.getElementById('importHistory').onclick = importBrowserConversations;
+document.getElementById('moreConversations').onclick = () => loadMoreHistory(false);
+document.getElementById('olderMessages').onclick = () => loadMoreHistory(true);
+async function refreshHistorySession() {
+  if (!historyReady || historyLoading || askButton.disabled) return;
+  try {
+    if (await verifyHistorySession() && historyAccount) await refreshAccountHistory();
+  } catch { setHistoryNotice('historyLoadError'); }
+}
+window.addEventListener('focus', refreshHistorySession);
+window.addEventListener('pageshow', event => { if (event.persisted) refreshHistorySession(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshHistorySession();
+});
 
 </script>
 </body></html>

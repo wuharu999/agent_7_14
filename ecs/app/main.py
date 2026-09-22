@@ -10,10 +10,12 @@ from fastapi.staticfiles import StaticFiles
 
 from ecs.app.config import APP_NAME, APP_VERSION, ROOT_PATH, ensure_directories
 from ecs.app.database import delete_expired_sessions, initialize_database
+from ecs.app.chat_history import interrupt_unfinished_turns
 from ecs.app.routes import (
     admin_users,
     ask,
     auth,
+    chat_history,
     manage,
     pages,
     status,
@@ -29,6 +31,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     ensure_directories()
     initialize_database()
+    interrupt_unfinished_turns()
     delete_expired_sessions()
     yield
 
@@ -61,6 +64,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(ask.router)
+app.include_router(chat_history.router)
 app.include_router(uploads.router)
 app.include_router(manage.router)
 app.include_router(status.router)

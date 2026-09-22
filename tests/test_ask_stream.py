@@ -173,14 +173,15 @@ def test_public_ask_transport_uses_sse_framing() -> None:
     assert "buffer.split(\"\\n\\n\")" in template
 
 
-def test_background_graph_uses_original_floating_circles():
+def test_supplied_theme_replaces_animated_background_on_application_pages():
     root = Path(__file__).resolve().parents[1]
     template = (root / "ecs" / "app" / "templates" / "bg_graph.html").read_text(
         encoding="utf-8"
     )
 
-    assert "ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2)" in template
-    assert "(Math.random() - 0.5) * 1.5" in template
-    assert "preferredDistance" not in template
-    assert "sharedVx" not in template
-    assert "nodePath" not in template
+    assert 'aria-hidden="true"' in template
+    assert "<canvas" not in template
+    assert "requestAnimationFrame" not in template
+    for name in ("ask", "login", "manage", "upload", "upload_status", "settings", "admin_users"):
+        page = (root / "ecs" / "app" / "templates" / f"{name}.html").read_text(encoding="utf-8")
+        assert 'href="/static/site_theme.css?v=20260922"' in page
