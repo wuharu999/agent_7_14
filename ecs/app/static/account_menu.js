@@ -22,6 +22,15 @@
     es: {questions:'Preguntas', navigation:'Navegación de páginas', accountMenu:'Menú de cuenta'}
   };
   for (const language of Object.keys(labels)) Object.assign(labels[language], navigationLabels[language]);
+  const toolLabels = {
+    'zh-CN':['日志分析','场景推演'], 'zh-TW':['日誌分析','場景推演'],
+    en:['Log analysis','Scenario analysis'], ko:['로그 분석','시나리오 분석'],
+    ja:['ログ分析','シナリオ分析'], pt:['Análise de logs','Análise de cenários'],
+    ru:['Анализ журналов','Анализ сценариев'], es:['Análisis de registros','Análisis de escenarios']
+  };
+  for (const [language, [logAnalysis, scenarioAnalysis]] of Object.entries(toolLabels)) {
+    Object.assign(labels[language], {logAnalysis, scenarioAnalysis});
+  }
   const appUrl = path => typeof window.appUrl === 'function' ? window.appUrl(path) : path;
 
   function selectedLanguage() {
@@ -43,6 +52,9 @@
     const nav = document.querySelector('[data-site-nav]');
     if (!nav) return;
     const destinations = [['/', 'questions'], ['/manage', 'manage'], ['/upload', 'upload']];
+    if (user.tools_enabled && ['editor', 'admin'].includes(user.role)) {
+      destinations.splice(1, 0, ['/tools/log', 'logAnalysis'], ['/tools/grill', 'scenarioAnalysis']);
+    }
     if (user.role === 'admin') destinations.push(['/admin/users', 'userManagement']);
     destinations.push(['/settings', 'accountSettings']);
     const root = String(window.__APP_ROOT__ || '');

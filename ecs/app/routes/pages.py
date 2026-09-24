@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 import json
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -10,9 +10,29 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ecs.app.auth import current_session, safe_next_url, safe_next_url_for_role
 from ecs.app.database import get_allowed_teams, get_robot_options
 from ecs.app.web_paths import render_template, rooted_path
+from ecs.app.config import BROWSER_TOOLS_URL
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, UPLOAD_ACCEPT
 
 router = APIRouter()
+
+
+@router.get("/tools/{tool_path:path}")
+async def browser_tool(tool_path: str, request: Request):
+    """A same-origin login return path to the configured sibling application."""
+    if (tool_path.split("/", 1)[0] not in {"grill", "log"}
+            or any(part in {".", ".."} for part in tool_path.split("/"))
+            or "\\" in tool_path):
+        return HTMLResponse("Tool not found", status_code=404)
+    session = current_session(request)
+    if session is None:
+        return _login_redirect("/tools/" + tool_path)
+    if session["role"] not in {"editor", "admin"}:
+        return HTMLResponse("Tool access requires an editor or admin account", status_code=403)
+    target = urlsplit(BROWSER_TOOLS_URL)
+    if (target.scheme not in {"http", "https"} or not target.netloc
+            or target.username or target.password or target.query or target.fragment):
+        return HTMLResponse("Analysis tools are not configured", status_code=503)
+    return RedirectResponse(BROWSER_TOOLS_URL + "/" + quote(tool_path, safe="/"), status_code=303)
 
 
 def _template(name: str) -> str:

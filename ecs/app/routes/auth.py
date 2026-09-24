@@ -26,6 +26,7 @@ from ecs.app.auth import (
 )
 from ecs.app.database import get_user_by_id, update_user_email, update_user_password, write_audit
 from ecs.app.web_paths import rooted_path
+from ecs.app.config import BROWSER_TOOLS_URL
 
 router = APIRouter()
 _LOGIN_WINDOW_SECONDS = 15 * 60
@@ -51,6 +52,7 @@ async def get_me(request: Request):
         "email": session.get("email"),
         "role": session.get("role"),
         "csrf_token": session.get("csrf_token"),
+        "tools_enabled": bool(BROWSER_TOOLS_URL) and session.get("role") in {"editor", "admin"},
     })
 
 

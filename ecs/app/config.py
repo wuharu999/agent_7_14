@@ -25,6 +25,7 @@ DATA_ROOT = Path(os.environ.get("DATA_ROOT", str(PROJECT_ROOT / "ecs-data"))).ex
 UPLOAD_ROOT = DATA_ROOT / "uploads"
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(DATA_ROOT / "agent_jobs.db"))).expanduser().resolve()
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+BROWSER_TOOLS_URL = os.environ.get("BROWSER_TOOLS_URL", "").rstrip("/")
 WORKER_SHARED_SECRET = os.environ.get("WORKER_SHARED_SECRET", "")
 WORKER_TIMEOUT = int(os.environ.get("WORKER_TIMEOUT", "240"))
 FILE_COMMAND_TIMEOUT = int(os.environ.get("FILE_COMMAND_TIMEOUT", "60"))

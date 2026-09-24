@@ -27,7 +27,7 @@ def test_shared_account_settings_menu_is_loaded_on_every_application_page(
     page = (TEMPLATE_ROOT / template_name).read_text(encoding="utf-8")
 
     assert 'href="/static/account_menu.css?v=20260922-nav2"' in page
-    assert 'src="/static/account_menu.js?v=20260922-nav2"' in page
+    assert 'src="/static/account_menu.js?v=20260924-tools"' in page
     assert "data-account-menu" in page
     assert 'data-site-nav' in page
 
