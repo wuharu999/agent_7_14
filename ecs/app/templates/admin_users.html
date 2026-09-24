@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>用户与文件夹权限管理 - Admin User Management</title>
-<link rel="stylesheet" href="/static/account_menu.css">
-<script src="/static/account_menu.js?v=20260814-2" defer></script>
+<link rel="stylesheet" href="/static/account_menu.css?v=20260922-nav2">
+<script src="/static/account_menu.js?v=20260922-nav2" defer></script>
 <style>
 body { font-family: system-ui, -apple-system, sans-serif; max-width: 1120px; margin: 40px auto; padding: 0 18px; background: #f5f7fb; color: #172033; }
 .top { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 20px; }
@@ -56,10 +56,11 @@ th { background: #f8fafc; font-weight: 600; color: #475569; border-top: 1px soli
     <p style="margin:4px 0;color:#64748b;font-size:14px;">当前登录管理员：<strong>__USERNAME__</strong></p>
   </div>
   <div class="actions" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-    <a class="button secondary" href="/" style="background:#475569; text-decoration:none; padding:0 16px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; color:#fff; font-weight:700; font-size:14px;">提问 (Questions)</a>
     <div data-account-menu data-account-return="/admin/users"></div>
   </div>
 </div>
+
+<nav class="site-nav" data-site-nav aria-label="页面导航"></nav>
 
 <!-- Info Banner explaining email and conflict checker -->
 <div class="card" style="background: #eff6ff; border: 1px solid #bfdbfe; margin-bottom: 24px; padding: 18px 22px;">

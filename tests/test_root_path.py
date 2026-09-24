@@ -60,7 +60,7 @@ login = client.get("/v1/faq-platform/login")
 assert 'action="/v1/faq-platform/login"' in login.text
 
 ask = client.get("/v1/faq-platform/")
-assert 'href="/v1/faq-platform/static/account_menu.css"' in ask.text
+assert 'href="/v1/faq-platform/static/account_menu.css?v=20260922-nav2"' in ask.text
 assert 'src="/v1/faq-platform/static/account_menu.js' in ask.text
 assert 'const appRoot = "/v1/faq-platform"' in ask.text
 

@@ -26,9 +26,10 @@ def test_shared_account_settings_menu_is_loaded_on_every_application_page(
 ) -> None:
     page = (TEMPLATE_ROOT / template_name).read_text(encoding="utf-8")
 
-    assert 'href="/static/account_menu.css"' in page
-    assert 'src="/static/account_menu.js?v=20260814-2"' in page
+    assert 'href="/static/account_menu.css?v=20260922-nav2"' in page
+    assert 'src="/static/account_menu.js?v=20260922-nav2"' in page
     assert "data-account-menu" in page
+    assert 'data-site-nav' in page
 
 
 def test_login_page_does_not_show_an_account_menu() -> None:
@@ -83,9 +84,9 @@ def test_shared_component_contains_role_gated_admin_and_account_actions() -> Non
     script = (STATIC_ROOT / "account_menu.js").read_text(encoding="utf-8")
     assert "const appUrl = path =>" in script
     assert "if (user.role === 'admin')" in script
-    assert "users.href = appUrl('/admin/users')" in script
-    assert "manage.href = appUrl('/manage')" in script
-    assert "upload.href = appUrl('/upload')" in script
+    assert "destinations.push(['/admin/users', 'userManagement'])" in script
+    assert "['/manage', 'manage']" in script
+    assert "['/upload', 'upload']" in script
     assert "workbench" not in script
     assert "capabilities" not in script
     assert "gapAnalytics" not in script
@@ -93,7 +94,6 @@ def test_shared_component_contains_role_gated_admin_and_account_actions() -> Non
     assert "fetch('/logout'" in script
     assert "accountSettings" in script
     assert "accountSettings.href = appUrl('/settings')" in script
-    assert "window.location.assign(appUrl('/settings'))" in script
     assert "account-menu-heading" not in script
 
 

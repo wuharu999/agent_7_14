@@ -11,6 +11,17 @@
     'ru': {settings:'Настройки', accountSettings:'Настройки пользователя', manage:'Управление источниками', upload:'Загрузить документацию', exportWiki:'Экспорт в мой ИИ', userManagement:'Управление пользователями', signOut:'Выйти', signIn:'Войти', exportFailed:'Ошибка экспорта'},
     'es': {settings:'Configuración', accountSettings:'Configuración de usuario', manage:'Administrar fuentes', upload:'Subir documentación', exportWiki:'Exportar a mi IA', userManagement:'Gestión de usuarios', signOut:'Cerrar sesión', signIn:'Iniciar sesión', exportFailed:'Error de exportación'}
   };
+  const navigationLabels = {
+    'zh-CN': {questions:'知识问答', navigation:'页面导航', accountMenu:'账户菜单'},
+    'zh-TW': {questions:'知識問答', navigation:'頁面導覽', accountMenu:'帳戶選單'},
+    en: {questions:'Questions', navigation:'Page navigation', accountMenu:'Account menu'},
+    ko: {questions:'지식 Q&A', navigation:'페이지 탐색', accountMenu:'계정 메뉴'},
+    ja: {questions:'ナレッジQ&A', navigation:'ページナビゲーション', accountMenu:'アカウントメニュー'},
+    pt: {questions:'Perguntas', navigation:'Navegação de páginas', accountMenu:'Menu da conta'},
+    ru: {questions:'Вопросы', navigation:'Навигация по страницам', accountMenu:'Меню аккаунта'},
+    es: {questions:'Preguntas', navigation:'Navegación de páginas', accountMenu:'Menú de cuenta'}
+  };
+  for (const language of Object.keys(labels)) Object.assign(labels[language], navigationLabels[language]);
   const appUrl = path => typeof window.appUrl === 'function' ? window.appUrl(path) : path;
 
   function selectedLanguage() {
@@ -26,6 +37,52 @@
     if (className) element.className = className;
     if (text !== undefined) element.textContent = text;
     return element;
+  }
+
+  function initializeNavigation(user) {
+    const nav = document.querySelector('[data-site-nav]');
+    if (!nav) return;
+    const destinations = [['/', 'questions'], ['/manage', 'manage'], ['/upload', 'upload']];
+    if (user.role === 'admin') destinations.push(['/admin/users', 'userManagement']);
+    destinations.push(['/settings', 'accountSettings']);
+    const root = String(window.__APP_ROOT__ || '');
+    let path = window.location.pathname;
+    if (root && (path === root || path.startsWith(root + '/'))) path = path.slice(root.length);
+    path = path.replace(/\/$/, '') || '/';
+    // A batch's progress belongs to the upload section.
+    const activePath = path.startsWith('/uploads/') ? '/upload' : path;
+    for (const [destination, label] of destinations) {
+      const link = makeElement('a', 'site-nav-link');
+      link.href = appUrl(destination);
+      link.dataset.accountLabel = label;
+      if (destination === activePath) link.setAttribute('aria-current', 'page');
+      nav.appendChild(link);
+    }
+    nav.hidden = false;
+    // Keep links as native navigation: modifier-click and opening a new tab work.
+    nav.addEventListener('click', event => {
+      const link = event.target.closest('a');
+      if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      if (link.getAttribute('aria-current') === 'page' && path === activePath) {
+        event.preventDefault();
+        return;
+      }
+      nav.querySelectorAll('.is-pending').forEach(item => item.classList.remove('is-pending'));
+      link.classList.add('is-pending');
+    });
+    nav.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+      const links = [...nav.querySelectorAll('a')];
+      const index = links.indexOf(document.activeElement);
+      if (index < 0) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? links.length - 1
+        : (index + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1) + links.length) % links.length;
+      links[next].focus();
+    });
+    window.addEventListener('pageshow', () => {
+      nav.querySelectorAll('.is-pending').forEach(item => item.classList.remove('is-pending'));
+    });
   }
 
   async function exportWiki(button) {
@@ -70,6 +127,7 @@
   }
 
   function initializeAuthenticatedMenu(host, user) {
+    initializeNavigation(user);
     host.innerHTML = '';
     const trigger = makeElement('button', 'account-menu-trigger');
     trigger.type = 'button';
@@ -89,23 +147,7 @@
     accountSettings.href = appUrl('/settings');
     accountSettings.role = 'menuitem';
     accountSettings.dataset.accountLabel = 'accountSettings';
-    accountSettings.addEventListener('click', event => {
-      event.preventDefault();
-      window.location.assign(appUrl('/settings'));
-    });
     popover.appendChild(accountSettings);
-
-    const manage = makeElement('a', 'account-menu-item');
-    manage.href = appUrl('/manage');
-    manage.role = 'menuitem';
-    manage.dataset.accountLabel = 'manage';
-    popover.appendChild(manage);
-
-    const upload = makeElement('a', 'account-menu-item');
-    upload.href = appUrl('/upload');
-    upload.role = 'menuitem';
-    upload.dataset.accountLabel = 'upload';
-    popover.appendChild(upload);
 
     const exportButton = makeElement('button', 'account-menu-item');
     exportButton.type = 'button';
@@ -113,14 +155,6 @@
     exportButton.dataset.accountLabel = 'exportWiki';
     exportButton.addEventListener('click', () => exportWiki(exportButton));
     popover.appendChild(exportButton);
-
-    if (user.role === 'admin') {
-      const users = makeElement('a', 'account-menu-item');
-      users.href = appUrl('/admin/users');
-      users.role = 'menuitem';
-      users.dataset.accountLabel = 'userManagement';
-      popover.appendChild(users);
-    }
 
     popover.appendChild(makeElement('div', 'account-menu-divider'));
     const logout = makeElement('button', 'account-menu-item account-menu-danger');
@@ -138,22 +172,54 @@
 
     function updateLabels() {
       const text = labels[selectedLanguage()] || labels.en;
-      host.querySelectorAll('[data-account-label]').forEach(element => {
+      document.querySelectorAll('[data-account-label]').forEach(element => {
         const value = text[element.dataset.accountLabel];
         if (value) element.textContent = value;
       });
-      trigger.setAttribute('aria-label', text.settings);
+      trigger.setAttribute('aria-label', text.accountMenu);
+      const nav = document.querySelector('[data-site-nav]');
+      if (nav) {
+        nav.setAttribute('aria-label', text.navigation);
+        const current = nav.querySelector('[aria-current="page"]');
+        // Scroll only the navigation strip, never the page or the chat history.
+        if (current && !nav.classList.contains('site-nav-sidebar')) {
+          nav.scrollLeft = current.offsetLeft - nav.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2;
+        }
+      }
     }
 
     trigger.addEventListener('click', event => {
       event.stopPropagation();
       setOpen(popover.hidden);
     });
+    trigger.addEventListener('keydown', event => {
+      if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+      event.preventDefault();
+      setOpen(true);
+      const items = popover.querySelectorAll('[role="menuitem"]');
+      items[event.key === 'ArrowUp' ? items.length - 1 : 0].focus();
+    });
+    popover.addEventListener('keydown', event => {
+      const items = [...popover.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+      const index = items.indexOf(document.activeElement);
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+          : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length;
+        items[next].focus();
+      }
+    });
+    host.addEventListener('focusout', event => {
+      if (!host.contains(event.relatedTarget)) setOpen(false);
+    });
     document.addEventListener('click', event => {
       if (!host.contains(event.target)) setOpen(false);
     });
     document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape' && !popover.hidden) {
+        setOpen(false);
+        trigger.focus();
+      }
     });
     document.addEventListener('change', event => {
       if (event.target.matches('#language, #langSelect, #ui-language')) updateLabels();
