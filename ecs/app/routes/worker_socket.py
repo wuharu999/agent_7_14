@@ -17,6 +17,7 @@ from ecs.app.database import (
 )
 from ecs.app.gateway import gateway
 from ecs.app.routes.uploads import dispatch_upload
+from ecs.app.email_notifications import notify_contradiction, notify_security_warnings
 from ecs.app.security_warnings import validated_security_warnings
 
 router = APIRouter()
@@ -68,22 +69,9 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
                 team = str(data.get("team") or "")
                 details = str(data.get("details") or "")
                 if team and details:
-                    from ecs.app.database import add_wiki_contradiction, _connect, _DB_LOCK
-                    from ecs.app.mock_email import MockEmailLogger
-
-                    # Store contradiction in database
-                    add_wiki_contradiction(team, details)
-
-                    # Query all admins since team captains do not exist now
-                    with _DB_LOCK, _connect() as connection:
-                        admins = connection.execute("SELECT email FROM users WHERE role = 'admin'").fetchall()
-                    for admin in admins:
-                        if admin.get("email"):
-                            MockEmailLogger.send_contradiction_alert(
-                                to_email=admin["email"],
-                                team_name=team,
-                                contradiction_details=details
-                            )
+                    from ecs.app.database import add_wiki_contradiction
+                    await asyncio.to_thread(add_wiki_contradiction, team, details)
+                    await asyncio.to_thread(notify_contradiction, team, details)
 
             elif message_type == "llm_wiki_snapshot":
                 gateway.latest_snapshot = data
@@ -96,12 +84,14 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
             elif message_type == "upload_security_warnings":
                 upload_id = str(data.get("upload_id") or "")
                 if upload_id:
+                    warnings = validated_security_warnings(data.get("warnings"))
                     await asyncio.to_thread(
                         replace_upload_security_warnings,
                         upload_id,
-                        validated_security_warnings(data.get("warnings")),
+                        warnings,
                         complete=data.get("security_scan_complete") is True,
                     )
+                    await asyncio.to_thread(notify_security_warnings, upload_id, warnings)
 
             elif message_type == "job_progress":
                 upload_id = str(data.get("upload_id") or "")

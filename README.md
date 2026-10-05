@@ -12,6 +12,7 @@ content.
 - Streams evidence-grounded answers in the selected language.
 - Keeps recent browser conversation context and supports a fresh conversation.
 - Supports authenticated editor and administrator workflows.
+- Sends optional Chinese template alerts and weekly activity emails; see [email setup](docs/email-notifications.md).
 
 ## Development
 

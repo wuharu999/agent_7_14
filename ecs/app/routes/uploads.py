@@ -14,6 +14,7 @@ from ecs.app.auth import require_roles, verify_csrf, check_robot_access
 from ecs.app.config import PUBLIC_BASE_URL, UPLOAD_ROOT, WORKER_SHARED_SECRET, TEAM_MAX_UPLOAD_BYTES
 from ecs.app.database import get_allowed_teams, create_upload, get_upload, update_upload, write_audit, get_team_upload_usage
 from ecs.app.gateway import gateway
+from ecs.app.email_notifications import notify_upload_activity
 from ecs.app.web_paths import rooted_path
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, is_supported_upload
 
@@ -118,22 +119,6 @@ async def upload_file(
             status_code=400,
         )
 
-    # Check for unusual activity (more than 5 uploads in 1 minute)
-    from ecs.app.database import get_recent_upload_count, _connect, _DB_LOCK
-    from ecs.app.mock_email import MockEmailLogger
-    recent_uploads = get_recent_upload_count(int(session["user_id"]), minutes=1)
-    if recent_uploads >= 5:
-        with _DB_LOCK, _connect() as connection:
-            admins = connection.execute("SELECT email FROM users WHERE role = 'admin'").fetchall()
-        for admin in admins:
-            if admin["email"]:
-                MockEmailLogger.send_unusual_activity(
-                    captain_email=admin["email"],
-                    team_name=team,
-                    member_username=str(session["username"]),
-                    activity_desc=f"User has uploaded more than 5 files in the last minute ({recent_uploads + 1} uploads).",
-                )
-
     upload_id = uuid.uuid4().hex[:16]
     task_id = f"dl-{uuid.uuid4().hex[:16]}"
     filename = safe_filename(original_filename)
@@ -175,6 +160,7 @@ async def upload_file(
         result="accepted",
         details=f"size_bytes={target_path.stat().st_size}",
     )
+    await asyncio.to_thread(notify_upload_activity, int(session["user_id"]), str(session["username"]), team)
     upload = get_upload(upload_id)
     assert upload is not None
     await dispatch_upload(upload, request)

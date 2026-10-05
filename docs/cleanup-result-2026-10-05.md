@@ -1,6 +1,6 @@
 # Grill/log inclusion and unused-code cleanup
 
-Implemented on 2026-10-05 after approval of the [unused-code audit](unused-code-audit-2026-10-05.md). Changes are local; no commit, push, cloud restart, or database migration was performed.
+Implemented on 2026-10-05 after approval of the [unused-code audit](unused-code-audit-2026-10-05.md). The cleanup was subsequently committed locally as `814ac8f`. No push, cloud restart, or live database migration was performed.
 
 ## Repository inclusion
 
@@ -28,7 +28,7 @@ Tests specific to retired APIs were removed or moved to the active path. Retaine
 
 ## Retained / follow-up
 
-- Email code and `users.email` remain for the planned provider integration. No live records or database schema were removed.
+- The cleanup retained email code and `users.email`; the subsequent [template email implementation](email-notifications.md) replaces the mock sender. No live records or database schema were removed.
 - Grill hibernation/resume remains pending integration review: its worker-side hibernate request has no matching gateway endpoint. Removing it requires a separate lifecycle decision.
 - CLI wrappers, runtime agent assets, operational scripts, migrations, fallback implementations, and dynamically loaded components remain.
 - Source-only root tests require explicit `ALLOWED_TEAMS=tian_gong,walker_s2,walker_c1`, matching both committed environment examples. An initial clean run without configuration exposed an existing mismatch between config and database bootstrap defaults (2 failures); setting the documented configuration resolves it.

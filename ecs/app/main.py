@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ecs.app.config import APP_NAME, APP_VERSION, ROOT_PATH, ensure_directories
 from ecs.app.database import delete_expired_sessions, initialize_database
+from ecs.app import email_notifications, email_store
 from ecs.app.chat_history import interrupt_unfinished_turns
 from ecs.app.routes import (
     admin_users,
@@ -33,7 +36,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     initialize_database()
     interrupt_unfinished_turns()
     delete_expired_sessions()
-    yield
+    email_store.initialize()
+    email_settings = email_notifications.Settings.from_env()
+    email_settings.validate()
+    stop = threading.Event()
+    email_task = asyncio.create_task(email_notifications.run_service(email_settings, stop)) if email_settings.enabled else None
+    try:
+        yield
+    finally:
+        stop.set()
+        if email_task is not None:
+            await email_task
 
 
 app = FastAPI(
