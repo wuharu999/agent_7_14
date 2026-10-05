@@ -11,6 +11,7 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
 .admin-create{display:block;margin-bottom:20px}.robot-create-form{max-width:420px}.assignment-board{display:grid;grid-template-columns:minmax(220px,1fr) minmax(360px,2fr);gap:18px;align-items:start}.editor-pool-panel,.robots-panel{border:1px solid #dbe2ee;border-radius:12px;background:#f8fafc;padding:14px}.editor-pool{display:flex;flex-direction:column;gap:8px;min-height:90px}.editor-chip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:650;cursor:grab}.editor-chip:active{cursor:grabbing}.editor-chip small{color:#64748b;font-weight:500}.assigned-editor{display:inline-flex;width:auto;margin:4px 6px 4px 0;cursor:grab}.assigned-editor button{height:auto;padding:0 2px;background:none;color:#b91c1c;font-size:17px;line-height:1}.robot-card{margin-bottom:12px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;transition:border-color .15s,background .15s}.robot-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.robot-card-header>div{flex-wrap:wrap;justify-content:flex-end}.robot-card-header .danger{height:32px;padding:0 11px;font-size:12px}.robot-order-controls{display:inline-flex;gap:4px}.robot-order-button{width:32px;height:32px;padding:0;font-size:17px}.robot-order-button:disabled{background:#cbd5e1;color:#64748b;cursor:not-allowed}.robot-order-hint{margin:0 0 10px;font-size:12px;color:#64748b}.robot-card.drag-over{border-color:#2563eb;background:#eff6ff}.robot-drop-hint{font-size:12px;color:#64748b;margin:6px 0}.robot-editors{min-height:35px;padding-top:4px}@media(max-width:760px){.assignment-board{grid-template-columns:1fr}.editor-pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
 </style>
 <link rel="stylesheet" href="/static/site_theme.css?v=20260922">
+<link rel="stylesheet" href="/static/manage_layout.css?v=20261006">
 </head>
 <body class="support-page">
 <div class="top">
@@ -39,23 +40,26 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
 </div>
 
 <div class="card" id="admin-panel" style="display: none;">
-    <h2 data-i18n="adminTitle">Admin Panel: Robots & Editors</h2>
-    <div class="admin-create">
-        <div class="robot-create-form">
-            <h3 data-i18n="createRobot">Create Robot</h3>
-            <form id="create-robot-form" style="display: flex; flex-direction: column; gap: 10px;">
-                <label for="robot-name">English name / folder key</label>
-                <input type="text" id="robot-name" data-i18n="robotNamePlaceholder" placeholder="Robot Name" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <label for="robot-name-zh">机器人中文名称</label>
-                <input type="text" id="robot-name-zh" placeholder="机器人中文名称" required maxlength="64" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <button type="submit" class="button" data-i18n="createRobotBtn">Create Robot</button>
-                <p id="create-robot-msg" class="muted"></p>
-            </form>
+    <div class="admin-toolbar">
+        <div>
+            <h2 data-i18n="adminTitle">Folders & access</h2>
+            <p class="muted" data-i18n="adminHint">Manage folders and the editors who can access them.</p>
         </div>
+        <button id="toggle-create-folder" type="button" aria-expanded="false" aria-controls="create-robot-form"><span aria-hidden="true">＋</span><span data-i18n="createRobotBtn">Create Folder</span></button>
     </div>
+    <form id="create-robot-form" class="robot-create-form" hidden>
+        <label for="robot-name"><span data-i18n="folderKeyLabel">English name / folder key</span>
+            <input type="text" id="robot-name" data-i18n="robotNamePlaceholder" placeholder="Folder name / key" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}">
+        </label>
+        <label for="robot-name-zh"><span data-i18n="chineseDisplayName">Chinese display name</span>
+            <input type="text" id="robot-name-zh" required maxlength="64">
+        </label>
+        <button type="submit" data-i18n="createRobotBtn">Create Folder</button>
+        <p id="create-robot-msg" class="muted" role="status"></p>
+    </form>
     <div class="assignment-board">
         <div class="editor-pool-panel">
-            <h3 data-i18n="editorPool">Editor Pool</h3>
+            <h3><span data-i18n="editorPool">Editors</span> <span id="editor-count" class="count-badge">0</span></h3>
             <p class="muted" data-i18n="editorPoolHint">Drag an active editor onto a robot.</p>
             <div id="editor-pool" class="editor-pool" data-i18n="loadingEditors">Loading editors...</div>
         </div>
@@ -67,7 +71,7 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
                 </summary>
                 <div style="margin-top: 6px;">
                     <p class="robot-order-hint" data-i18n="robotOrderHint">Use the arrow buttons to set the order used by robot selectors.</p>
-                    <div id="robots-list" data-i18n="loadingRobots">Loading robots...</div>
+                    <div id="robots-list" tabindex="0" data-i18n="loadingRobots">Loading robots...</div>
                 </div>
             </details>
         </div>
@@ -154,13 +158,15 @@ const translations = {
     signedInAs: 'Signed in as ',
     role: 'role ',
     questions: 'Questions',
-    adminTitle: 'Admin Panel: Folder & Editor Access',
+    adminTitle: 'Folders & access',
+    adminHint: 'Manage folders and their editor permissions.',
+    folderKeyLabel: 'English name / folder key',
     createRobot: 'Create Robot Folder',
     robotNamePlaceholder: 'Folder Name / Key',
     robotDescPlaceholder: 'Description',
     robotPathPlaceholder: 'Storage Path (optional)',
     createRobotBtn: 'Create Folder',
-    editorPool: 'Editor Pool',
+    editorPool: 'Editors',
     editorPoolHint: 'Drag an active editor onto a folder. Use × to remove an assignment.',
     noActiveEditors: 'No active editor accounts.',
     dropEditorHere: 'Drop an editor here to assign access.',
@@ -210,7 +216,7 @@ const translations = {
     unableToList: 'Unable to list sources',
     loadingRobots: 'Loading robots...',
     noRobots: 'No robot folders were returned by the source tree.',
-    removeRobot: 'Remove robot',
+    removeRobot: 'Remove',
     editRobotNames: 'Edit names',
     englishDisplayName: 'English display name',
     chineseDisplayName: 'Chinese display name',
@@ -248,13 +254,15 @@ const translations = {
     signedInAs: '当前登录：',
     role: '角色：',
     questions: '返回问答',
-    adminTitle: '管理员控制台：文件夹与权限管理',
+    adminTitle: '文件夹与权限',
+    adminHint: '管理资料文件夹及编辑者的访问权限。',
+    folderKeyLabel: '英文名称 / 文件夹标识',
     createRobot: '创建文件夹',
     robotNamePlaceholder: '文件夹名称 / 标识',
     robotDescPlaceholder: '描述信息',
     robotPathPlaceholder: '存储路径 (可选)',
     createRobotBtn: '创建文件夹',
-    editorPool: '编辑者池',
+    editorPool: '可用编辑者',
     editorPoolHint: '将启用的编辑者拖到文件夹上；点击 × 可移除分配。',
     noActiveEditors: '没有启用的编辑者账户。',
     dropEditorHere: '将编辑者拖到此处以分配访问权限。',
@@ -304,7 +312,7 @@ const translations = {
     unableToList: '无法获取源文件树',
     loadingRobots: '正在加载机器人列表……',
     noRobots: '源文件树中没有机器人文件夹。',
-    removeRobot: '移除机器人',
+    removeRobot: '移除',
     editRobotNames: '修改名称',
     englishDisplayName: '英文显示名称',
     chineseDisplayName: '中文显示名称',
@@ -712,6 +720,7 @@ if (role === 'admin') {
             const pool = document.getElementById('editor-pool');
             pool.innerHTML = '';
             const editors = editorsData.editors || [];
+            document.getElementById('editor-count').textContent = String(editors.length);
             if (!editors.length) {
                 const empty = document.createElement('span');
                 empty.className = 'muted';
@@ -739,8 +748,7 @@ if (role === 'admin') {
                 const heading = document.createElement('strong');
                 heading.textContent = uiLanguage.value === 'zh-CN' ? (robot.display_name_zh || robot.name) : (robot.display_name_en || robot.name);
                 const controls = document.createElement('div');
-                controls.style.display = 'flex';
-                controls.style.gap = '8px';
+                controls.className = 'robot-actions';
                 const orderControls = document.createElement('div');
                 orderControls.className = 'robot-order-controls';
                 const moveUpButton = document.createElement('button');
@@ -770,6 +778,7 @@ if (role === 'admin') {
                 editButton.type = 'button';
                 editButton.className = 'secondary';
                 editButton.textContent = tr('editRobotNames');
+                editButton.setAttribute('aria-expanded', 'false');
                 editButton.style.margin = '0';
                 editButton.style.padding = '0 11px';
                 editButton.style.height = '32px';
@@ -788,10 +797,7 @@ if (role === 'admin') {
 
                 const namesEditor = document.createElement('form');
                 namesEditor.hidden = true;
-                namesEditor.style.display = 'grid';
-                namesEditor.style.gridTemplateColumns = 'minmax(0, 1fr) minmax(0, 1fr) auto auto';
-                namesEditor.style.gap = '8px';
-                namesEditor.style.marginTop = '10px';
+                namesEditor.className = 'robot-names-editor';
                 const englishField = document.createElement('label');
                 englishField.style.display = 'grid';
                 englishField.style.gap = '3px';
@@ -826,19 +832,19 @@ if (role === 'admin') {
                 namesEditor.append(englishField, chineseField, saveNamesButton, cancelNamesButton);
                 editButton.addEventListener('click', () => {
                     namesEditor.hidden = !namesEditor.hidden;
+                    editButton.setAttribute('aria-expanded', String(!namesEditor.hidden));
                     if (!namesEditor.hidden) englishInput.focus();
                 });
-                cancelNamesButton.addEventListener('click', () => { namesEditor.hidden = true; });
+                cancelNamesButton.addEventListener('click', () => {
+                    namesEditor.hidden = true;
+                    editButton.setAttribute('aria-expanded', 'false');
+                    editButton.focus();
+                });
                 namesEditor.addEventListener('submit', event => {
                     event.preventDefault();
                     updateRobotNames(robot, englishInput, chineseInput, saveNamesButton, namesEditor);
                 });
                 div.appendChild(namesEditor);
-
-                const hint = document.createElement('p');
-                hint.className = 'robot-drop-hint';
-                hint.textContent = tr('dropEditorHere');
-                div.appendChild(hint);
 
                 const edDiv = document.createElement('div');
                 edDiv.className = 'robot-editors';
@@ -891,6 +897,13 @@ if (role === 'admin') {
         }
     }
 
+    const createFolderForm = document.getElementById('create-robot-form');
+    const createFolderToggle = document.getElementById('toggle-create-folder');
+    createFolderToggle.onclick = () => {
+        createFolderForm.hidden = !createFolderForm.hidden;
+        createFolderToggle.setAttribute('aria-expanded', String(!createFolderForm.hidden));
+        if (!createFolderForm.hidden) document.getElementById('robot-name').focus();
+    };
     document.getElementById('create-robot-form').onsubmit = async (e) => {
         e.preventDefault();
         const msg = document.getElementById('create-robot-msg');
