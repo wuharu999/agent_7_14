@@ -37,6 +37,34 @@ Do not commit environment files, uploaded documents, generated knowledge-base
 data, databases, logs, or release archives. Configure secrets and deployment
 settings only on the machines that need them.
 
+## Email — ready to configure later
+
+Email is optional and **disabled by default** (`EMAIL_ENABLED=false`). The
+application runs without a mailbox or SMTP credentials. While disabled, it
+does not queue or send notifications, and the weekly email task does not run.
+Leave the email credential fields empty until you are ready.
+
+The Chinese alert templates, weekly report, and delivery queue are implemented.
+To activate them later:
+
+1. Prepare a dedicated QQ mailbox and generate its SMTP authorization code.
+2. Fill in `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD`, and `EMAIL_FROM` in
+   the existing `ecs/.env`, using `ecs/.env.example` as a reference. Do not
+   overwrite an existing environment file.
+3. Set real recipient email addresses on the platform's active administrator
+   accounts. These administrators receive the alerts and weekly report.
+4. Follow the [Chinese setup guide](docs/email-notifications.md) to enable
+   email, check configuration, send a test, and restart the ECS gateway.
+
+You can preview the weekly template now without configuring or sending email:
+
+```sh
+.venv-dev/bin/python -m ecs.app.email_admin preview --output /tmp/robot-weekly-email.html
+```
+
+The preview uses example numbers. Weekly reports are scheduled for Monday
+09:00 Beijing time and currently cover knowledge-portal activity.
+
 ## Layout
 
 - `ecs/` — public FastAPI application, authentication, uploads, and status UI.
