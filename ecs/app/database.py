@@ -232,6 +232,21 @@ def initialize_database() -> None:
                 details TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS chat_robot_options (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                display_name_en TEXT NOT NULL DEFAULT '',
+                display_name_zh TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                folder_name TEXT NOT NULL DEFAULT '',
+                display_order INTEGER NOT NULL DEFAULT 0,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_robot_options_order
+                ON chat_robot_options(display_order, id);
             """
         )
         if "display_name_en" not in _columns(connection, "robots"):
@@ -294,6 +309,26 @@ def initialize_database() -> None:
                 connection.execute(
                     "UPDATE robots SET display_order = ? WHERE id = ?",
                     (display_order, int(row["id"])),
+                )
+
+        opt_count = connection.execute("SELECT COUNT(*) AS c FROM chat_robot_options").fetchone()["c"]
+        if opt_count == 0:
+            for r in connection.execute("SELECT name, display_name_en, display_name_zh, description, display_order FROM robots ORDER BY display_order, id").fetchall():
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO chat_robot_options
+                    (name, display_name_en, display_name_zh, description, folder_name, display_order, is_enabled, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                    """,
+                    (
+                        r["name"],
+                        r["display_name_en"] or r["name"],
+                        r["display_name_zh"] or r["name"],
+                        r["description"] or "",
+                        r["name"],
+                        r["display_order"] or 0,
+                        now,
+                    ),
                 )
 
         # Seed default admin account if no admin exists
@@ -689,7 +724,24 @@ def create_robot(
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Robot '{name}' already exists") from exc
-        return int(cursor.lastrowid)
+        robot_id = int(cursor.lastrowid)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO chat_robot_options
+            (name, display_name_en, display_name_zh, description, folder_name, display_order, is_enabled, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+            """,
+            (
+                name,
+                (display_name_en or name).strip(),
+                (display_name_zh or name).strip(),
+                description.strip(),
+                name,
+                display_order,
+                now,
+            ),
+        )
+        return robot_id
 
 
 def get_robot_by_id(robot_id: int) -> dict[str, Any] | None:
@@ -720,6 +772,12 @@ def update_robot_display_names(
         )
         if cursor.rowcount != 1:
             raise ValueError("Robot not found")
+        robot_row = connection.execute("SELECT name FROM robots WHERE id = ?", (robot_id,)).fetchone()
+        if robot_row:
+            connection.execute(
+                "UPDATE chat_robot_options SET display_name_en = ?, display_name_zh = ? WHERE folder_name = ? OR name = ?",
+                (english_name, chinese_name, robot_row["name"], robot_row["name"]),
+            )
     robot = get_robot_by_id(robot_id)
     assert robot is not None
     return robot
@@ -742,6 +800,12 @@ def set_robot_display_order(robot_ids: list[int]) -> list[dict[str, Any]]:
                 "UPDATE robots SET display_order = ? WHERE id = ?",
                 (display_order, robot_id),
             )
+            robot_row = connection.execute("SELECT name FROM robots WHERE id = ?", (robot_id,)).fetchone()
+            if robot_row:
+                connection.execute(
+                    "UPDATE chat_robot_options SET display_order = ? WHERE folder_name = ? OR name = ?",
+                    (display_order, robot_row["name"], robot_row["name"]),
+                )
     return get_all_robots()
 
 
@@ -1593,4 +1657,163 @@ def get_robot_options(*, include_description: bool = False) -> list[dict[str, st
     return options
 
 
-# ---------------------------------------------------------------------------
+def get_chat_robot_options() -> list[dict[str, Any]]:
+    """Return enabled chat robot dropdown options for user QA page."""
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, name, display_name_en, display_name_zh, description, folder_name, display_order, is_enabled
+            FROM chat_robot_options
+            WHERE is_enabled = 1
+            ORDER BY display_order ASC, id ASC
+            """
+        ).fetchall()
+        options = []
+        for r in rows:
+            options.append({
+                "id": int(r["id"]),
+                "name": str(r["name"]),
+                "english_name": str(r["display_name_en"] or r["name"]),
+                "chinese_name": str(r["display_name_zh"] or r["name"]),
+                "description": str(r["description"] or ""),
+                "folder_name": str(r["folder_name"] or ""),
+            })
+        return options
+
+
+def list_all_chat_robot_options() -> list[dict[str, Any]]:
+    """Return all chat robot options for /manage management section."""
+    with _DB_LOCK, _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, name, display_name_en, display_name_zh, description, folder_name, display_order, is_enabled, created_at
+            FROM chat_robot_options
+            ORDER BY display_order ASC, id ASC
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_chat_robot_option_by_id(option_id: int) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM chat_robot_options WHERE id = ?", (option_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_chat_robot_option_by_name(name: str) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM chat_robot_options WHERE name = ?", (name,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def create_chat_robot_option(
+    name: str,
+    *,
+    display_name_zh: str,
+    display_name_en: str,
+    folder_name: str = "",
+    description: str = "",
+) -> int:
+    name = normalize_team_name(name, allow_reserved=False)
+    zh = display_name_zh.strip()
+    en = display_name_en.strip()
+    if not zh or not en:
+        raise ValueError("Chinese and English names are required")
+    now = utc_now()
+    with _DB_LOCK, _connect() as connection:
+        max_order_row = connection.execute(
+            "SELECT COALESCE(MAX(display_order), -1) AS m FROM chat_robot_options"
+        ).fetchone()
+        next_order = (max_order_row["m"] if max_order_row else -1) + 1
+        try:
+            cur = connection.execute(
+                """
+                INSERT INTO chat_robot_options
+                (name, display_name_en, display_name_zh, description, folder_name, display_order, is_enabled, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (name, en, zh, description.strip(), folder_name.strip(), next_order, now),
+            )
+            return int(cur.lastrowid)
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"Chat robot option '{name}' already exists") from exc
+
+
+def update_chat_robot_option(
+    option_id: int,
+    *,
+    display_name_zh: str | None = None,
+    display_name_en: str | None = None,
+    folder_name: str | None = None,
+    description: str | None = None,
+    is_enabled: int | None = None,
+) -> dict[str, Any]:
+    with _DB_LOCK, _connect() as connection:
+        current = connection.execute(
+            "SELECT * FROM chat_robot_options WHERE id = ?", (option_id,)
+        ).fetchone()
+        if not current:
+            raise ValueError("Option not found")
+        updates = []
+        args: list[Any] = []
+        if display_name_zh is not None:
+            zh = display_name_zh.strip()
+            if not zh:
+                raise ValueError("Chinese name cannot be empty")
+            updates.append("display_name_zh = ?")
+            args.append(zh)
+        if display_name_en is not None:
+            en = display_name_en.strip()
+            if not en:
+                raise ValueError("English name cannot be empty")
+            updates.append("display_name_en = ?")
+            args.append(en)
+        if folder_name is not None:
+            updates.append("folder_name = ?")
+            args.append(folder_name.strip())
+        if description is not None:
+            updates.append("description = ?")
+            args.append(description.strip())
+        if is_enabled is not None:
+            updates.append("is_enabled = ?")
+            args.append(1 if is_enabled else 0)
+        if updates:
+            args.append(option_id)
+            connection.execute(
+                f"UPDATE chat_robot_options SET {', '.join(updates)} WHERE id = ?",
+                args,
+            )
+        row = connection.execute(
+            "SELECT * FROM chat_robot_options WHERE id = ?", (option_id,)
+        ).fetchone()
+        return dict(row)
+
+
+def set_chat_robot_options_order(option_ids: list[int]) -> list[dict[str, Any]]:
+    if len(option_ids) != len(set(option_ids)):
+        raise ValueError("Order contains duplicates")
+    with _DB_LOCK, _connect() as connection:
+        for idx, opt_id in enumerate(option_ids):
+            connection.execute(
+                "UPDATE chat_robot_options SET display_order = ? WHERE id = ?",
+                (idx, opt_id),
+            )
+        rows = connection.execute(
+            "SELECT * FROM chat_robot_options ORDER BY display_order ASC, id ASC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_chat_robot_option(option_id: int) -> dict[str, Any] | None:
+    with _DB_LOCK, _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM chat_robot_options WHERE id = ?", (option_id,)
+        ).fetchone()
+        if not row:
+            return None
+        connection.execute("DELETE FROM chat_robot_options WHERE id = ?", (option_id,))
+        return dict(row)

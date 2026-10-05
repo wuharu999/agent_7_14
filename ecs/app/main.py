@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from ecs.app.config import APP_NAME, APP_VERSION, ROOT_PATH, ensure_directories
 from ecs.app.database import delete_expired_sessions, initialize_database
 from ecs.app import email_notifications, email_store
-from ecs.app.chat_history import interrupt_unfinished_turns
+from ecs.app.chat_history import interrupt_unfinished_turns, prune_expired_conversations
 from ecs.app.routes import (
     admin_users,
     ask,
@@ -36,6 +36,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     initialize_database()
     interrupt_unfinished_turns()
     delete_expired_sessions()
+    prune_expired_conversations(30)
     email_store.initialize()
     email_settings = email_notifications.Settings.from_env()
     email_settings.validate()

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ecs.app.auth import current_session, safe_next_url, safe_next_url_for_role
-from ecs.app.database import get_allowed_teams, get_robot_options
+from ecs.app.database import get_allowed_teams, get_chat_robot_options, get_robot_options
 from ecs.app.web_paths import render_template, rooted_path
 from ecs.app.config import BROWSER_TOOLS_URL
 from shared.source_types import SUPPORTED_UPLOAD_SUFFIXES, UPLOAD_ACCEPT
@@ -50,7 +50,7 @@ def _login_redirect(next_url: str) -> RedirectResponse:
 async def ask_page():
     page = _template("ask.html")
     page = page.replace("__ALLOWED_TEAMS__", json.dumps(get_allowed_teams(), ensure_ascii=False))
-    page = page.replace("__ROBOTS__", json.dumps(get_robot_options(), ensure_ascii=False))
+    page = page.replace("__ROBOTS__", json.dumps(get_chat_robot_options(), ensure_ascii=False))
     return HTMLResponse(page)
 
 

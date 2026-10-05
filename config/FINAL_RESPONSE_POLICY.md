@@ -42,3 +42,8 @@ Do not replace the answer with a scope warning.
 For cross-product comparisons, keep each product's confirmed facts separate. Use
 canonical customer-facing names. Never emit an old version-style alias when a
 canonical identity is known, and never collapse an ambiguous alias to one product.
+
+When asked whether a robot is available, supported, or how to view or configure available
+robot options, list the supported robots and provide a markdown link back to the management interface:
+- Chinese: `[查看或配置可用机器人](/manage#chat-robots)`
+- Non-Chinese: `[View or configure available robots](/manage#chat-robots)`

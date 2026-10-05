@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -12,20 +14,27 @@ from ecs.app.auth import check_robot_access, require_roles, verify_csrf
 from ecs.app.database import (
     assign_robot_editor,
     create_robot,
+    create_chat_robot_option,
+    delete_chat_robot_option,
     delete_robot,
     get_all_robots,
     get_all_upload_timestamps,
+    get_chat_robot_option_by_id,
+    get_chat_robot_option_by_name,
     get_robot_by_id,
     get_robot_by_name,
     get_robot_editors,
     get_user_by_id,
+    list_all_chat_robot_options,
     list_audit_log,
     list_recent_qa_question_records,
     list_active_editors,
     mark_sources_deleted,
     reconcile_robots_with_source_tree,
     remove_robot_editor,
+    set_chat_robot_options_order,
     set_robot_display_order,
+    update_chat_robot_option,
     update_robot_display_names,
     write_audit,
 )
@@ -150,6 +159,9 @@ async def list_sources(request: Request):
         ]
 
     timestamps = get_all_upload_timestamps()
+    all_robots = get_all_robots()
+    robots_by_name = {str(r["name"]): r for r in all_robots}
+
     def enrich_tree(node, current_ts=None):
         if not isinstance(node, dict):
             return
@@ -159,6 +171,10 @@ async def list_sources(request: Request):
             node_ts = timestamps[name]
         if node_ts:
             node["created_at"] = node_ts
+        if node.get("type") == "directory" and name in robots_by_name:
+            r = robots_by_name[name]
+            node["display_name_zh"] = str(r.get("display_name_zh") or name)
+            node["display_name_en"] = str(r.get("display_name_en") or name)
         children = node.get("children")
         if isinstance(children, list):
             for child in children:
@@ -166,10 +182,19 @@ async def list_sources(request: Request):
 
     enrich_tree(tree)
 
+    folder_names_zh: list[str] = []
+    for child in tree.get("children", []):
+        if child.get("type") == "directory":
+            c_name = str(child.get("name") or "")
+            r = robots_by_name.get(c_name)
+            zh_name = str(r.get("display_name_zh") or c_name) if r else c_name
+            folder_names_zh.append(zh_name)
+
     return {
         "worker_online": gateway.online,
         "user": {"username": session["username"], "role": session["role"]},
         "tree": tree,
+        "folder_names_zh": folder_names_zh,
     }
 
 
@@ -570,3 +595,154 @@ async def get_contradictions(request: Request):
         if check_robot_access(session, c["team"])
     ]
     return {"contradictions": filtered}
+
+
+class CreateChatRobotRequest(BaseModel):
+    name: str = Field(default="", max_length=64)
+    display_name_zh: str = Field(min_length=1, max_length=64)
+    display_name_en: str = Field(min_length=1, max_length=64)
+    folder_name: str = Field(default="", max_length=64)
+    description: str = Field(default="", max_length=256)
+
+
+class UpdateChatRobotRequest(BaseModel):
+    display_name_zh: str | None = Field(default=None, min_length=1, max_length=64)
+    display_name_en: str | None = Field(default=None, min_length=1, max_length=64)
+    folder_name: str | None = Field(default=None, max_length=64)
+    description: str | None = Field(default=None, max_length=256)
+    is_enabled: int | None = None
+
+
+class UpdateChatRobotOrderRequest(BaseModel):
+    option_ids: list[int] = Field(min_length=1, max_length=10_000)
+
+
+@router.get("/api/manage/chat_robots")
+async def list_chat_robots_endpoint(request: Request):
+    require_roles(request, {"editor", "admin"})
+    return {
+        "chat_robots": list_all_chat_robot_options(),
+        "folders": [str(r["name"]) for r in get_all_robots()],
+    }
+
+
+@router.post("/api/manage/chat_robots")
+async def create_chat_robot_endpoint(
+    payload: CreateChatRobotRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"editor", "admin"})
+    verify_csrf(session, x_csrf_token)
+    opt_name = payload.name.strip()
+    if not opt_name:
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", payload.display_name_en.strip()).strip("_").lower()
+        if not slug:
+            slug = f"bot_{uuid.uuid4().hex[:8]}"
+        base_name = slug[:50]
+        opt_name = base_name
+        while get_chat_robot_option_by_name(opt_name):
+            opt_name = f"{base_name[:48]}_{uuid.uuid4().hex[:4]}"
+    try:
+        opt_id = create_chat_robot_option(
+            opt_name,
+            display_name_zh=payload.display_name_zh,
+            display_name_en=payload.display_name_en,
+            folder_name=payload.folder_name,
+            description=payload.description,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    write_audit(
+        user_id=int(session["user_id"]),
+        username=str(session["username"]),
+        action="create_chat_robot_option",
+        source_path=opt_name,
+        result="ok",
+        details=json.dumps(
+            {
+                "name": opt_name,
+                "display_name_zh": payload.display_name_zh,
+                "display_name_en": payload.display_name_en,
+                "folder_name": payload.folder_name,
+            },
+            ensure_ascii=False,
+        ),
+    )
+    return {"status": "ok", "id": opt_id, "name": opt_name}
+
+
+@router.patch("/api/manage/chat_robots/{option_id}")
+async def update_chat_robot_endpoint(
+    option_id: int,
+    payload: UpdateChatRobotRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"editor", "admin"})
+    verify_csrf(session, x_csrf_token)
+    try:
+        updated = update_chat_robot_option(
+            option_id,
+            display_name_zh=payload.display_name_zh,
+            display_name_en=payload.display_name_en,
+            folder_name=payload.folder_name,
+            description=payload.description,
+            is_enabled=payload.is_enabled,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    write_audit(
+        user_id=int(session["user_id"]),
+        username=str(session["username"]),
+        action="update_chat_robot_option",
+        source_path=str(updated.get("name") or option_id),
+        result="ok",
+        details=json.dumps(updated, ensure_ascii=False),
+    )
+    return {"status": "ok", "chat_robot": updated}
+
+
+@router.put("/api/manage/chat_robots/order")
+async def update_chat_robot_order_endpoint(
+    payload: UpdateChatRobotOrderRequest,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"editor", "admin"})
+    verify_csrf(session, x_csrf_token)
+    try:
+        ordered = set_chat_robot_options_order(payload.option_ids)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    write_audit(
+        user_id=int(session["user_id"]),
+        username=str(session["username"]),
+        action="update_chat_robot_order",
+        source_path="chat_robot_options",
+        result="ok",
+        details=json.dumps({"option_ids": payload.option_ids}, ensure_ascii=False),
+    )
+    return {"status": "ok", "chat_robots": ordered}
+
+
+@router.delete("/api/manage/chat_robots/{option_id}")
+async def delete_chat_robot_endpoint(
+    option_id: int,
+    request: Request,
+    x_csrf_token: str = Header(default="", alias="X-CSRF-Token"),
+):
+    session = require_roles(request, {"editor", "admin"})
+    verify_csrf(session, x_csrf_token)
+    deleted = delete_chat_robot_option(option_id)
+    if not deleted:
+        return JSONResponse({"error": "Option not found"}, status_code=404)
+    write_audit(
+        user_id=int(session["user_id"]),
+        username=str(session["username"]),
+        action="delete_chat_robot_option",
+        source_path=str(deleted.get("name") or option_id),
+        result="ok",
+        details=json.dumps(deleted, ensure_ascii=False),
+    )
+    return {"status": "ok", "deleted": deleted}

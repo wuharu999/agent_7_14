@@ -3,27 +3,48 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ecs.app import database as db
 
+CHAT_RETENTION_DAYS = 30
 
-def list_conversations(user_id: int, *, limit: int = 30, offset: int = 0) -> dict:
+
+def chat_retention_cutoff(days: int = CHAT_RETENTION_DAYS) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+def prune_expired_conversations(retention_days: int = CHAT_RETENTION_DAYS) -> int:
+    cutoff = chat_retention_cutoff(retention_days)
     with db._DB_LOCK, db._connect() as connection:
+        cursor = connection.execute(
+            "DELETE FROM chat_conversations WHERE updated_at < ?", (cutoff,)
+        )
+        return int(cursor.rowcount)
+
+
+def list_conversations(user_id: int, *, limit: int = 30, offset: int = 0,
+                       retention_days: int = CHAT_RETENTION_DAYS) -> dict:
+    cutoff = chat_retention_cutoff(retention_days)
+    with db._DB_LOCK, db._connect() as connection:
+        connection.execute("DELETE FROM chat_conversations WHERE updated_at < ?", (cutoff,))
         rows = connection.execute(
             "SELECT id, title, team, language, created_at, updated_at FROM chat_conversations "
-            "WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
-            (user_id, limit + 1, offset),
+            "WHERE user_id = ? AND updated_at >= ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+            (user_id, cutoff, limit + 1, offset),
         ).fetchall()
-    return {"conversations": [dict(row) for row in rows[:limit]], "has_more": len(rows) > limit}
+    return {"conversations": [dict(row) for row in rows[:limit]], "has_more": len(rows) > limit,
+            "retention_days": retention_days}
 
 
 def get_conversation(user_id: int, conversation_id: str, *, before: int | None = None,
-                     limit: int = 30) -> dict | None:
+                     limit: int = 30, retention_days: int = CHAT_RETENTION_DAYS) -> dict | None:
+    cutoff = chat_retention_cutoff(retention_days)
     with db._DB_LOCK, db._connect() as connection:
         row = connection.execute(
             "SELECT id, title, team, language, created_at, updated_at FROM chat_conversations "
-            "WHERE id = ? AND user_id = ?", (conversation_id, user_id),
+            "WHERE id = ? AND user_id = ? AND updated_at >= ?", (conversation_id, user_id, cutoff),
         ).fetchone()
         if row is None:
             return None
@@ -43,10 +64,11 @@ def begin_turn(user_id: int, conversation_id: str, question: str, team: str,
     now = db.utc_now()
     with db._DB_LOCK, db._connect() as connection:
         if conversation_id:
+            cutoff = chat_retention_cutoff(CHAT_RETENTION_DAYS)
             owner = connection.execute(
-                "SELECT user_id FROM chat_conversations WHERE id = ?", (conversation_id,),
+                "SELECT user_id, updated_at FROM chat_conversations WHERE id = ?", (conversation_id,),
             ).fetchone()
-            if owner is None or owner["user_id"] != user_id:
+            if owner is None or owner["user_id"] != user_id or str(owner["updated_at"]) < cutoff:
                 raise LookupError("Conversation not found")
         else:
             conversation_id = "chat:" + uuid.uuid4().hex

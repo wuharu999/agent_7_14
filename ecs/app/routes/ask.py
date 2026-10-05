@@ -137,13 +137,20 @@ async def ask(request: Request, body: dict):
         if not _CONVERSATION_ID.fullmatch(conversation_id):
             conversation_id = f"web:{uuid.uuid4().hex}"
         history = _bounded_client_history(body.get("history"))
+    target_team = team
     if team == "all":
         topic_label = "全部机器人"
     else:
-        from ecs.app.database import get_robot_by_name
+        from ecs.app.database import get_chat_robot_option_by_name, get_robot_by_name
 
-        robot = get_robot_by_name(team)
-        topic_label = str((robot or {}).get("display_name_zh") or team)
+        chat_opt = get_chat_robot_option_by_name(team)
+        if chat_opt:
+            topic_label = str(chat_opt.get("display_name_zh") or chat_opt["name"])
+            if chat_opt.get("folder_name"):
+                target_team = str(chat_opt["folder_name"])
+        else:
+            robot = get_robot_by_name(team)
+            topic_label = str((robot or {}).get("display_name_zh") or team)
 
     await asyncio.to_thread(
         record_qa_question,
@@ -181,7 +188,7 @@ async def ask(request: Request, body: dict):
 
             async for event in gateway.ask_stream(
                 question,
-                team=team,
+                team=target_team,
                 conversation_id=conversation_id,
                 language=language,
                 topic_label=topic_label,

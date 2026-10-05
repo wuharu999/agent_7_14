@@ -216,3 +216,34 @@ def test_history_paginates_without_discarding_older_conversations_or_turns(accou
     assert latest['has_more'] is True and older['has_more'] is False
     assert [t['question'] for t in older['turns'] + latest['turns']] == [
         'Question 3', 'Follow up 0', 'Follow up 1', 'Follow up 2', 'Follow up 3']
+
+
+def test_chat_conversations_pruned_after_30_days(accounts):
+    from datetime import datetime, timezone, timedelta
+    uid, client, _ = accounts[0]
+    cid, tid, _ = chat_history.begin_turn(uid, '', 'Old question', 'all', 'en')
+    chat_history.finish_turn(uid, tid, 'Old answer', [], 'complete')
+
+    # Verify conversation exists
+    assert client.get('/api/conversations/' + cid).status_code == 200
+
+    # Backdate the conversation to 31 days ago
+    old_time = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
+    with database._connect() as connection:
+        connection.execute(
+            "UPDATE chat_conversations SET updated_at = ? WHERE id = ?", (old_time, cid)
+        )
+        connection.execute(
+            "UPDATE chat_turns SET updated_at = ? WHERE conversation_id = ?", (old_time, cid)
+        )
+
+    # list_conversations should filter it out and prune it
+    result = client.get('/api/conversations').json()
+    assert not any(c['id'] == cid for c in result['conversations'])
+
+    # get_conversation should return 404
+    assert client.get('/api/conversations/' + cid).status_code == 404
+
+    # Continuing turn should raise error / return 404
+    with pytest.raises(LookupError):
+        chat_history.begin_turn(uid, cid, 'New question', 'all', 'en')

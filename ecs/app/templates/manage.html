@@ -60,9 +60,16 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
             <div id="editor-pool" class="editor-pool" data-i18n="loadingEditors">Loading editors...</div>
         </div>
         <div class="robots-panel">
-            <h3 id="robots-heading" data-i18n="robotsAndEditors">Robots & Editors</h3>
-            <p class="robot-order-hint" data-i18n="robotOrderHint">Use the arrow buttons to set the order used by robot selectors.</p>
-            <div id="robots-list" data-i18n="loadingRobots">Loading robots...</div>
+            <details id="robots-details" open style="border: none; background: transparent; padding: 0;">
+                <summary style="cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; user-select: none; margin-bottom: 8px;">
+                    <h3 id="robots-heading" data-i18n="robotsAndEditors" style="margin: 0; display: inline-flex; align-items: center; gap: 8px;">Robots & Editors</h3>
+                    <span id="robots-toggle-arrow" style="font-size: 14px; color: #64748b; transition: transform 0.2s; user-select: none;">▼</span>
+                </summary>
+                <div style="margin-top: 6px;">
+                    <p class="robot-order-hint" data-i18n="robotOrderHint">Use the arrow buttons to set the order used by robot selectors.</p>
+                    <div id="robots-list" data-i18n="loadingRobots">Loading robots...</div>
+                </div>
+            </details>
         </div>
     </div>
 </div>
@@ -92,6 +99,50 @@ body{font-family:system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:
   <div id="tree"></div>
 </div>
 
+<div class="card" id="chat-robots">
+    <h3 data-i18n="chatRobotsHeading">Chat Robot Options</h3>
+    <p class="muted" data-i18n="chatRobotsDesc" style="font-size: 13px; margin-top: 4px; margin-bottom: 16px;">
+        Configure options displayed in the public QA robot dropdown. Editors and admins can add options, reorder them, edit names, or toggle options.
+    </p>
+
+    <!-- Table of options -->
+    <div style="overflow-x: auto; margin-bottom: 20px;">
+        <table id="chat-robots-table" style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+            <thead>
+                <tr style="border-bottom: 2px solid #e2e8f0; background: #f8fafc;">
+                    <th style="padding: 10px 8px; width: 80px;" data-i18n="chatColOrder">Order</th>
+                    <th style="padding: 10px 8px;" data-i18n="chatColZh">Chinese Name</th>
+                    <th style="padding: 10px 8px;" data-i18n="chatColEn">English Name</th>
+                    <th style="padding: 10px 8px; width: 100px;" data-i18n="chatColStatus">Status</th>
+                    <th style="padding: 10px 8px; width: 150px; text-align: right;" data-i18n="chatColActions">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="chat-robots-tbody">
+                <tr><td colspan="5" class="muted" style="padding: 14px; text-align: center;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Add Option Form -->
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-top: 12px;">
+        <h4 data-i18n="addChatRobot" style="margin-top: 0; margin-bottom: 12px; font-size: 14px; font-weight: 700;">Add Chat Option</h4>
+        <form id="create-chat-robot-form" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end;">
+            <div>
+                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;" data-i18n="chatOptionZh">Chinese Name</label>
+                <input type="text" id="cr-name-zh" placeholder="e.g. Walker S2 机器人" required maxlength="64" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+            </div>
+            <div>
+                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;" data-i18n="chatOptionEn">English Name</label>
+                <input type="text" id="cr-name-en" placeholder="e.g. Walker S2 Robot" required maxlength="64" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+            </div>
+            <div>
+                <button type="submit" class="button" data-i18n="addOptionBtn" style="height: 35px; white-space: nowrap;">Add Option</button>
+            </div>
+            <div id="cr-form-msg" class="muted" style="grid-column: 1 / -1; font-size: 12px;"></div>
+        </form>
+    </div>
+</div>
+
 <script>
 const csrfToken='__CSRF_TOKEN__';const canDelete=__CAN_DELETE__;
 const treeBox=document.getElementById('tree'),message=document.getElementById('message'),errorBox=document.getElementById('error'),worker=document.getElementById('worker');
@@ -103,17 +154,41 @@ const translations = {
     signedInAs: 'Signed in as ',
     role: 'role ',
     questions: 'Questions',
-    adminTitle: 'Admin Panel: Robots & Editors',
-    createRobot: 'Create Robot',
-    robotNamePlaceholder: 'Robot Name',
+    adminTitle: 'Admin Panel: Folder & Editor Access',
+    createRobot: 'Create Robot Folder',
+    robotNamePlaceholder: 'Folder Name / Key',
     robotDescPlaceholder: 'Description',
     robotPathPlaceholder: 'Storage Path (optional)',
-    createRobotBtn: 'Create Robot',
+    createRobotBtn: 'Create Folder',
     editorPool: 'Editor Pool',
-    editorPoolHint: 'Drag an active editor onto a robot. Use × to remove an assignment.',
+    editorPoolHint: 'Drag an active editor onto a folder. Use × to remove an assignment.',
     noActiveEditors: 'No active editor accounts.',
     dropEditorHere: 'Drop an editor here to assign access.',
-    robotsAndEditors: 'Robots & Editors',
+    robotsAndEditors: 'Folder Management',
+    chatRobotsHeading: 'Chat Robot Options',
+    chatRobotsDesc: 'Configure options displayed in the public QA robot dropdown. Editors and admins can add options, reorder them, edit names, or toggle visibility.',
+    chatColOrder: 'Order',
+    chatColKey: 'Option Key',
+    chatColZh: 'Chinese Display Name',
+    chatColEn: 'English Display Name',
+    chatColFolder: 'Associated Knowledge Folder',
+    chatColStatus: 'Status',
+    chatColActions: 'Actions',
+    addChatRobot: 'Add Chat Option',
+    chatOptionKey: 'Option Key (ID)',
+    chatOptionZh: 'Chinese Display Name',
+    chatOptionEn: 'English Display Name',
+    chatOptionFolder: 'Associated Knowledge Folder',
+    chatOptionDesc: 'Description (optional)',
+    chatOptionEnabled: 'Enabled',
+    chatOptionDisabled: 'Disabled',
+    addOptionBtn: 'Add Option',
+    editOption: 'Edit',
+    deleteOption: 'Delete',
+    confirmDeleteOption: 'Are you sure you want to remove this chat robot option?',
+    saveOption: 'Save',
+    chatNoFolder: '(None / All)',
+    noChatRobots: 'No chat robot options configured.',
     robotOrderHint: 'Use the arrow buttons to set the order used by robot selectors.',
     moveRobotUp: 'Move robot up',
     moveRobotDown: 'Move robot down',
@@ -173,17 +248,41 @@ const translations = {
     signedInAs: '当前登录：',
     role: '角色：',
     questions: '返回问答',
-    adminTitle: '管理员面板：机器人与编辑者',
-    createRobot: '创建机器人',
-    robotNamePlaceholder: '机器人名称',
+    adminTitle: '管理员控制台：文件夹与权限管理',
+    createRobot: '创建文件夹',
+    robotNamePlaceholder: '文件夹名称 / 标识',
     robotDescPlaceholder: '描述信息',
     robotPathPlaceholder: '存储路径 (可选)',
-    createRobotBtn: '创建机器人',
+    createRobotBtn: '创建文件夹',
     editorPool: '编辑者池',
-    editorPoolHint: '将启用的编辑者拖到机器人上；点击 × 可移除分配。',
+    editorPoolHint: '将启用的编辑者拖到文件夹上；点击 × 可移除分配。',
     noActiveEditors: '没有启用的编辑者账户。',
     dropEditorHere: '将编辑者拖到此处以分配访问权限。',
-    robotsAndEditors: '机器人与编辑者列表',
+    robotsAndEditors: '文件夹管理',
+    chatRobotsHeading: '问答机器人下拉选项',
+    chatRobotsDesc: '在此配置首页问答下拉框中显示的机器人选项。编辑者与管理员均可添加、排序、修改中英文显示名称、关联知识库文件夹或停用选项。',
+    chatColOrder: '排序',
+    chatColKey: '选项标识 (Key)',
+    chatColZh: '中文显示名称',
+    chatColEn: '英文显示名称',
+    chatColFolder: '关联知识库文件夹',
+    chatColStatus: '状态',
+    chatColActions: '操作',
+    addChatRobot: '添加问答选项',
+    chatOptionKey: '选项标识 (Key)',
+    chatOptionZh: '中文显示名称',
+    chatOptionEn: '英文显示名称',
+    chatOptionFolder: '关联知识库文件夹',
+    chatOptionDesc: '描述（可选）',
+    chatOptionEnabled: '已启用',
+    chatOptionDisabled: '已停用',
+    addOptionBtn: '添加选项',
+    editOption: '编辑',
+    deleteOption: '删除',
+    confirmDeleteOption: '确定删除此问答选项吗？',
+    saveOption: '保存',
+    chatNoFolder: '（无 / 全部知识）',
+    noChatRobots: '暂未配置问答选项。',
     robotOrderHint: '使用上下箭头调整顺序；问答页等机器人下拉列表将使用相同顺序。',
     moveRobotUp: '上移机器人',
     moveRobotDown: '下移机器人',
@@ -258,6 +357,7 @@ function applyLanguage(){
   loadTree();
   loadContradictions();
   if (window.loadAuditLog) loadAuditLog();
+  if (window.loadChatRobots) loadChatRobots();
 }
 
 uiLanguage.value=localStorage.getItem('agent1_ui_language')||'en';
@@ -265,13 +365,27 @@ uiLanguage.value=localStorage.getItem('agent1_ui_language')||'en';
 function formatBytes(value){if(value===undefined||value===null)return'';const units=['B','KB','MB','GB','TB'];let n=Number(value),i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return (i? n.toFixed(1):Math.round(n))+' '+units[i]}
 function statusBadge(status){if(!status)return'';const span=document.createElement('span');span.className='status '+status;span.textContent=status;return span}
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function buildItem(item){
   const li=document.createElement('li');
   const row=document.createElement('div');
   row.className='item';
   const left=document.createElement('div');
   left.className='name';
-  let label=(item.type==='directory'?'📁 ':item.type==='file'?'📄 ':'⛔ ')+item.name;
+  const isRobotRoot=item.type==='directory'&&!String(item.path||'').includes('/');
+  let displayName = item.name;
+  if (isRobotRoot && item.display_name_zh && item.display_name_zh !== item.name) {
+    displayName = `${item.display_name_zh} (${item.name})`;
+  }
+  let label=(item.type==='directory'?'📁 ':item.type==='file'?'📄 ':'⛔ ')+displayName;
   left.title=item.path;
   const meta=document.createElement('div');
   meta.className='meta';
@@ -296,7 +410,6 @@ function buildItem(item){
     size.textContent=formatBytes(item.size_bytes);
     meta.appendChild(size);
   }
-  const isRobotRoot=item.type==='directory'&&!String(item.path||'').includes('/');
   if(canDelete&&item.type!=='symlink'&&!isRobotRoot){
     const button=document.createElement('button');
     button.className='danger';
@@ -349,9 +462,12 @@ async function loadTree(){
     }
     worker.textContent=d.worker_online?tr('workerOnline'):tr('workerOffline');
     const tree=d.tree||{};
-    message.textContent=tr('entriesUnder').replace('{count}', tree.entry_count||0).replace('{root}', tree.root||'raw/sources');
+    const folderNames = d.folder_names_zh || [];
+    const folderListStr = folderNames.length ? (uiLanguage.value.startsWith('zh') ? `（文件夹：${folderNames.join('、')}）` : ` (Folders: ${folderNames.join(', ')})`) : '';
+    message.textContent=tr('entriesUnder').replace('{count}', tree.entry_count||0).replace('{root}', tree.root||'raw/sources') + folderListStr;
     renderTree(tree);
     if(role==='admin'&&window.loadRobots) await window.loadRobots();
+    if(window.loadChatRobots) await window.loadChatRobots();
   }catch(e){
     message.textContent='';
     errorBox.textContent=String(e);
@@ -371,15 +487,6 @@ async function loadContradictions() {
       return;
     }
     list.innerHTML = '';
-
-    function escapeHtml(str) {
-      return String(str || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
 
     items.forEach(item => {
       const detailsEl = document.createElement('details');
@@ -874,6 +981,319 @@ if (role === 'admin') {
 
     window.loadAuditLog = loadAuditLog;
 }
+
+// Chat Robot Options Logic (Available to both editor and admin)
+let chatRobotsList = [];
+let availableFolders = [];
+let chatRobotsOrderUpdating = false;
+
+async function loadChatRobots() {
+    try {
+        const response = await fetch('/api/manage/chat_robots');
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to load chat robots');
+        chatRobotsList = data.chat_robots || [];
+        availableFolders = data.folders || [];
+
+        renderChatRobotsTable();
+    } catch (err) {
+        console.error(err);
+        const tbody = document.getElementById('chat-robots-tbody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="5" class="error" style="padding: 14px; text-align: center;">${escapeHtml(String(err))}</td></tr>`;
+        }
+    }
+}
+
+function renderChatRobotsTable() {
+    const tbody = document.getElementById('chat-robots-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!chatRobotsList.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="muted" style="padding: 14px; text-align: center;">${tr('noChatRobots')}</td></tr>`;
+        return;
+    }
+
+    chatRobotsList.forEach((robot, index) => {
+        const trEl = document.createElement('tr');
+        trEl.style.borderBottom = '1px solid #e2e8f0';
+
+        // 1. Order controls
+        const orderTd = document.createElement('td');
+        orderTd.style.padding = '8px';
+        const orderBox = document.createElement('div');
+        orderBox.style.display = 'flex';
+        orderBox.style.gap = '4px';
+
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.className = 'secondary';
+        upBtn.textContent = '↑';
+        upBtn.style.padding = '2px 8px';
+        upBtn.style.fontSize = '12px';
+        upBtn.title = tr('moveRobotUp');
+        upBtn.disabled = index === 0;
+        upBtn.onclick = () => moveChatRobot(index, -1);
+
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.className = 'secondary';
+        downBtn.textContent = '↓';
+        downBtn.style.padding = '2px 8px';
+        downBtn.style.fontSize = '12px';
+        downBtn.title = tr('moveRobotDown');
+        downBtn.disabled = index === chatRobotsList.length - 1;
+        downBtn.onclick = () => moveChatRobot(index, 1);
+
+        orderBox.append(upBtn, downBtn);
+        orderTd.appendChild(orderBox);
+
+        // 2. Chinese Name
+        const zhTd = document.createElement('td');
+        zhTd.style.padding = '8px';
+        zhTd.textContent = robot.display_name_zh;
+
+        // 3. English Name
+        const enTd = document.createElement('td');
+        enTd.style.padding = '8px';
+        enTd.textContent = robot.display_name_en;
+
+        // 4. Status (Toggle)
+        const statusTd = document.createElement('td');
+        statusTd.style.padding = '8px';
+        const statusBadge = document.createElement('button');
+        statusBadge.type = 'button';
+        statusBadge.style.padding = '3px 8px';
+        statusBadge.style.fontSize = '11px';
+        statusBadge.style.borderRadius = '12px';
+        statusBadge.style.border = '1px solid';
+        statusBadge.style.cursor = 'pointer';
+        if (robot.is_enabled) {
+            statusBadge.textContent = tr('chatOptionEnabled');
+            statusBadge.style.background = '#dcfce7';
+            statusBadge.style.color = '#15803d';
+            statusBadge.style.borderColor = '#bbf7d0';
+        } else {
+            statusBadge.textContent = tr('chatOptionDisabled');
+            statusBadge.style.background = '#f1f5f9';
+            statusBadge.style.color = '#64748b';
+            statusBadge.style.borderColor = '#cbd5e1';
+        }
+        statusBadge.onclick = () => toggleChatRobotEnabled(robot.id, !robot.is_enabled);
+        statusTd.appendChild(statusBadge);
+
+        // 5. Actions
+        const actionsTd = document.createElement('td');
+        actionsTd.style.padding = '8px';
+        actionsTd.style.textAlign = 'right';
+        const actionsBox = document.createElement('div');
+        actionsBox.style.display = 'flex';
+        actionsBox.style.gap = '6px';
+        actionsBox.style.justifyContent = 'flex-end';
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'secondary';
+        editBtn.textContent = tr('editOption');
+        editBtn.style.padding = '3px 8px';
+        editBtn.style.fontSize = '12px';
+        editBtn.onclick = () => startEditChatRobot(trEl, robot);
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'danger';
+        delBtn.textContent = tr('deleteOption');
+        delBtn.style.padding = '3px 8px';
+        delBtn.style.fontSize = '12px';
+        delBtn.onclick = () => deleteChatRobot(robot.id, robot.name);
+
+        actionsBox.append(editBtn, delBtn);
+        actionsTd.appendChild(actionsBox);
+
+        trEl.append(orderTd, zhTd, enTd, statusTd, actionsTd);
+        tbody.appendChild(trEl);
+    });
+}
+
+function startEditChatRobot(trEl, robot) {
+    trEl.innerHTML = '';
+
+    const orderTd = document.createElement('td');
+    orderTd.style.padding = '8px';
+    orderTd.className = 'muted';
+    orderTd.textContent = '-';
+
+    const zhTd = document.createElement('td');
+    zhTd.style.padding = '8px';
+    const zhInput = document.createElement('input');
+    zhInput.type = 'text';
+    zhInput.value = robot.display_name_zh;
+    zhInput.maxLength = 64;
+    zhInput.style.cssText = 'width: 100%; box-sizing: border-box; padding: 4px 6px; border-radius: 4px; border: 1px solid #cbd5e1; font-size: 13px;';
+    zhTd.appendChild(zhInput);
+
+    const enTd = document.createElement('td');
+    enTd.style.padding = '8px';
+    const enInput = document.createElement('input');
+    enInput.type = 'text';
+    enInput.value = robot.display_name_en;
+    enInput.maxLength = 64;
+    enInput.style.cssText = 'width: 100%; box-sizing: border-box; padding: 4px 6px; border-radius: 4px; border: 1px solid #cbd5e1; font-size: 13px;';
+    enTd.appendChild(enInput);
+
+    const statusTd = document.createElement('td');
+    statusTd.style.padding = '8px';
+    statusTd.className = 'muted';
+    statusTd.textContent = robot.is_enabled ? tr('chatOptionEnabled') : tr('chatOptionDisabled');
+
+    const actionsTd = document.createElement('td');
+    actionsTd.style.padding = '8px';
+    actionsTd.style.textAlign = 'right';
+    const actionsBox = document.createElement('div');
+    actionsBox.style.display = 'flex';
+    actionsBox.style.gap = '6px';
+    actionsBox.style.justifyContent = 'flex-end';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = tr('saveOption');
+    saveBtn.style.padding = '3px 8px';
+    saveBtn.style.fontSize = '12px';
+    saveBtn.onclick = async () => {
+        const newZh = zhInput.value.trim();
+        const newEn = enInput.value.trim();
+        if (!newZh || !newEn) {
+            alert(tr('chatOptionZh') + ' / ' + tr('chatOptionEn') + ' required');
+            return;
+        }
+        saveBtn.disabled = true;
+        try {
+            const resp = await fetch(`/api/manage/chat_robots/${robot.id}`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                body: JSON.stringify({
+                    display_name_zh: newZh,
+                    display_name_en: newEn,
+                })
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || 'Failed to update');
+            await loadChatRobots();
+        } catch (err) {
+            alert(String(err));
+            saveBtn.disabled = false;
+        }
+    };
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'secondary';
+    cancelBtn.textContent = tr('cancel');
+    cancelBtn.style.padding = '3px 8px';
+    cancelBtn.style.fontSize = '12px';
+    cancelBtn.onclick = () => renderChatRobotsTable();
+
+    actionsBox.append(saveBtn, cancelBtn);
+    actionsTd.appendChild(actionsBox);
+
+    trEl.append(orderTd, zhTd, enTd, statusTd, actionsTd);
+}
+
+async function moveChatRobot(index, offset) {
+    if (chatRobotsOrderUpdating) return;
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= chatRobotsList.length) return;
+    chatRobotsOrderUpdating = true;
+    const reordered = chatRobotsList.map(r => r.id);
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+    try {
+        const response = await fetch('/api/manage/chat_robots/order', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+            body: JSON.stringify({option_ids: reordered})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to reorder');
+        await loadChatRobots();
+    } catch (err) {
+        alert(String(err));
+    } finally {
+        chatRobotsOrderUpdating = false;
+    }
+}
+
+async function toggleChatRobotEnabled(id, isEnabled) {
+    try {
+        const response = await fetch(`/api/manage/chat_robots/${id}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+            body: JSON.stringify({is_enabled: isEnabled ? 1 : 0})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to toggle status');
+        await loadChatRobots();
+    } catch (err) {
+        alert(String(err));
+    }
+}
+
+async function deleteChatRobot(id, name) {
+    if (!confirm(tr('confirmDeleteOption') + ` (${name})`)) return;
+    try {
+        const response = await fetch(`/api/manage/chat_robots/${id}`, {
+            method: 'DELETE',
+            headers: {'X-CSRF-Token': csrfToken}
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to delete option');
+        await loadChatRobots();
+    } catch (err) {
+        alert(String(err));
+    }
+}
+
+const createCrForm = document.getElementById('create-chat-robot-form');
+if (createCrForm) {
+    createCrForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('cr-form-msg');
+        msg.textContent = tr('creating');
+        msg.style.color = 'inherit';
+        try {
+            const r = await fetch('/api/manage/chat_robots', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                body: JSON.stringify({
+                    name: '',
+                    display_name_zh: document.getElementById('cr-name-zh').value.trim(),
+                    display_name_en: document.getElementById('cr-name-en').value.trim(),
+                    folder_name: '',
+                    description: '',
+                })
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || tr('failedToCreate'));
+            msg.textContent = tr('createdSuccess');
+            msg.style.color = 'green';
+            createCrForm.reset();
+            await loadChatRobots();
+            setTimeout(() => { if (msg.textContent === tr('createdSuccess')) msg.textContent = ''; }, 3000);
+        } catch (err) {
+            msg.textContent = String(err);
+            msg.style.color = 'red';
+        }
+    };
+}
+
+const robotsDetails = document.getElementById('robots-details');
+const robotsArrow = document.getElementById('robots-toggle-arrow');
+if (robotsDetails && robotsArrow) {
+    robotsDetails.ontoggle = () => {
+        robotsArrow.textContent = robotsDetails.open ? '▼' : '▶';
+    };
+}
+
+window.loadChatRobots = loadChatRobots;
 
 applyLanguage();
 uiLanguage.onchange=()=>{
