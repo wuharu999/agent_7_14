@@ -26,6 +26,7 @@ class WorkerGateway:
         self.sender_task: asyncio.Task[None] | None = None
         self._connection_lock = asyncio.Lock()
         self.latest_snapshot: dict[str, Any] = {}
+        self.wiki_mcp_ready = False
 
     @property
     def online(self) -> bool:
@@ -39,6 +40,7 @@ class WorkerGateway:
                 except Exception:
                     pass
             self.websocket = websocket
+            self.wiki_mcp_ready = False
             if self.sender_task and not self.sender_task.done():
                 self.sender_task.cancel()
             self.sender_task = asyncio.create_task(self._sender_loop(websocket))
@@ -49,6 +51,7 @@ class WorkerGateway:
             if self.websocket is not websocket:
                 return
             self.websocket = None
+            self.wiki_mcp_ready = False
             if self.sender_task and not self.sender_task.done():
                 self.sender_task.cancel()
             self.sender_task = None

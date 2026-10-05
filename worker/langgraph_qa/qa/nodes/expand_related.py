@@ -62,7 +62,7 @@ def expand_related_node(state: QAState) -> Dict[str, Any]:
             elif Path(target_node).stem in stem_map:
                 resolved_path = stem_map[Path(target_node).stem]["path"]
 
-            if resolved_path and resolved_path not in existing_paths:
+            if resolved_path and resolved_path not in existing_paths and runtime.permits_page(resolved_path):
                 expanded_paths.add(resolved_path)
 
     # Convert expanded paths to search result entries with relation boost

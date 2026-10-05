@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect your AI · Wiki MCP</title>
+<link rel="stylesheet" href="/static/site_theme.css?v=20260922">
+<link rel="stylesheet" href="/static/wiki_mcp.css?v=20261006">
+<script src="/static/wiki_mcp.js?v=20261006" defer></script>
+</head>
+<body class="support-page mcp-setup">
+<div class="mcp-top"><a href="/" class="mcp-back">← <span data-lang="en">Back to Q&amp;A</span><span data-lang="zh" hidden>返回知识问答</span></a><label>Language <select id="mcp-language"><option value="en">English</option><option value="zh">简体中文</option></select></label></div>
+<main class="card mcp-card">
+<span class="mcp-eyebrow">优必答 · WIKI MCP</span>
+<p id="mcp-status" class="mcp-note" role="status"></p>
+<section data-lang="en">
+<h1>Bring the robotics wiki to your AI assistant</h1>
+<p class="mcp-intro">Search technical documentation in your language and get cited evidence. Public, read-only access. No account or API key required.</p>
+<a class="mcp-download" href="/wiki-mcp/download">Download desktop connector ↓</a>
+<ol class="mcp-steps">
+<li><strong>Prepare your desktop</strong><p>Use an AI client that supports MCP and install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a>.</p></li>
+<li><strong>Connect the wiki</strong><p>Extract the download. In <code>mcp-config.json</code>, replace the script placeholder with the absolute path to <code>wiki_mcp.py</code>. Merge the entry into your client's MCP configuration. Full instructions for Windows, macOS and Linux are included.</p></li>
+<li><strong>Ask in your language</strong><p>Restart your client and try: “Search the wiki for Walker C1 development interfaces. Explain in English and cite the sources.”</p></li>
+</ol>
+<details><summary>Connect directly using a remote MCP URL</summary><p>If your client supports Streamable HTTP, paste this URL and select no authentication. No connector download is needed.</p><code class="mcp-endpoint">__MCP_URL__</code></details>
+<div class="mcp-note"><strong>Technical evidence, with the original sources</strong><p>English, Chinese, Japanese, Korean, Portuguese, Russian and Spanish are supported. Search includes Chinese keywords to find the original wiki pages. Translations are labelled and supplied alongside original excerpts and citations. If translation fails, the original text is returned.</p><p>Product-positioning and promotional sections are omitted; technical specifications, compatibility, limitations and safety information are retained. Questions are sent to the service; do not include passwords or sensitive information.</p><p>Tools: <code>list_robots</code>, <code>search_wiki</code>, <code>read_wiki_page</code>. Up to 10 searches or translated page reads per minute and 50 per hour per IP.</p></div>
+</section>
+<section data-lang="zh" hidden>
+<h1>让你的 AI 助手查阅知识库</h1>
+<p class="mcp-intro">用你熟悉的语言检索机器人技术资料，获取原文依据与引用。公开只读，无需登录或密钥。</p>
+<a class="mcp-download" href="/wiki-mcp/download">下载桌面连接包 ↓</a>
+<ol class="mcp-steps">
+<li><strong>准备客户端</strong><p>使用支持 MCP 的桌面 AI 客户端，并安装 <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a>。</p></li>
+<li><strong>解压并配置</strong><p>打开包内的 <code>mcp-config.json</code>，将脚本路径改为解压后 <code>wiki_mcp.py</code> 的完整路径，再合并到客户端的 MCP 配置中。包内附有 Windows、macOS 与 Linux 的中英文说明。</p></li>
+<li><strong>开始提问</strong><p>重启客户端，试着问：“请查询 Wiki：Walker C1 支持哪些开发接口？请给出来源。”</p></li>
+</ol>
+<details><summary>直接连接远程 MCP</summary><p>支持 Streamable HTTP 的客户端可直接使用以下地址，无需下载连接器。认证方式选择“无”。</p><code class="mcp-endpoint">__MCP_URL__</code></details>
+<div class="mcp-note"><strong>保留技术依据，支持多语言检索</strong><p>支持中、英、日、韩、葡、俄、西班牙语。外语问题会使用中文关键词检索；译文保留原文及引用。翻译失败时明确说明并返回原文。</p><p>自动过滤“产品定位”等宣传章节，保留规格、兼容性、限制和安全说明。提问会发送至服务端，请勿包含密码或其他敏感信息。</p><p>工具：<code>list_robots</code>、<code>search_wiki</code>、<code>read_wiki_page</code>。每 IP 每分钟最多 10 次检索或翻译阅读，每小时 50 次。</p></div>
+</section>
+
+</main>
+</body></html>

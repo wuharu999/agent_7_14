@@ -33,7 +33,6 @@ const SPEC_SUPPORTED_ROBOTS = [
   { id: 'TienKung', en: 'TienKung', zh: '天工行者无界&无疆' },
   { id: 'Walker_S2_EDU', en: 'Walker_S2_EDU', zh: 'Walker_S2_EDU探索者' },
 ];
-const SPEC_FORBIDDEN_IP = '120.77.250.227';
 const SPEC_PROHIBITED_TERMS = ['Codex', 'sandbox', '沙箱'];
 const SPEC_RESUMING_TEXT_EN = 'Warming up container and resuming session...';
 const SPEC_RESUMING_TEXT_ZH = '正在唤醒计算容器并恢复推演会话...';
@@ -970,11 +969,6 @@ describe('Frontend E2E Requirements Test Suite (Tiers 1-4)', () => {
       expect(SPEC_RESUMING_TEXT_ZH).toBe('正在唤醒计算容器并恢复推演会话...');
     });
 
-    it('T2-1: Never accesses or references prohibited IP 120.77.250.227', () => {
-      const sess = createMockSession();
-      const dom = renderTranscriptDOM(sess);
-      expect(dom.innerHTML).not.toContain(SPEC_FORBIDDEN_IP);
-    });
 
     it('T2-2: Prohibits forbidden terminology in sidebar DOM', () => {
       const sidebar = renderSidebarDOM([], null, () => {}, () => {});

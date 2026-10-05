@@ -101,7 +101,7 @@ This adds the motor timeout/recovery, localization uncertainty, and incomplete-l
 
 ### Configure the Docker workers
 
-Follow [Docker worker deployment](docs/docker-worker.md) on each machine. Both workers poll ECS at `http://47.239.12.206:8000`; they need no direct connection to each other. Each has a local Docker engine, an internal job network and a provider-only egress proxy. Give each a distinct `ROBOT_WORKER_ID`, configure its capacity, image ID/digest, shared worker token and model credential. Roll out the updated ECS API before starting these workers.
+Follow [Docker worker deployment](docs/docker-worker.md) on each machine. Both workers poll ECS at `http://120.77.250.227:8080`; they need no direct connection to each other. Each has a local Docker engine, an internal job network and a provider-only egress proxy. Give each a distinct `ROBOT_WORKER_ID`, configure its capacity, image ID/digest, shared worker token and model credential. Roll out the updated ECS API before starting these workers.
 
 ```sh
 uv sync --frozen

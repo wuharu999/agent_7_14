@@ -1,6 +1,6 @@
 # ECS API and two independent Docker workers
 
-The existing ECS endpoint is `47.239.12.206:8000`. Each worker initiates HTTP requests to ECS; neither machine needs a connection to the other, and ECS does not connect back to workers. Keep the database and uploaded files on ECS. Build/start the local Docker job runtime on each machine using [Docker worker deployment](docker-worker.md).
+The existing ECS endpoint is `120.77.250.227:8080`. Each worker initiates HTTP requests to ECS; neither machine needs a connection to the other, and ECS does not connect back to workers. Keep the database and uploaded files on ECS. Build/start the local Docker job runtime on each machine using [Docker worker deployment](docker-worker.md).
 
 Before upgrading ECS, stop/drain the old workers and back up the SQLite database plus uploads. Install dependencies with `uv sync --frozen`, build the frontend with `npm ci && npm run build`, then restart the API. The additive worker-owner migration happens at API startup. Deploy this API before the new workers: claims now require worker identity and capacity. Preserve populated environment files and ignored data during updates.
 

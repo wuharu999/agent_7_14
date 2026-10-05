@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/site_theme.css?v=20260922">
 <link rel="stylesheet" href="/static/qa.css?v=20260922-history">
 <script src="/static/account_menu.js?v=20260924-tools" defer></script>
+<link rel="stylesheet" href="/static/wiki_mcp.css?v=20261006">
 </head>
 <body class="qa-page">
 <div class="app-shell">
@@ -27,6 +28,7 @@
     </nav>
     <nav class="site-nav site-nav-sidebar" data-site-nav aria-label="页面导航" hidden></nav>
     <div class="sidebar-footer">
+      <a class="qa-mcp-link" href="/wiki-mcp"><span id="wikiMcpLabel">连接 AI 助手 · Wiki MCP</span><span aria-hidden="true">↗</span></a>
       <p id="historyStorageNote">最近对话仅保存在此浏览器中。</p>
       <button class="history-action" id="importHistory" type="button" data-i18n="importHistory" hidden>将本机历史保存到我的账户</button>
       <small>UBTECH ROBOTICS</small>
@@ -421,6 +423,7 @@ function scrollToBottom() {
 }
 
 function translateUI() {
+  document.getElementById('wikiMcpLabel').textContent = currentLang.startsWith('zh') ? '连接 AI 助手 · Wiki MCP' : 'Connect your AI · Wiki MCP';
   const t = i18n[currentLang] || i18n['en'];
   document.title = t.title;
   document.documentElement.lang = currentLang;

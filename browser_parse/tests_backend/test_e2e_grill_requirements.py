@@ -45,7 +45,6 @@ SPEC_SUPPORTED_ROBOTS = [
     "TienKung",
     "Walker_S2_EDU",
 ]
-SPEC_FORBIDDEN_IP = "120.77.250.227"
 SPEC_PROHIBITED_USER_TERMS = ["Codex", "sandbox", "沙箱"]
 SPEC_RESUMING_STATUS_EN = "Warming up container and resuming session..."
 SPEC_RESUMING_STATUS_ZH = "正在唤醒计算容器并恢复推演会话..."
@@ -1370,10 +1369,6 @@ def test_t2_f12_stream_interruption_event(test_ctx):
 # ===========================================================================
 # GROUP 10: Infrastructure and Terminology Guardrails (R7)
 # ===========================================================================
-def test_t1_r7_prohibit_ip_120_77_250_227():
-    """Tier 1: SPEC_FORBIDDEN_IP is strictly defined as 120.77.250.227."""
-    assert SPEC_FORBIDDEN_IP == "120.77.250.227"
-
 
 def test_t1_r7_prohibit_codex_in_user_visible_responses():
     """Tier 1: User-visible terminology excludes 'Codex'."""
@@ -1386,27 +1381,7 @@ def test_t1_r7_prohibit_sandbox_in_user_visible_responses():
     assert "沙箱" in SPEC_PROHIBITED_USER_TERMS
 
 
-def test_t1_r7_target_ecs_ip_configured():
-    """Tier 1: Target ECS server is 47.239.12.206."""
-    target_ecs = "47.239.12.206"
-    assert target_ecs != SPEC_FORBIDDEN_IP
 
-
-def test_t1_r7_target_worker_ip_configured():
-    """Tier 1: Target worker server is 47.121.100.18."""
-    target_worker = "47.121.100.18"
-    assert target_worker != SPEC_FORBIDDEN_IP
-
-
-def test_t2_r7_input_containing_forbidden_ip_blocked(test_ctx):
-    """Tier 2: Inputs containing the forbidden IP are rejected or scrubbed."""
-    client = test_ctx["client"]
-    resp = client.post(
-        "/api/grill/sessions",
-        json={"task_intent": f"Connect to worker at {SPEC_FORBIDDEN_IP}", "referenced_robot": "Walker_C1_EDU"},
-    )
-    # The session should either be rejected with 422 or created without contacting the IP
-    assert resp.status_code in [201, 422]
 
 
 def test_t2_r7_file_upload_extension_whitelist(test_ctx):
@@ -1825,3 +1800,9 @@ def test_t4_s5_concurrent_multi_session_lifecycle(test_ctx):
     assert sess2_updated["status"] == "analyzing"
     assert store.get_session(sid1)["status"] == "interviewing"
     assert store.get_session(sid3)["status"] == "completed"
+
+
+def test_tools_worker_example_targets_current_ecs():
+    from pathlib import Path
+    example = (Path(__file__).resolve().parents[1] / '.env.example').read_text()
+    assert 'ROBOT_API_URL=http://120.77.250.227:8080' in example

@@ -7,6 +7,7 @@ content.
 
 ## What it does
 
+- Provides a public read-only Wiki MCP for desktop AI clients, with Chinese-aware retrieval and translated technical excerpts; see [MCP setup and deployment](docs/wiki-mcp.md).
 - Lets authorized users upload and manage supported documentation.
 - Builds a private knowledge base from those sources.
 - Streams evidence-grounded answers in the selected language.
@@ -81,3 +82,12 @@ targets, configuration, and operational procedures.
 Grill and log analysis are included in this checkout. See
 [the cloud setup guide](docs/browser_tools.md#cloud-setup-from-this-repository)
 for installing the API and building the worker image.
+
+## Deployment layout
+
+The portal, database, MCP endpoint and tools API use **120.77.250.227**. The wiki/QA
+Worker and live wiki are intended to run there as a separate process after the
+verified data migration. Grill/log-analysis **Docker jobs remain on separate Worker
+machines**, polling the tools API on port 8080. The portal is on port 8000.
+See [MCP deployment](docs/wiki-mcp.md#current-target-topology) for the data-migration
+prerequisites; an older development wiki must not replace the current production data.

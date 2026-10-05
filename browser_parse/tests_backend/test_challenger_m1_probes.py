@@ -7,7 +7,7 @@ Probes:
 3. Probe prompt generator in sandbox/run_grill.py: turn prompt outputs at 0, 14, 15, 19, 20, 24, 25, 26 questions,
    verifying exact phrasing and ready_for_readback behavior.
 4. Probe 4-robot model enforcement: prompt scoping and behavior on supported vs unsupported models.
-5. Probe constraint compliance: IP 120.77.250.227 and forbidden UI terminology.
+5. Probe customer-facing terminology compliance.
 """
 
 from __future__ import annotations
@@ -467,47 +467,23 @@ def test_probe_2_answer_submission_state_guardrails(test_app):
         store.submit_answers(sid, token, [{"question_id": "q1", "selected_option": "opt"}])
 
 
-def test_probe_5_forbidden_ip_and_banned_terms_in_responses(test_app):
-    """Verify responses and customer-facing error messages do not leak 'Codex' or '沙箱' or the forbidden IP."""
+def test_probe_5_banned_terms_in_responses(test_app):
+    """Verify responses and customer-facing error messages do not leak 'Codex' or '沙箱'."""
     client, store = test_app
-    forbidden_ip = "120.77.250.227"
 
     sess, token = store.create_session(task_intent="Testing terminology leaks", referenced_robot="TienKung")
     sid = sess["id"]
 
     # 1. List sessions endpoint
     r_list = client.get("/api/grill/sessions")
-    assert forbidden_ip not in r_list.text
     assert "沙箱" not in r_list.text
 
     # 2. Detail endpoint
     r_detail = client.get(f"/api/grill/sessions/{sid}?token={token}")
-    assert forbidden_ip not in r_detail.text
     assert "沙箱" not in r_detail.text
 
     # 3. 403 Forbidden error response
     r_403 = client.get(f"/api/grill/sessions/{sid}")
     assert r_403.status_code == 403
-    assert forbidden_ip not in r_403.text
     assert "沙箱" not in r_403.text
     assert "Codex" not in r_403.text
-
-
-def test_probe_5_forbidden_ip_never_present_in_codebase():
-    """Verify IP 120.77.250.227 is never referenced in source code."""
-    forbidden_ip = "120.77.250.227"
-    root_dir = Path(__file__).resolve().parent.parent
-
-    scanned_extensions = {".py", ".ts", ".js", ".html", ".sh", ".json"}
-    excluded_dirs = {".git", ".agents", "node_modules", "dist", "tests", "tests_backend"}
-
-    offending_files = []
-    for path in root_dir.rglob("*"):
-        if path.is_file() and path.suffix in scanned_extensions:
-            if any(part in excluded_dirs for part in path.parts):
-                continue
-            content = path.read_text(errors="ignore")
-            if forbidden_ip in content:
-                offending_files.append(str(path.relative_to(root_dir)))
-
-    assert not offending_files, f"Forbidden IP {forbidden_ip} found in source files: {offending_files}"

@@ -52,6 +52,7 @@ def _run_graph(
     wiki_root: Path,
     provider: ChatProvider,
     topic_label: str = "",
+    public_only: bool = False,
 ) -> dict[str, Any]:
     resolved_wiki = wiki_root.expanduser().resolve(strict=True)
     runtime = Runtime(
@@ -61,6 +62,7 @@ def _run_graph(
         max_pages=QA_REASONING_MAX_PAGES,
         max_page_chars=WIKI_QA_MAX_PAGE_CHARS,
         max_candidates=QA_REASONING_MAX_CANDIDATES,
+        public_only=public_only,
     )
     ensure_artifacts(runtime)
     topic = resolve_topic(team, topic_label)

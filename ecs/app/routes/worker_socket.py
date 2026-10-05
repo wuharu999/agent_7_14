@@ -51,7 +51,10 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
             data = await ws.receive_json()
             message_type = data.get("type")
 
-            if message_type == "answer":
+            if message_type == "worker_capabilities":
+                gateway.wiki_mcp_ready = data.get("wiki_mcp") is True
+
+            elif message_type == "answer":
                 gateway.resolve_answer(str(data.get("id") or ""), str(data.get("text") or ""))
 
             elif message_type == "qa_stream_chunk":
@@ -59,6 +62,7 @@ async def worker_socket(ws: WebSocket, secret: str = Query(default="")):
 
             elif message_type in {
                 "source_tree_result",
+                "wiki_mcp_result",
                 "delete_source_result",
                 "create_robot_folder_result",
                 "delete_robot_folder_result",

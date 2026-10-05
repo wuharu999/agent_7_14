@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from ecs.app.config import APP_NAME, APP_VERSION, ROOT_PATH, ensure_directories
 from ecs.app.database import delete_expired_sessions, initialize_database
 from ecs.app import email_notifications, email_store
+from ecs.app.wiki_mcp import mcp, transport
 from ecs.app.chat_history import interrupt_unfinished_turns, prune_expired_conversations
 from ecs.app.routes import (
     admin_users,
@@ -20,6 +21,7 @@ from ecs.app.routes import (
     auth,
     chat_history,
     manage,
+    mcp_setup,
     pages,
     status,
     uploads,
@@ -43,7 +45,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     stop = threading.Event()
     email_task = asyncio.create_task(email_notifications.run_service(email_settings, stop)) if email_settings.enabled else None
     try:
-        yield
+        async with mcp.session_manager.run():
+            yield
     finally:
         stop.set()
         if email_task is not None:
@@ -85,3 +88,6 @@ app.include_router(status.router)
 app.include_router(worker_socket.router)
 app.include_router(wecom.router)
 app.include_router(admin_users.router)
+
+app.mount("/mcp", transport)
+app.include_router(mcp_setup.router)

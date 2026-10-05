@@ -46,6 +46,8 @@ def search_node(state: QAState) -> Dict[str, Any]:
             db_path=runtime.search_db,
         )
         for res in res_list:
+            if not runtime.permits_page(res.path):
+                continue
             res_dict = res.to_dict()
             path = res_dict["path"]
             if path not in results_by_path:

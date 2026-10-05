@@ -120,6 +120,6 @@ npm run build
 
 ## Compliance & Security Constraints Verification
 
-- **Prohibited IP**: Tests strictly assert that `120.77.250.227` is NEVER referenced or contacted. Any input containing this IP is blocked.
+- **Deployment target**: The portal and tools APIs use `120.77.250.227` on ports 8000 and 8080. Docker jobs run on separate Worker machines.
 - **Prohibited Terminology**: Tests strictly assert that "Codex", "sandbox", and "沙箱" are NEVER displayed in user-visible DOM or API output.
 - **Resuming Status Indicator**: Tests verify that cold container wakeup renders "Warming up container and resuming session..." (`正在唤醒计算容器并恢复推演会话...`) without leaking low-level container termination mechanics.

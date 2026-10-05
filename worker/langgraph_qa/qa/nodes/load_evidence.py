@@ -9,6 +9,8 @@ def read_wiki_file(rel_path: str) -> Optional[Tuple[str, str]]:
     if not rel_path or not isinstance(rel_path, str):
         return None
 
+    if not get_runtime().permits_page(rel_path):
+        return None
     wiki_root = get_runtime().wiki_root
     clean_rel = rel_path.removeprefix("wiki_export/").lstrip("/")
     candidate = wiki_root.joinpath(clean_rel)
@@ -20,7 +22,11 @@ def read_wiki_file(rel_path: str) -> Optional[Tuple[str, str]]:
     if candidate.is_symlink() or not full_path.is_file():
         return None
     with full_path.open("r", encoding="utf-8", errors="ignore") as file:
-        return full_path.relative_to(wiki_root).as_posix(), file.read()
+        content = file.read()
+        if get_runtime().public_only:
+            from worker.wiki_content import technical_markdown
+            content, _ = technical_markdown(content)
+        return full_path.relative_to(wiki_root).as_posix(), content
 
     return None
 

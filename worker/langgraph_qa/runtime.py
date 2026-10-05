@@ -35,6 +35,13 @@ class Runtime:
     max_pages: int
     max_page_chars: int
     max_candidates: int
+    public_only: bool = False
+
+    def permits_page(self, page_id: str) -> bool:
+        if not self.public_only:
+            return True
+        from shared.public_wiki import public_page
+        return public_page(self.wiki_root, page_id) is not None
 
     @property
     def search_db(self) -> Path:

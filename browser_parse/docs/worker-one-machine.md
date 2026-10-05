@@ -2,7 +2,7 @@
 
 Run this guide **on the first dedicated remote worker machine**, not on the
 ECS host and not on a development workstation. It creates one worker identity
-and one local Docker job slot. The worker polls ECS at `http://47.239.12.206:8000` and accesses its configured
+and one local Docker job slot. The worker polls ECS at `http://120.77.250.227:8080` and accesses its configured
 model provider; it does not need, expose, or discover a peer worker.
 
 Complete the ECS API rollout before starting this worker: the current worker
@@ -122,7 +122,7 @@ secret channel; do not print it, paste it in this guide, or store it in Git.
 token, not a second credential.
 
 ```dotenv
-ROBOT_API_URL=http://47.239.12.206:8000
+ROBOT_API_URL=http://120.77.250.227:8080
 ROBOT_WORKER_TOKEN=SET_FROM_APPROVED_SECRET_CHANNEL
 ROBOT_WORKER_ID=worker-one
 ROBOT_WORKER_PARALLEL=1
@@ -230,7 +230,7 @@ restart only after cleanup succeeds.
 From this worker, first check the public ECS endpoint without credentials:
 
 ```sh
-curl --fail --max-time 10 http://47.239.12.206:8000/api/budget
+curl --fail --max-time 10 http://120.77.250.227:8080/api/budget
 ```
 
 The response must contain `resource_envelope` and `max_running: 1`. If it still

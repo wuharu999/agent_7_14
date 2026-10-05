@@ -6,6 +6,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from worker.langgraph_qa.qa.state import QAState
 from worker.langgraph_qa.qa.schemas import PlannerOutput
 from worker.langgraph_qa.qa.model import get_chat_model
+from worker.langgraph_qa.runtime import get_runtime
 from worker.topic_policy import (
     canonicalize_product_names,
     canonicalized_entities,
@@ -112,6 +113,8 @@ Formulate the topic relation, active subject, standalone query, intent, preferre
             res: PlannerOutput = structured_llm.invoke([
                 SystemMessage(content=(
                     PLANNER_SYSTEM_PROMPT.format(robot_topic=robot_topic, language=language)
+                    + ("\nThis is public technical-wiki retrieval. The wiki is mainly Chinese. For non-Chinese questions, include precise Chinese keyword translations in search_queries alongside original API and product identifiers. Focus on technical facts; exclude product positioning and promotional material."
+                       if get_runtime().public_only else "")
                     + "\n\nTopic and Entity Guide:\n" + topic_entity_guide_text()
                     + "\n\nRetrieval Policy:\n" + retrieval_policy_text()
                 )),

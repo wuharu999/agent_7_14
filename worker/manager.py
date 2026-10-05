@@ -88,6 +88,7 @@ class WorkerManager:
         self.conversations = ConversationStore()
         self.download_queue: asyncio.Queue[DownloadJob] = asyncio.Queue(maxsize=50)
         self.file_operation_queue: asyncio.Queue[FileOperationJob] = asyncio.Queue(maxsize=50)
+        self.wiki_mcp_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=8)
         self.outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
         self.websocket = None
         self.connected = asyncio.Event()
@@ -100,6 +101,7 @@ class WorkerManager:
         ensure_directories()
         tasks: list[asyncio.Task[Any]] = [
             asyncio.create_task(self.sender_loop(), name="sender"),
+            asyncio.create_task(self.wiki_mcp_worker(), name="wiki-mcp"),
             asyncio.create_task(self.connection_loop(), name="connection"),
             asyncio.create_task(
                 monitor_global_queue(
@@ -170,6 +172,7 @@ class WorkerManager:
                     self.wiki_snapshot_refresh.set()
                     retry = 3.0
                     log.info("Worker connected")
+                    await self.emit({"type": "worker_capabilities", "wiki_mcp": (WORKER_ROOT_DIR / "wiki").is_dir()})
                     asyncio.create_task(self.send_existing_uploads_sync())
                     async for raw in websocket:
                         data = json.loads(raw)
@@ -207,6 +210,12 @@ class WorkerManager:
 
     async def route_message(self, data: dict[str, Any]) -> None:
         message_type = str(data.get("type") or "")
+        if message_type in {"wiki_mcp_search", "wiki_mcp_read"}:
+            try:
+                self.wiki_mcp_queue.put_nowait(data)
+            except asyncio.QueueFull:
+                await self.emit({"type": "wiki_mcp_result", "id": data.get("id"), "status": "busy"})
+            return
         if message_type == "question":
             job_id = str(data.get("id") or "")
             conversation_id = str(data.get("conversation_id") or job_id)[:128]
@@ -316,6 +325,46 @@ class WorkerManager:
             digest_size=4,
         ).digest()
         return int.from_bytes(digest, "big") % max(1, QA_WORKERS)
+
+    async def wiki_mcp_worker(self) -> None:
+        from worker.wiki_mcp import read_page, search_pages
+        from worker.qa_api import DeepSeekClient
+        while True:
+            job = await self.wiki_mcp_queue.get()
+            response = {"type": "wiki_mcp_result", "id": job.get("id")}
+            try:
+                root = WORKER_ROOT_DIR / "wiki"
+                if job.get("type") == "wiki_mcp_search":
+                    question = str(job.get("question") or "")
+                    if not question.strip() or len(question) > 2000:
+                        raise ValueError("Invalid question")
+                    guard = await guard_user_input(question)
+                    if guard.blocked:
+                        raise ValueError("This query cannot be processed")
+                    data = await asyncio.to_thread(search_pages, root, DeepSeekClient(), question,
+                                                   str(job.get("robot") or "all"), str(job.get("language") or "zh-CN"))
+                else:
+                    data = await asyncio.to_thread(read_page, root, str(job.get("page_id") or ""),
+                                                   int(job.get("start_line", 1)), int(job.get("max_lines", 80)))
+                    from worker.wiki_content import localize
+                    language = str(job.get("language") or "en")
+                    if data.get("content"):
+                        try:
+                            provider = DeepSeekClient() if language != "zh-CN" else None
+                            localization = await asyncio.to_thread(localize, [data], provider, language)
+                        except Exception:
+                            localization = {"language": language, "translation_status": "unavailable",
+                                            "translation_notice": "Translation unavailable; original source text is preserved."}
+                        data.update(localization)
+                response.update(status="ok", data=data)
+            except ValueError:
+                response.update(status="invalid", error="Page or query unavailable")
+            except Exception:
+                log.exception("MCP wiki operation failed")
+                response.update(status="failed", error="Wiki retrieval is temporarily unavailable")
+            finally:
+                self.wiki_mcp_queue.task_done()
+            await self.emit(response)
 
     async def qa_worker(
         self,

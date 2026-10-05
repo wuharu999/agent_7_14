@@ -1,6 +1,6 @@
 # Docker job worker
 
-This project runs the API on ECS at `http://47.239.12.206:8000` and runs two separate worker processes on two Docker-capable machines. Give them distinct `ROBOT_WORKER_ID` values. The topology is `worker A → ECS ← worker B`: workers have no inbound listener and never connect to each other. Each worker advertises one local slot; the central API enforces two jobs total and assigns queued work to a worker that can fit it.
+This project runs the API on ECS at `http://120.77.250.227:8080` and runs two separate worker processes on two Docker-capable machines. Give them distinct `ROBOT_WORKER_ID` values. The topology is `worker A → ECS ← worker B`: workers have no inbound listener and never connect to each other. Each worker advertises one local slot; the central API enforces two jobs total and assigns queued work to a worker that can fit it.
 
 Jobs are ordinary Docker containers, created by the host-side `backend.worker` process. The worker is deliberately not a Docker container: it needs the Docker CLI but no job ever receives the Docker socket, a host mount, host networking, or a published port.
 
