@@ -137,7 +137,8 @@ Before provisioning any Docker job container or launching Codex, the worker runs
 To prevent exploratory tool stalls, redundant skill reads, and multi-minute reasoning latencies, the workbench employs a multi-tiered execution and preprocessing architecture:
 
 - **Tiered Reasoning Architecture**:
-  - **Orchestrator**: Runs with `model_reasoning_effort = "high"` (configurable via `ROBOT_CODEX_REASONING_EFFORT`, default `high`) for comprehensive task planning and final evidence-based report synthesis.
+  - **Grill interviews and reports**: Use `model_reasoning_effort = "low"` independently of the log-analysis setting. Grill asks focused customer questions, retrieves wiki evidence, and summarizes requirements. It does not create test environments, simulations, prototypes, or implementation code; missing evidence remains explicitly unknown. Existing document-reading tools and draft-format validation remain available.
+  - **Log-analysis orchestrator**: Runs with `model_reasoning_effort = "high"` (configurable via `ROBOT_CODEX_REASONING_EFFORT`, default `high`) for comprehensive task planning and final evidence-based report synthesis.
   - **Subagents**: Explicitly configured with `model_reasoning_effort = "low"` across all subagent `.toml` files, reducing per-turn thinking latency from ~70s down to ~8s during iterative tool calls.
   - **Concurrency**: `max_concurrent_threads_per_session = 3` allows up to three subagents to run without thread blocking.
 - **Three-Subagent Specialization Roster**:

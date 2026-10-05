@@ -131,11 +131,16 @@ def test_report_runner_uses_model_and_rejects_missing_citation(tmp_path, monkeyp
     monkeypatch.delenv('ROBOT_GRILL_USE_FALLBACK', raising=False)
     monkeypatch.setenv('CODEX_PROVIDER_ENV_KEY', 'TEST_GRILL_KEY')
     monkeypatch.setenv('TEST_GRILL_KEY', 'fake-test-key')
+    monkeypatch.setenv('ROBOT_CODEX_REASONING_EFFORT', 'high')
     monkeypatch.setattr(run_grill.shutil, 'which', lambda _: '/fake/codex')
     calls = []
 
     def model_process(command, **kwargs):
         calls.append(kwargs['input'])
+        import tomllib
+        config = tomllib.loads((tmp_path / '.codex/config.toml').read_text())
+        assert config['model_reasoning_effort'] == 'low'
+        assert run_grill.GRILL_SCOPE in kwargs['input']
         output_path = command[command.index('--output-last-message') + 1]
         from pathlib import Path
         Path(output_path).write_text(json.dumps({
@@ -183,3 +188,11 @@ def test_malformed_optional_report_sections_do_not_crash_the_reader(value):
     assert report['assessment_status'] == 'incomplete'
     assert report['capabilities']['claims'] == []
     assert report['system_architecture']['nodes'] == []
+
+
+@pytest.mark.parametrize('turn', [1, 2])
+def test_interview_scope_applies_on_initial_and_followup_turns(turn):
+    prompt = run_grill.build_turn_prompt('搬箱', turn)
+    assert run_grill.GRILL_SCOPE in prompt
+    assert 'Do not create or run test environments, simulations' in prompt
+    assert 'wiki retrieval' in prompt

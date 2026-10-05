@@ -510,14 +510,14 @@ Inputs are under /workspace/inputs and optional wiki context under /workspace/wi
 """
 
 
-def _write_config(model: str, workspace: Path | None = None) -> None:
+def _write_config(model: str, workspace: Path | None = None, *, reasoning_effort: str | None = None) -> None:
     home = (workspace or WORKSPACE) / ".codex"
     home.mkdir(parents=True, exist_ok=True)
     # Tiered reasoning architecture (R1.1): The main orchestrator uses high reasoning effort
     # by default for deep synthesis and root-cause analysis, configurable via ROBOT_CODEX_REASONING_EFFORT.
     # Subagents explicitly configure model_reasoning_effort = "low" in their respective .toml files
     # to drop per-turn latency from ~70s to ~8s.
-    reasoning_effort = os.environ.get("ROBOT_CODEX_REASONING_EFFORT", "high").strip().lower()
+    reasoning_effort = (reasoning_effort or os.environ.get("ROBOT_CODEX_REASONING_EFFORT", "high")).strip().lower()
     if reasoning_effort not in {"low", "medium", "high", "max"}:
         reasoning_effort = "high"
     lines = [
