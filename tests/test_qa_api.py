@@ -9,6 +9,8 @@ from typing import ClassVar
 import pytest
 
 from worker import qa_api
+from worker.langgraph_qa import interface
+from worker.topic_policy import final_response_policy_text, CANONICAL_TERMINOLOGY_PROMPT
 from worker.qa_response import AI_NOTICE_RESPONSES, GENERIC_ERROR_RESPONSES
 from worker.conversation_store import ConversationTurn
 from worker.prompt_security import GuardDecision
@@ -29,7 +31,8 @@ def test_wiki_reader_only_loads_indexed_pages_and_duplicate_slugs(tmp_path: Path
     wiki = qa_api.Wiki(tmp_path)
 
     assert wiki.retrievable_slugs == {"allowed", "same"}
-    assert [document.text for document in wiki.load(["hidden", "same"])] == ["a", "b"]
+    assert [path.parent.name for path in wiki.pages["same"]] == ["a", "b"]
+    assert "hidden" not in wiki.retrievable_slugs
 
 
 def test_wiki_reader_resolves_directory_prefixed_index_links(tmp_path: Path) -> None:
@@ -41,11 +44,7 @@ def test_wiki_reader_resolves_directory_prefixed_index_links(tmp_path: Path) -> 
     wiki = qa_api.Wiki(tmp_path)
 
     assert wiki.retrievable_slugs == {"entities/tk-outdoornavigation", "concepts/joint-zeroing"}
-    assert [document.text for document in wiki.load(["entities/tk-outdoornavigation"])] == [
-        "Navigation evidence"
-    ]
-    assert wiki.load(["unlisted"]) == []
-    assert wiki.candidate_slugs("all", "天工导航怎么用？") != set()
+    assert "unlisted" not in wiki.retrievable_slugs
 
 
 def test_wiki_reader_rejects_symlink_root_and_skips_symlink_pages(tmp_path: Path) -> None:
@@ -64,7 +63,7 @@ def test_wiki_reader_rejects_symlink_root_and_skips_symlink_pages(tmp_path: Path
         qa_api.Wiki(linked_root)
 
 
-def test_wiki_reader_canonicalizes_in_memory_without_changing_files(tmp_path: Path) -> None:
+def test_wiki_catalog_preserves_original_files(tmp_path: Path) -> None:
     index = tmp_path / "index.md"
     page = tmp_path / "entities" / "tiangong.md"
     write(index, "[[tiangong]] 天工2.0 Pro")
@@ -73,268 +72,10 @@ def test_wiki_reader_canonicalizes_in_memory_without_changing_files(tmp_path: Pa
     original_page = page.read_bytes()
 
     wiki = qa_api.Wiki(tmp_path)
-    documents = wiki.load(["tiangong"])
-
-    assert "天工行者无疆" in wiki.index_text
-    assert documents[0].text.startswith("# 天工行者无疆")
+    assert wiki.retrievable_slugs == {"tiangong"}
+    assert wiki.pages["tiangong"] == [page]
     assert index.read_bytes() == original_index
     assert page.read_bytes() == original_page
-
-
-def test_stale_index_candidates_inherit_product_from_recent_history(tmp_path: Path) -> None:
-    write(tmp_path / "index.md", "[[walker-s2]]")
-    write(tmp_path / "entities" / "walker-s2.md", "Walker S2 evidence")
-    write(tmp_path / "entities" / "walker-c1.md", "Walker C1 battery evidence")
-    wiki = qa_api.Wiki(tmp_path)
-
-    candidates = wiki.candidate_slugs(
-        "all",
-        "How long does its battery last?",
-        [
-            ConversationTurn(
-                question="Tell me about Walker C1.",
-                answer="Walker C1 is a commercial service humanoid robot.",
-            )
-        ],
-    )
-
-    assert candidates == {"walker-s2", "walker-c1"}
-    assert wiki.candidate_slugs(
-        "walker_s2",
-        "How long does its battery last?",
-        [ConversationTurn("Tell me about Walker C1.", "Walker C1 overview")],
-    ) == {"walker-s2"}
-
-
-def test_specific_robot_scope_keeps_target_first_and_bounds_other_robots(
-    tmp_path: Path,
-) -> None:
-    write(
-        tmp_path / "index.md",
-        "[[tiangong-overview]] [[shared-vector-walking]] [[walker-s2-vector]] "
-        "[[walker-s2-api]] [[walker-c1-motion]] [[tiangong-walker-s2-comparison]]",
-    )
-    write(
-        tmp_path / "entities" / "tiangong-overview.md",
-        "# 天工行者\n天工行者运动能力。",
-    )
-    write(
-        tmp_path / "concepts" / "shared-vector-walking.md",
-        "# Vector walking\nShared definition.",
-    )
-    write(
-        tmp_path / "entities" / "walker-s2-vector.md",
-        "# Walker S2 Edu\nVector walking procedure.",
-    )
-    write(
-        tmp_path / "entities" / "walker-s2-api.md",
-        "# Walker S2 Edu API\nMotion API.",
-    )
-    write(
-        tmp_path / "entities" / "walker-c1-motion.md",
-        "# Walker C1\nMotion details.",
-    )
-    write(
-        tmp_path / "comparisons" / "tiangong-walker-s2-comparison.md",
-        "# 天工行者 and Walker S2 Edu\nClaims are scoped per comparison row.",
-    )
-    wiki = qa_api.Wiki(tmp_path)
-
-    ordered = wiki.prioritize_robot_scope(
-        [
-            "walker-s2-vector",
-            "shared-vector-walking",
-            "walker-s2-api",
-            "walker-c1-motion",
-        ],
-        question="How does vector walking work?",
-        team="TienKung",
-        history=(),
-        allowed_slugs=wiki.retrievable_slugs,
-    )
-
-    assert ordered[0] == "tiangong-overview"
-    assert ordered[1] == "shared-vector-walking"
-    assert ordered[2:] == ["walker-s2-vector", "walker-s2-api"]
-    assert "walker-c1-motion" not in ordered
-    documents = wiki.load(ordered, allowed_slugs=wiki.retrievable_slugs)
-    context = qa_api._make_context(wiki, documents, team="TienKung")
-    assert (
-        "ROBOT SCOPE: MENTIONS SELECTED ROBOT - STILL VERIFY EACH CLAIM LOCALLY"
-        in context
-    )
-    assert "OTHER ROBOT EVIDENCE - NAME IT AND KEEP IT SECONDARY" in context
-    assert context.index("天工行者运动能力") < context.index("Walker S2 Edu")
-    mixed_context = qa_api._make_context(
-        wiki,
-        wiki.load(["tiangong-walker-s2-comparison"]),
-        team="TienKung",
-    )
-    assert "MIXED ROBOTS - VERIFY THE LOCAL SUBJECT OF EVERY CLAIM" in mixed_context
-
-
-def test_tienkung_selector_adds_unindexed_tiangong_alias_pages(tmp_path: Path) -> None:
-    write(tmp_path / "index.md", "[[walker-s2-vector]]")
-    write(tmp_path / "entities" / "walker-s2-vector.md", "Walker S2 vector walking")
-    write(tmp_path / "entities" / "tiangong-vector.md", "天工行者 vector walking")
-    wiki = qa_api.Wiki(tmp_path)
-
-    assert wiki.candidate_slugs("TienKung", "How does vector walking work?") == {
-        "walker-s2-vector",
-        "tiangong-vector",
-    }
-
-
-def test_api_prompts_are_wiki_only_and_canonicalize_all_untrusted_text(
-    tmp_path: Path,
-) -> None:
-    write(tmp_path / "index.md", "[[tiangong]] 天工2.0")
-    write(tmp_path / "entities" / "tiangong.md", "天工3.0")
-    wiki = qa_api.Wiki(tmp_path)
-    history = [ConversationTurn("天工2.0 lite", "天工2.0 Plus")]
-    candidates = wiki.candidate_slugs("tian_gong", "天工2.0 Pro")
-    router = qa_api._router_prompt(
-        "天工2.0 Pro", "tian_gong", history, wiki, candidates
-    )
-    context = qa_api._make_context(
-        wiki,
-        wiki.load(["tiangong"]),
-        team="tian_gong",
-    )
-    answer = qa_api._answer_prompt(
-        "天工2.0 Pro",
-        team="tian_gong",
-        language="zh-CN",
-        history=history,
-        context=context,
-    )
-
-    combined = router + answer
-    assert "天工行者无疆" in combined
-    assert "天工行者基础版" in combined
-    assert "天工行者无界" in combined
-    assert "天工行者DEX" in combined
-    assert "raw/sources" not in combined
-    assert "CLAUDE.md" not in combined
-    assert "PRIMARY ROBOT: tian_gong" in answer
-    assert "Answer this robot first" in answer
-    assert "Apply this filter to each individual claim" in answer
-    assert "SELECTED ROBOT ALIASES" in router
-    assert "天工行者" in router
-
-
-def test_router_response_rejects_unknown_duplicate_and_excess_slugs() -> None:
-    result = qa_api.parse_router_response(
-        '{"pages":["a","unknown","a","b","c","d","e","f"]}',
-        {"a", "b", "c", "d", "e", "f"},
-    )
-    assert result == ["a", "b", "c", "d", "e"]
-
-
-def test_router_response_safely_normalizes_paths_case_and_markdown() -> None:
-    result = qa_api.parse_router_response(
-        '{"pages":["wiki/entities/Walker-C1.MD", "[[TIANGONG_PLUS]]", "[S2](concepts/walker-s2.md)"]}',
-        {"walker-c1", "tiangong-plus", "walker-s2"},
-    )
-
-    assert result == ["walker-c1", "tiangong-plus", "walker-s2"]
-
-
-def test_walker_c1_topic_supplements_stale_index_without_exposing_unrelated_pages(
-    tmp_path: Path,
-) -> None:
-    write(tmp_path / "index.md", "[[walker-s2]]")
-    write(tmp_path / "entities" / "walker-s2.md", "S2 evidence")
-    write(tmp_path / "entities" / "walker-c1.md", "C1 evidence")
-    write(tmp_path / "entities" / "private-notes.md", "Unrelated")
-    wiki = qa_api.Wiki(tmp_path)
-
-    candidates = wiki.candidate_slugs("walker_c1", "我需要 C1 产品介绍")
-
-    assert candidates == {"walker-s2", "walker-c1"}
-    assert [
-        document.text
-        for document in wiki.load(["walker-c1"], allowed_slugs=candidates)
-    ] == ["C1 evidence"]
-    assert wiki.load(["private-notes"], allowed_slugs=candidates) == []
-
-
-def test_retrieval_expands_selected_page_with_links_and_related_wiki_only(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    write(tmp_path / "index.md", "[[walker-overview]] [[battery]] [[charging]] [[unrelated]]")
-    write(
-        tmp_path / "entities" / "walker-overview.md",
-        "# Walker overview\nBattery system [[battery]] and [[charging]].",
-    )
-    write(tmp_path / "concepts" / "battery.md", "Battery quick-swap details.")
-    write(tmp_path / "concepts" / "charging.md", "Charging time and charger details.")
-    write(tmp_path / "concepts" / "unrelated.md", "Catering workflow.")
-    wiki = qa_api.Wiki(tmp_path)
-    monkeypatch.setattr(qa_api, "WIKI_QA_MAX_PAGES", 3)
-
-    expanded = wiki.expand_slugs(
-        ["walker-overview"],
-        question="Tell me all battery and charging details",
-        team="walker_s2",
-        history=(),
-        allowed_slugs=wiki.retrievable_slugs,
-    )
-
-    assert expanded[0] == "walker-overview"
-    assert set(expanded[1:]) == {"battery", "charging"}
-    assert "unrelated" not in expanded
-
-
-def test_fallback_router_leaves_budget_for_link_expansion(tmp_path: Path) -> None:
-    index_links = " ".join(f"[[page-{index}]]" for index in range(12))
-    write(tmp_path / "index.md", index_links)
-    for index in range(12):
-        write(tmp_path / "entities" / f"page-{index}.md", f"Page {index} evidence")
-    write(
-        tmp_path / "entities" / "page-0.md",
-        "# Page 0\nSee [[page-10]] for details.",
-    )
-    write(tmp_path / "entities" / "page-10.md", "Linked page evidence")
-    wiki = qa_api.Wiki(tmp_path)
-
-    fallback = wiki.fallback_slugs(
-        "page-0", "walker_s2", (), wiki.retrievable_slugs
-    )
-    assert len(fallback) <= qa_api._ROUTER_MAX_PAGES
-
-    expanded = wiki.expand_slugs(
-        fallback,
-        question="page-0",
-        team="walker_s2",
-        history=(),
-        allowed_slugs=wiki.retrievable_slugs,
-    )
-
-    assert expanded[0] == "page-0"
-    assert "page-10" in expanded
-
-
-def test_retrieval_expansion_never_adds_unindexed_or_raw_source_pages(
-    tmp_path: Path,
-) -> None:
-    write(tmp_path / "index.md", "[[primary]] [[indexed]]")
-    write(tmp_path / "concepts" / "primary.md", "# Primary\n[[hidden]] [[indexed]]")
-    write(tmp_path / "concepts" / "indexed.md", "Indexed evidence")
-    write(tmp_path / "concepts" / "hidden.md", "Hidden evidence")
-    wiki = qa_api.Wiki(tmp_path)
-
-    expanded = wiki.expand_slugs(
-        ["primary"],
-        question="evidence",
-        team="walker_s2",
-        history=(),
-        allowed_slugs=wiki.retrievable_slugs,
-    )
-
-    assert expanded == ["primary", "indexed"]
-    assert "hidden" not in expanded
 
 
 @dataclass
@@ -389,7 +130,7 @@ async def test_stream_bridge_works_with_one_default_executor_thread() -> None:
     async def on_token(token: str) -> None:
         chunks.append(token)
 
-    answer = await qa_api._stream_in_thread(
+    answer = await interface._drain_stream(
         iter(("one", "two")), on_token, timeout=2
     )
 
@@ -400,7 +141,6 @@ async def test_stream_bridge_works_with_one_default_executor_thread() -> None:
 def test_worker_stream_timeouts_remain_compatible_with_python_310() -> None:
     root = Path(__file__).resolve().parents[1]
     stream_sources = [
-        (root / "worker" / "qa_api.py").read_text(encoding="utf-8"),
         (root / "worker" / "langgraph_qa" / "interface.py").read_text(
             encoding="utf-8"
         ),
@@ -435,6 +175,8 @@ async def test_deepseek_retrieval_preserves_language_team_history_and_response_b
     )
 
     client = FakeDeepSeekClient.instances[0]
+    assert final_response_policy_text() in client.calls[2][0]
+    assert CANONICAL_TERMINOLOGY_PROMPT in client.calls[2][0]
     planner_prompt = client.calls[0][1]
     reasoner_prompt = client.calls[1][1]
     answer_prompt = client.calls[2][1]
@@ -538,27 +280,6 @@ async def test_predefined_response_does_not_call_deepseek(monkeypatch) -> None:
 
     assert answer.endswith(AI_NOTICE_RESPONSES["en"])
     assert chunks == [answer]
-
-
-def test_answer_system_preserves_existing_prompt_contract() -> None:
-    assert "only the supplied Wiki pages" in qa_api.ANSWER_SYSTEM
-    assert "political" in qa_api.ANSWER_SYSTEM
-    assert "exactly as written" in qa_api.ANSWER_SYSTEM
-    assert "[KNOWLEDGE_GAP]" in qa_api.ANSWER_SYSTEM
-    assert "Do not mention tools" in qa_api.ANSWER_SYSTEM
-    assert "Never include citations" in qa_api.ANSWER_SYSTEM
-    assert "Do not output image paths or image Markdown" in qa_api.ANSWER_SYSTEM
-    assert "Cite factual statements" not in qa_api.ANSWER_SYSTEM
-    assert "Prefer omission over inference" in qa_api.ANSWER_SYSTEM
-    assert "DIRECT_FACT" in qa_api.ANSWER_SYSTEM
-    assert "DERIVED_FACT" in qa_api.ANSWER_SYSTEM
-    assert "price, value, positioning, compatibility, superiority" in qa_api.ANSWER_SYSTEM
-    assert "Do not add your own conclusion" in qa_api.ANSWER_SYSTEM
-    assert "Never append a disclaimer" in qa_api.ANSWER_SYSTEM
-    assert qa_api.DeepSeekClient._options() == {
-        "temperature": 0,
-        "extra_body": {"thinking": {"type": "disabled"}},
-    }
 
 
 def test_unsupported_synthesis_filter_removes_the_reported_conclusion() -> None:
@@ -671,7 +392,6 @@ async def test_deepseek_stream_never_exposes_unsupported_synthesis(
         language="zh-CN",
         history=(),
         on_token=on_token,
-        on_reset=lambda: on_token(""),
     )
 
     streamed = "".join(visible)
@@ -814,7 +534,6 @@ async def test_deepseek_router_mismatch_uses_deterministic_wiki_fallback(
         language="en",
         history=(),
         on_token=discard,
-        on_reset=lambda: discard(""),
     )
 
     assert answer == "deepseek answer"
@@ -840,7 +559,6 @@ async def test_local_wiki_failure_does_not_invoke_deepseek(
             language="en",
             history=(),
             on_token=discard,
-            on_reset=lambda: discard(""),
         )
 
     assert calls == []

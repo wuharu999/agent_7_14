@@ -81,3 +81,6 @@ agent1/agent/.agent1-trash/
 agent1/agent/.agent1-worker/
 agent1/agent/raw/
 agent1/agent/wiki/
+
+# Browser tools release archives (source lives in browser_parse/)
+browser_parse.tgz

@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from worker.langgraph_qa.qa.state import QAState
@@ -38,32 +38,6 @@ Parameters:
 - Selected Robot/Topic Scope: {robot_topic}
 - Target Language: {language}
 """
-
-
-def extract_clean_summary(content: str) -> str:
-    """Extract clean title or first descriptive body line from markdown content, skipping YAML frontmatter."""
-    if not content:
-        return "参考资料"
-
-    lines = content.splitlines()
-    in_yaml = False
-    body_lines = []
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped == "---":
-            in_yaml = not in_yaml
-            continue
-        if in_yaml:
-            continue
-        if stripped:
-            cleaned = stripped.lstrip("#").strip()
-            if cleaned and not cleaned.startswith("```"):
-                body_lines.append(cleaned)
-                if len(body_lines) >= 2:
-                    break
-
-    return " — ".join(body_lines) if body_lines else "参考资料"
 
 
 def final_answer_node(state: QAState) -> Dict[str, Any]:

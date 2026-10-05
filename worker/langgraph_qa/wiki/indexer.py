@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import re
 import sqlite3
 import jieba
@@ -120,116 +119,6 @@ def infer_edge_relation(from_meta: Dict[str, Any], to_meta: Optional[Dict[str, A
         return "lower_level_than"
 
     return "related_to"
-
-
-def _legacy_static_wiki_guide() -> str:
-    """Deprecated historical guide retained only for source compatibility."""
-    guide = """# Robotics Knowledge Base — System Guide (WIKI_GUIDE.md)
-
-## Overview & Semantic Map
-
-This guide provides a structured semantic map of the robotics knowledge base for runtime planning and reasoning.
-The knowledge base covers humanoid robot hardware platforms, teleoperation & data collection systems,
-software SDKs, dexterous hands, sensor peripherals, industrial solutions, and known uncertainty areas.
-
----
-
-## 1. Major System Entrypoints & Solution Hierarchy
-
-### Teleoperation & Data Collection (`entities/thinkerstudio.md`)
-- **Primary Platform**: `ThinkerStudio` (遥操数采平台) is the complete end-to-end user-facing platform for humanoid teleoperation and multimodal data collection.
-  - **Key Features**: Humanoid motion retargeting, VR/Pico body tracking, multi-channel camera data recording, trajectory quality inspection, and dataset export.
-  - **Core Workflows**: `concepts/pico-body-tracking-teleoperation.md` describes whole-body teleoperation via `Pico Motion Tracker` and `XRoboToolkit`.
-  - **Reasoning Policy**: For any "how to teleoperate / collect data" goal, always prefer `ThinkerStudio` (Level 0) and `pico-body-tracking-teleoperation` (Level 1) rather than reconstructing teleoperation from joint topics or low-level motor controllers.
-
-### Robot Hardware Platforms (Level 0)
-- **Walker S2 Series**:
-  - `walker-s2-industrial.md`: Industrial-grade full-size humanoid robot platform designed for factory automation, inspection, and heavy-duty dexterous tasks. Features dual master control architecture, high-torque joint actuators, and 48V/60V power distribution.
-  - `walker-s2-edu-explorer.md`: Educational and research version of Walker S2 (`Walker_S2_EDU探索者`), optimized for university labs, algorithm benchmarking, and open-source ROS2 secondary development.
-- **Walker C1 Series**:
-  - `walker-c1-edu.md` / `astron.md`: Lightweight humanoid bipedal platform (`Walker_C1_EDU共创者` / `Astron`), specialized for education, gait algorithm experiments, and motion capture integration.
-- **Tiangong Walker Series (天工行者)**:
-  - `tiangong-walker-dex.md`: Specialized dexterous manipulation platform (`天工行者DEX`), featuring high-degree-of-freedom dual dexterous hands and tactile sensors.
-  - `tianxing-walker-series.md`: Standard humanoid platform (`天工行者无界&无疆`), covering TienKung 3.0, TienKung Pro, and TienKung Plus variants for whole-body dynamic locomotion.
-- **Commercial & Educational Robots**:
-  - `cruzr.md`: Wheeled service robot (`Cruzr`) for smart reception, navigation, and commercial interaction.
-  - `cadebot.md`: Intelligent delivery robot (`CadeBot`) for restaurant and indoor transport.
-  - `ugot.md`: Multi-morphology educational AI robotics kit (`UGOT`).
-  - `yanshee.md`: Desktop humanoid AI educational robot (`Yanshee`).
-  - `creabot.md`: Modular educational building block robot (`CreaBot`).
-
----
-
-## 2. Software Development Kits & Subsystems (Level 2)
-
-- **SDK Frameworks**:
-  - `xrobotoolkit.md`: XR具身智能二次开发SDK, powering spatial tracking, teleoperation retargeting, and VR input bridging.
-  - `tienkung-3-ros2-sdk.md` & `tienkung-pro-ros2-sdk.md`: ROS2-native SDKs for TienKung series, providing joint trajectory controllers, odometry publishers, and sensor message pipelines.
-  - `walker-s2-ros2-sdk.md`: Full ROS2 secondary development SDK for Walker S2, exposing arm motion planning, gait control, and sensor streams.
-  - `s2-api-tiny.md`: Lightweight standalone C++/Python API (`S2 API Tiny`) for embedded or high-frequency direct joint control without full ROS2 overhead.
-  - `rosa-2.md`: Robot Operating System Architecture 2.0 (`ROSA 2.0`), UBTECH's core distributed middleware and system service manager.
-- **Control & Perception Modules**:
-  - `body-control-package.md` & `astron-motion-control.md`: Locomotion and balance control modules.
-  - `manipulation-framework.md`: Dual-arm coordinated manipulation and inverse kinematics solver.
-  - `proc_manager.md`: Process and lifecycle management daemon for onboard service nodes.
-  - `tk-vslam.md`: Visual-inertial SLAM for indoor localization and mapping.
-  - `tk-motionbuilder.md`: Motion retargeting and trajectory editing pipeline.
-
----
-
-## 3. Dexterous Hands & Peripherals (Level 2)
-
-- **Dexterous Hands Comparison**:
-  - `inspire-hand.md` (`InspireRH5DG2-E4`): Under-actuated five-finger dexterous hand with micro-linear actuators, high payload-to-weight ratio, and position/current feedback.
-  - `brainco-hand.md` (`Revo 2`): High-precision five-finger hand with tactile fingertip array sensors, supporting delicate tactile feedback and EMG gesture control.
-  - `walker-s2-dexterous-hand.md`: UBTECH proprietary multi-DOF integrated hand for Walker S2.
-- **Sensors & Compute Hardware**:
-  - `livox-mid360.md`: Solid-state 3D LiDAR (360° FOV) for real-time point cloud generation and obstacle avoidance.
-  - `orbbec-gemini-335l.md`: High-resolution RGB-D stereo camera for near-field manipulation and depth perception.
-  - `nvidia-jetson-orin.md` & `jetson-agx-thor.md`: High-performance onboard AI edge computing platforms.
-  - `ganfeng-battery.md`: High-capacity lithium battery module with integrated BMS monitoring and hot-swap support.
-
----
-
-## 4. Industry Solutions & Services (Level 0 / 1 / 3)
-
-- **Educational & Industrial Integration**:
-  - `ubtech-embodied-intelligence-industry-college.md`: Comprehensive construction blueprint for Embodied Intelligence Industry Colleges (具身智能产业学院), integrating curriculum, training rigs, simulation centers, and industry certification.
-  - `data-acquisition-center.md`: Multi-station humanoid data collection facility guidelines.
-- **Support, Maintenance & Operations**:
-  - `6s-service-center.md`: 6S Robot Service Center (6S服务中心) operational architecture: Sale, Spare Part, Service, Survey, Standard, Solution.
-  - `concepts/emergency-stop.md` & `concepts/hot-swap-battery.md`: Standard safety, maintenance, and emergency protocols.
-  - `concepts/warranty-policy.md`: Official repair, maintenance, and warranty terms.
-
----
-
-## 5. Abstraction Hierarchy & Reasoning Rules
-
-When planning answers, follow this abstraction precedence:
-
-1. **Level 0 (Complete Solutions / Applications / Robots)**:
-   - Always prefer complete platforms (`ThinkerStudio`, `Walker S2`, `Tianxing Walker`) when the user asks high-level "how do I accomplish X?" questions.
-2. **Level 1 (Workflows & Capabilities)**:
-   - Provide standard procedures (`pico-body-tracking-teleoperation`, `rl-training-pipeline`, `battery-boot-sequence`).
-3. **Level 2 (SDKs & Modules & Hardware)**:
-   - Introduce SDKs (`XRoboToolkit`, `Walker S2 ROS2 SDK`) and hardware options when implementation or architectural details are requested.
-4. **Level 3 (APIs & Interfaces & Parameters)**:
-   - Return specific topics (e.g. `/mc/leg/motion_ctrl`), parameters, or message definitions **only** when the user explicitly asks for ROS topics, code interfaces, or parameters.
-5. **Level 4 (Raw Sources & Uncertain Queries)**:
-   - Use source evidence to verify claims; surface known uncertainty from `queries/`.
-
----
-
-## 6. Known Uncertainty Areas & Open Questions (`queries/`)
-
-When answering questions touching these topics, explicitly surface the known uncertainty:
-- **ThinkerStudio Compatibility**: `queries/does-thinkerstudio-support-all-tienkung-models.md` notes that documentation alternates between "天工行者", "天工无疆", and "天工行者无疆". Specific model compatibility should be stated with appropriate caveat.
-- **Tiangong Walker DEX Brochure Encoding**: `queries/dex-brochure-encoding-issue.md` identifies potential text corruption in legacy PDF exports for DEX joint payload specs.
-- **DEX vs TienKung 2.0 Pro Differences**: `queries/dex-vs-tienkung-2-differences.md` outlines unverified motor torque differences between DEX and standard Tianxing platforms.
-- **Certification Bodies**: Dual certification standards (Ministry of Industry vs Vocational qualification) for robot service technicians.
-- **Unanswered Topics**: Review `unanswered.md` for topics currently undergoing internal hardware validation.
-"""
-    return guide.strip() + "\n"
 
 
 def _catalog_for_guide(catalog_records: Optional[Sequence[Dict[str, Any]]]) -> List[Dict[str, Any]]:

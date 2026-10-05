@@ -1,0 +1,247 @@
+# Robot Log Workbench
+
+**Deploy on two worker machines:** [Docker worker runbook](docs/docker-worker.md)
+covers ECS connectivity, TLS, two independent hosts, restricted egress, limits,
+systemd and cleanup. It is an operator runbook; no cloud deployment is claimed.
+
+A shared robot-incident analysis workbench with automatic in-browser log preprocessing and an optional isolated Docker model worker. To create an analysis, choose log files or a folder, add any image/PDF attachments, describe the incident, choose the report language, and submit. The browser preprocesses recognizable logs in a Web Worker and then uploads the originals, attachments, and bounded evidence package to the shared backend. **Preprocessing itself needs no Codex, API key, model call, or LLM tokens.**
+
+The integrated EN/中文 interface has a shared history on the left and the selected analysis on the right. Everyone connected to the same backend can see active status and scrollable public session activity, open completed reports, or request the public hard stop. Structured results show the summary, source-grounded evidence chain, uncertainties, and an editable ordered workflow. Human reviews add a name, outcome, note, and edited workflow as a new immutable version; they remain separate from the model report.
+
+The **EN / 中文** interface switch remembers your selection. The analysis output-language selector is separate: it follows the interface until you choose it explicitly.
+
+The UI intentionally exposes no preprocessing settings, evidence export, or local-context controls. The submission path uses `robot-log-evidence/v2`; bounded context replay remains a tested developer API.
+
+## Run
+
+Use Node.js 22.12+ in the 22.x line (tested on 22.22.1). The tooling also supports Node.js 20.19+ in the 20.x line and Node.js 24+; the exact range is declared in `package.json`.
+
+```sh
+npm ci
+uv sync
+uv run uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+
+In a second terminal:
+
+```sh
+npm run dev -- --port 5175 --strictPort
+```
+
+Open http://127.0.0.1:5175 and keep both terminals running; Vite proxies `/api` to port 8000. Alternatively, run `npm run build`, start the same backend command, and open http://127.0.0.1:8000 for the built integrated app. Chrome/Chromium is the tested browser; folder picking requires browser support for `webkitdirectory`, and gzip requires `DecompressionStream`. File selection is available independently of folder selection.
+
+```sh
+npm test
+npm run build
+```
+
+The production static application is written to `dist/`. Serve that directory with an HTTP server; opening `index.html` directly as a `file://` URL does not support the module worker.
+
+See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the module map and runtime flow, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for open-source dependencies and attribution.
+
+## Supported inputs
+
+- `.tar.gz`, `.tgz`, `.tar`: streamed with native gzip decompression and [`it-tar`](https://github.com/alanshaw/it-tar), without extracting files to disk. Archive paths remain in every source reference.
+- `.zip`: [`zip.js`](https://gildas-lormeau.github.io/zip.js/) reads entries as streams with CRC checks. Encrypted archives are not supported.
+- Plain or gzip-compressed `.log`, `.txt`, `.jsonl`, `.ndjson`, `.json`, `.yaml`, `.yml`, `.ini`, `.conf`, `.cfg`, rotated `.log.*` files, glog `.INFO`/`.WARNING`/`.ERROR`/`.FATAL` names, and conventional syslog/messages/dmesg names.
+- Text recognition covers the supplied XOS bracketed timestamps/levels, Walker severity-letter timestamps, g3log, glog, syslog, JSON log records, and explicit generic level prefixes. UTF-8 damage and NUL padding are marked, counted, and make coverage partial, but readable text is retained. Oversized lines retain both ends with an explicit omission marker. JSON/configuration is read line by line; arbitrary multiline documents are not structurally parsed. No uploaded code or configuration is executed.
+
+ROS1 `.bag`, ROS2 `.db3`, MCAP, nested archives, and unrecognized file types are inventoried as skipped. Symbolic/hard links and unsafe paths are never followed. TAR directories are traversed but do not become file reports. Invalid gzip data, truncated TAR bodies/end markers, CRC failures, and limits are surfaced as coverage problems. Earlier evidence may remain in an incomplete package; it must not be treated as a fully covered source.
+
+## Evidence contract
+
+The optional larger `robot-log-evidence/v2` JSON contains:
+
+- Selected-source catalog and all emitted entry reports: stable source ID, archive/node/subsystem, path, read bytes, line counts, explicit severity counts, encountered timestamp bounds, parse quality, status, and reason. Per-file candidate/retained/omitted counts reconcile after replacements.
+- Bounded warning/error/fatal excerpts, lifecycle/recovery events, metadata, and normal time-coverage anchors. Retained events include up to five preceding/following lines and source path plus 1-based line number. Clipping/damage markers distinguish excerpts from exact original lines.
+- Unknown-severity diagnostic keyword candidates, explicitly marked `selectionReason: diagnostic-keyword`. These are clues, not inferred failures or diagnoses.
+- Repeated candidate signatures scoped by archive, node/subsystem, and severity. Numeric motor/channel/error codes and values are **not normalized away**. Whitespace is normalized. Counts marked `countComplete: false` are lower bounds, including after bounded pattern eviction or partial archive coverage.
+- Resource limits and omitted-evidence/pattern-event counts. Timestamps retain their source spelling; missing years/timezones are not invented, and first/last timestamps refer to encounter order rather than normalized chronological minima/maxima.
+
+Defaults: 10,000 files/archive entries (directories count toward the safety limit), 16,384 retained characters per line before clipping markers/NUL escaping, 500 evidence items, 200 candidate patterns, 2 GiB expanded text per file, and 8 GiB aggregate expanded input. TAR expansion includes skipped bodies and framing for the byte guard; exported `totals.expandedBytes` counts bytes delivered to text processing and therefore differs from total archive expansion. ZIP skipped entry bodies are not expanded.
+
+The evidence budget reserves 75% for fault candidates, 15% for lifecycle/recovery, and 10% for metadata/normal anchors (first, every 1,000th, and last eligible line). Each stratum balances archives, then node/subsystems, then files, prioritizing severity inside a share. Up to three exact repeats per file/severity keep the first two and latest selected occurrences. Unused strata need not fill the overall cap. Selection is deterministic but encounter-order-dependent; it is not exhaustive, statistically representative, or a guarantee that every rare fault/recovery is retained. Omission counts count candidate events, not all normal lines excluded by the candidate rules.
+
+## Token-efficient handoff and local context
+
+- Full evidence export: optional local inspection artifact, deliberately larger because it preserves context. It is not the default LLM prompt.
+- Developer context reader: request **any readable file**, including one with no retained evidence, and a starting line. Each response contains at most 20 lines and 12,000 serialized UTF-8 bytes. Clipped lines are marked. This is an internal API; the simplified upload/report UI does not expose replay or download controls.
+- Source IDs include selection order and archive-member ordinal, so duplicate member names remain distinct. Keep the original selection and browser session open. Closing/changing it invalidates access; an exported JSON alone cannot fetch local originals.
+- ZIP accesses the target member; TAR/GZIP must stream through preceding data. A late-line query can be expensive and is cancellable. Early-stop context replay does **not** revalidate the entire archive checksum (`integrity: not-revalidated`). Raw files are never modified.
+
+The UI hides intermediate evidence and exports. The uploaded evidence package includes original log excerpts and may contain identifying or sensitive information; automatic redaction is not a privacy guarantee. Cancelling preparation terminates the browser worker and discards that run's partial package.
+
+Each job has a scrollable **Session activity & output** debug view. It preserves emitted Codex JSON, intermediate messages, tool calls/results, errors, and available child rollout output, with credential redaction. Long output continues across consecutive entries; the latest 500 events are shown and **Earlier activity** pages backward. **Download debug JSONL** exports the retained event history. Only agents with recorded startup/activity appear; no waiting role cards are displayed. The selected job refreshes when new output arrives, including after completion. Child roles come from actual session metadata when available. Output never emitted or persisted by Codex cannot be reconstructed.
+
+These bounds constrain retained text/evidence and streamed payloads. Archive-library metadata overhead and browser file-list overhead still depend on the input; the demo is intended for trusted robot log exports, not as a hardened service for arbitrary hostile archives.
+
+## Local shared analysis demo
+
+Use Python through [uv](https://docs.astral.sh/uv/). From this checkout:
+
+```sh
+uv sync
+npm run build
+uv run uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+
+Open http://127.0.0.1:8000. This serves the built UI and persistent SQLite API together. For frontend development, keep the API running and use `npm run dev -- --port 5175 --strictPort`; open http://127.0.0.1:5175 and let Vite proxy `/api` to port 8000. The only submission inputs are files or a folder, optional attachments, an incident description, and report language. Image/PDF-only jobs are allowed. The queue works without a model, but real jobs remain queued; no analysis is fabricated.
+
+All visitors see job descriptions, activity summaries, finished reports and immutable review versions. Anyone can request a hard stop. A running job remains **stopping** until the worker confirms sandbox termination or its lease expires; the API cannot itself kill a disconnected remote container. The worker also configures a maximum 30-minute sandbox lifetime. Reviews require a name, success/failure, an explanation and edited debugging procedure. Claims expire after 30 minutes; saving releases the claim and creates a new version. Names are not verified identities. Version-list and append endpoints provide the extension point for future version management; existing versions are not overwritten.
+
+Data stays in ignored `data/` until the operator removes it. Keep the database and upload folder together in backups. No automatic public URL, TLS, cleanup, user accounts or production abuse protection is configured. This is a local integration demo, **not a hardened internet deployment**. Public reports may contain sensitive excerpts; best-effort credential redaction is not a privacy guarantee. Do not publish confidential logs/wiki content without permission.
+
+For UI walkthroughs without a provider or worker, seed three clearly labeled synthetic completed examples:
+
+```sh
+uv run python scripts/seed_demo.py
+```
+
+This adds the motor timeout/recovery, localization uncertainty, and incomplete-log-coverage examples. It is idempotent, makes no AI/model calls, creates no queued or running work, and preserves existing demo reviews on rerun. The reports and activity state explicitly that they are synthetic.
+
+### Configure the Docker workers
+
+Follow [Docker worker deployment](docs/docker-worker.md) on each machine. Both workers poll ECS at `http://47.239.12.206:8000`; they need no direct connection to each other. Each has a local Docker engine, an internal job network and a provider-only egress proxy. Give each a distinct `ROBOT_WORKER_ID`, configure its capacity, image ID/digest, shared worker token and model credential. Roll out the updated ECS API before starting these workers.
+
+```sh
+uv sync --frozen
+uv run --env-file .env python -m backend.worker
+```
+
+`sandbox/Dockerfile` builds the analysis image with Codex, Python, OCR, Poppler and the analysis libraries installed in advance. Each job runs as a non-root user in its own container and named workspace volume. Native Codex subagents share that container. CPU, memory and PIDs are constrained; disk usage is monitored and jobs are stopped on overflow, without claiming a hard disk quota. No KVM or Cube service is required, and missing Docker isolation settings fail closed.
+
+The worker streams and hashes uploads before transferring them into the container. Optional private wiki files come from ignored `knowledge/wiki/`; the debug view exposes credential-redacted emitted messages and tool output, including referenced evidence. Containers and their workspaces are removed on completion, cancellation or timeout. Startup cleanup is restricted to resources belonging to that worker ID. See [resource profiles](docs/resource-profiles.md) for sizing and the credential-free image check.
+
+The new [sandbox context skill](sandbox/runtime/.agents/skills/robot-analysis-context/SKILL.md) is copied into `/workspace/.agents/skills/` for **the agents inside each job**, not installed in your personal Codex environment. The main prompt and subagent roles reference it. Its token-bounded `evidence.py context` helper exposes upload mappings, assigned resources and wiki index status; the skill routes agents to preinstalled tools and applicable original wiki lines. See [wiki review](docs/wiki-review.md) for measured retrieval limits.
+
+### Pre-execution security guard (prompt injection defense)
+
+Before provisioning any Docker job container or launching Codex, the worker runs an automated host-side security inspection ([`backend/guard.py`](backend/guard.py)) on the user's incident description and all non-log attachments (PDFs, text/markdown documents, configuration files, and images).
+
+- **Three-Tier Classification (OWASP LLM01:2025)**:
+  - **`CLEAN`**: No adversarial manipulation or prompt injection detected. The job proceeds normally into the isolated sandbox with original inputs.
+  - **`SUSPICIOUS`**: The user prompt contains borderline phrasing, ambiguity, or potential prompt-leaking attempts without a confirmed exploit payload. The guard LLM sanitizes the prompt into an objective, factual incident query; the database persists both `original_description` and `sanitized_description`, dispatches the sanitized prompt to Codex, and emits a public `warning` event in the session activity log.
+  - **`INJECTION`**: An active prompt injection, jailbreak, instruction override, or exfiltration attack is detected in either the user description or non-log attachments (e.g. indirect prompt injections in uploaded PDFs). Triggers an **immediate hard stop**: marks the job as `failed` (`Prompt injection detected in inputs`), records a security warning event, terminates before sandbox provisioning, and consumes zero Codex model budget.
+- **Attachment Extraction & Memory Bounding**:
+  - PDFs are text-extracted with Poppler `pdftotext` (bounded to first 10 pages) with a pure-Python regex stream decompressor fallback protected against decompression bombs (`zlib.decompressobj`).
+  - Cumulative text extraction across non-log attachments is strictly capped at **32 KiB** with accurate header length budgeting to prevent prompt bloat and payload masking.
+  - Image attachments are verified with Pillow (PIL) and capped at a maximum of 5 images.
+- **Fail-Closed Resilience**: If the guard LLM call fails due to network timeouts, HTTP errors, or malformed responses, it retries once. If it still fails, it fails closed: the job is marked `failed` with a clear security notice and will never execute uninspected in Codex.
+- **Configuration**:
+  - Enabled by default in worker runtime (`ROBOT_GUARD_ENABLED=1`).
+  - Automatically reuses configured Codex credentials (`ROBOT_CODEX_PROVIDER_URL` and `ROBOT_CODEX_API_KEY`).
+  - Supports optional model/provider overrides via `ROBOT_GUARD_MODEL`, `ROBOT_GUARD_PROVIDER_URL`, and `ROBOT_GUARD_API_KEY`.
+
+### Codex Execution & Preprocessing Optimization
+
+To prevent exploratory tool stalls, redundant skill reads, and multi-minute reasoning latencies, the workbench employs a multi-tiered execution and preprocessing architecture:
+
+- **Tiered Reasoning Architecture**:
+  - **Orchestrator**: Runs with `model_reasoning_effort = "high"` (configurable via `ROBOT_CODEX_REASONING_EFFORT`, default `high`) for comprehensive task planning and final evidence-based report synthesis.
+  - **Subagents**: Explicitly configured with `model_reasoning_effort = "low"` across all subagent `.toml` files, reducing per-turn thinking latency from ~70s down to ~8s during iterative tool calls.
+  - **Concurrency**: `max_concurrent_threads_per_session = 3` allows up to three subagents to run without thread blocking.
+- **Three-Subagent Specialization Roster**:
+  - **`log_investigator`**: Specialized in text logs, journald streams, and error keyword scanning (`rg`, `evidence.py log-context`, `head`, `tail`).
+  - **`telemetry_investigator`**: Specialized in ROS/ROS2 SQLite `.db3` bags, IMU drift, `/sbus_data` joystick streams, and joint states.
+  - **`evidence_reviewer`**: Dedicated to hypothesis verification, counterevidence testing, and hardware manual/wiki cross-checking.
+  - **Inlined Tool Commands**: Critical CLI usage patterns are inlined directly into `developer_instructions` in `.codex/agents/*.toml`, eliminating redundant turns spent reading `SKILL.md` before tool execution.
+- **Frontend Process Grid Integration**:
+  - `src/main.ts` renders a live 4-card process grid (`Codex Orchestrator`, `Log Investigator`, `Telemetry Investigator`, and `Evidence Reviewer`) with live status badges and expandable intermediate output inspection drawers.
+  - Page and transcript scroll positions are automatically preserved across 3-second live poll intervals (`renderResult`).
+  - Container and child-thread activity cards remain visible on completed history views. Native Codex collaboration events retain child IDs and observed states; missing historical events are shown as unknown, not proof that a child was never invoked.
+- **Sandbox Python Virtualenv Auto-Sourcing**:
+  - `backend/worker.py::_container_env()` prioritizes `/opt/analysis-venv/bin` in `PATH` and exports `VIRTUAL_ENV=/opt/analysis-venv`.
+  - `sandbox/run_codex.py::_setup_virtualenv()` automatically detects and activates pre-installed virtualenvs at startup, updating `os.environ`, `sys.path`, and writing the workspace activation hook `/workspace/.bashrc` with `BASH_ENV` configured; the read-only root prevents system profile changes. Subshells and Codex tool executions run with full package access (`rosbags`, `mcap`, `numpy`, `pandas`, `pypdf`, `h5py`).
+- **Preprocessing Pipeline Bridge**:
+  - `sandbox/run_codex.py::_compact_evidence()` preserves structured browser `LogPackage` metadata (`totals`, up to 30 files, up to 20 patterns, and up to 25 evidence entries) while stripping raw line payloads, providing file sizes, line counts, timestamps, and error patterns immediately on Turn 1.
+  - Fast (<0.5s) read-only SQLite `.db3` topic and timestamp scanner (`_scan_db3_telemetry`) extracts topic names, message counts, and nanosecond timestamp bounds, formatting them directly into the Turn 1 prompt.
+- **Token-Based Cost Settlement**:
+  - Token counts (`input_tokens`, `output_tokens`, `cached_tokens`) reported by the SDK are settled using snapshot rates (`deepseek-v4-flash`: $0.44/1M in, $1.32/1M out, 10% cache rate).
+  - Automatically selects `deepseek-v4-flash` for non-vision jobs, routing around multimodal overhead when no images or PDFs are present.
+
+Resource sizing is automatic and token-free: small (1 CPU/2 GiB), standard (2 CPU/4 GiB), or large (4 CPU/8 GiB), selected from uploaded sizes, file types and browser expansion hints. ECS grants at most one job to each worker ID and two globally. Each worker advertises available local capacity, so a queued job must fit the machine claiming it. A busy or undersized machine does not prevent another capable machine from claiming work. See [resource profiles](docs/resource-profiles.md).
+
+Reports include **Back to upload** controls that preserve the current draft. The shared daily allowance bar distinguishes accounted estimates, running reservations and remaining allowance; it indicates when new work can queue or when pending slots are full. It is not a provider billing or real-time CPU/RAM usage meter.
+
+The model key enters the sandbox and is accessible to a full-permission agent. Use a dedicated, restricted-budget provider key and limit sandbox network access externally. Provider replacement uses `ROBOT_CODEX_PROVIDER_URL`, `ROBOT_CODEX_API_KEY_ENV` and `ROBOT_CODEX_MODEL`; the endpoint must be compatible with Codex's Responses protocol. Arbitrary providers are not automatically supported.
+
+Defaults admit at most two concurrent jobs, with 20 pending/uploading jobs and a USD 5 reservation per job against a **USD 10 Asia/Shanghai-day admission cap**. Active reservations count across midnight. Unknown actual cost is conservatively settled at the reservation. This is **not verified billing or a hard USD 10 final-charge ceiling**: in-flight jobs finish and can exceed estimates. Worker loss or lease expiry fails a job without automatically repeating model calls. Each machine independently manages its Docker resources; there is no shared worker filesystem or peer network.
+
+```sh
+uv run python -m unittest discover -s tests_backend -v
+npm test
+npm run build
+```
+
+See [PROGRESS.md](PROGRESS.md) for implemented/tested versus externally blocked work.
+
+## Publication and private data
+
+Only application source, synthetic examples, tests and deployment documentation
+belong in GitHub. `.env`, credentials, `data/`, uploaded logs, VM images, local
+editor settings and `knowledge/wiki/` stay outside the published source. Copy
+an approved wiki separately to the worker; it is not included in a fresh clone.
+Making the repository public does not deploy the service or make private input
+data safe to publish. No project-wide open-source redistribution license has
+been selected; dependency licenses are listed in [third-party notices](THIRD_PARTY_NOTICES.md).
+The npm `private` flag prevents accidental npm publication and does not control
+GitHub visibility.
+
+## DeepSeek / Qwen and estimated cost
+
+`.env.example` now selects DeepSeek through the existing Codex Responses runner. No runtime replacement is required for DeepSeek; Qwen through OpenCode is a documented alternative, not yet wired in. See [provider setup and limitations](docs/model-providers.md).
+
+Run the offline estimator with `uv run python scripts/estimate_cost.py --model deepseek-v4-flash` or `--model qwen3-coder-flash-cn`. It accounts for agents, repeated requests, growing context, cached input, reasoning output and optional sandbox charges. It is a planning estimate, not a measured bill or enforced spend cap.
+
+Library selection and format boundaries are recorded in [docs/open-source-options.md](docs/open-source-options.md). The small custom parser is limited to robot-specific normalization, source provenance, and evidence selection; archive and compression formats use existing implementations.
+
+## Grill runtime and report status
+
+`sandbox/runtime/` contains the canonical job runners. The top-level
+`sandbox/run_codex.py` and `sandbox/run_grill.py` preserve existing Python and CLI
+entry points; the worker stages the canonical files and Docker copies the same
+log runner into its image.
+
+Production grill turns and reports require a configured model. Model failures
+are reported as failures instead of silently substituting template findings.
+`ROBOT_GRILL_USE_FALLBACK=1` is an explicit test/demo mode: its reports are marked
+incomplete and contain no verified hardware or safety claims.
+
+A completed report-generation job does not certify the scenario. Reports expose
+`assessment_status` (`incomplete` or `review_required`) and outstanding validation
+items. Legacy template reports, unresolved blockers, missing sections, and missing
+evidence remain incomplete. Citation checks verify file/line availability, not
+whether a source proves technical feasibility. Human review is still required.
+
+Deploy changes to both the ECS API/frontend and the worker checkout. Existing
+databases receive additive confirmation-note and Q&A request-ID fields at startup;
+keep database/upload backups as described in the deployment guide. Q&A requires
+the separate `ROBOT_CHAT_API_KEY` configuration and returns unavailable when absent.
+
+## Verification (2026-09-09)
+
+Production build and automated tests cover format recognition, archive/source fairness, lifecycle/metadata retention, numeric identity, UTF-8/long-line preservation, reconciled omissions, context pagination, duplicate archive paths, corrupt archives, resource caps, structured reports, and idempotent demo seeding.
+
+Browser checks used the local samples without copying raw inputs into the application:
+
+| Input | Browser result |
+| --- | --- |
+| September XOS + sys/app/kernel TAR.GZ (4 archives), v2 | 212 reports; 231,525 lines; 177 processed, 28 partial, 7 skipped. All four archives represented in the 500-event package and 58-event brief. Full package: 1,118,242 bytes; brief: 15,996 bytes (~98.6% smaller in bytes, not a measured token saving). The ~1.2 GB MCAP entry is inventoried and skipped, not decoded. |
+| Walker S2 ZIP, v2 | 474 reports; 681,548 lines; 421 processed, 53 partial. Recognized 3 fatal, 14,601 error, and 43,665 warning records, including readable damaged lines previously omitted. Brief: 15,934 bytes; approximately 8.6 seconds. These counts are log levels, not confirmed robot diagnoses. |
+| August ROS2 bag TAR.GZ, previous baseline | Five SQLite recordings explicitly skipped; trailing gzip garbage surfaced as an archive error. |
+
+The v2 browser check downloaded/parsed both exports, retrieved a 20-line context page and previously unselected extraction metadata, and checked no horizontal page overflow at 390 pixels. Observed preprocessing requests were only local application assets; no log/model upload request occurred. Four-archive v2 runs took roughly 3.6–4.7 seconds on this machine, not a cross-machine performance guarantee. The extra readable lines/configuration and wider context intentionally make the local full package larger than v1; the brief figures above describe the historical benchmark. The unused brief export was retired on 2026-10-05; current submissions use the full evidence package.
+
+For the initial deployment with one separate worker machine, follow
+[the one-worker setup guide](docs/worker-one-machine.md).
+
+Uploads show XHR byte progress, current file/count, average transfer speed and
+estimated remaining time. Ten seconds without new bytes shows a stall warning;
+100% transmission waits for the server response before the analysis is submitted.
+Refresh protection and a best-effort screen wake lock last through submission
+and are released on success, failure or cancellation. Wake lock requires a
+secure context (HTTPS, or localhost for development) and a visible tab; it
+does not guarantee background uploads. Browsers control whether a
+`beforeunload` confirmation appears, particularly on mobile. See the
+[Screen Wake Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Wake_Lock_API)
+and [beforeunload documentation](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event).

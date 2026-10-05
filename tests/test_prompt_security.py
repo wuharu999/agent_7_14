@@ -309,7 +309,7 @@ class NoPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 "worker.manager.guard_user_input",
                 new=AsyncMock(return_value=GuardDecision(False, "none", "en")),
             ), patch(
-                "worker.knowledge.has_wiki_content",
+                "pathlib.Path.rglob",
                 side_effect=AssertionError("QA must not pre-scan the complete Wiki"),
             ), patch(
                 "worker.manager.run_qa_api",

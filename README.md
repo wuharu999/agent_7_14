@@ -40,6 +40,7 @@ settings only on the machines that need them.
 
 - `ecs/` — public FastAPI application, authentication, uploads, and status UI.
 - `worker/` — private ingestion and LangGraph Wiki Q&A service; final answers stream to the browser.
+- `browser_parse/` — Grill and log-analysis UI, API, Docker worker, and job runtime.
 - `shared/` — shared models and validation helpers.
 - `scripts/` — local setup, validation, and deployment utilities.
 - `tests/` — automated regression coverage.
@@ -47,3 +48,7 @@ settings only on the machines that need them.
 Operational deployment details and credentials are intentionally kept out of
 this public README. Operators should refer to `AGENTS.md` for deployment
 targets, configuration, and operational procedures.
+
+Grill and log analysis are included in this checkout. See
+[the cloud setup guide](docs/browser_tools.md#cloud-setup-from-this-repository)
+for installing the API and building the worker image.

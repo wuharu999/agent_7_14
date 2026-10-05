@@ -906,19 +906,6 @@ def remove_robot_editor(robot_id: int, user_id: int) -> None:
         _sync_user_team_names(connection, user_id)
 
 
-def get_user_robots(user_id: int) -> list[dict[str, Any]]:
-    with _DB_LOCK, _connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT r.* FROM robots r
-            JOIN robot_editors re ON r.id = re.robot_id
-            WHERE re.user_id = ?
-            ORDER BY r.display_order, r.name COLLATE NOCASE, r.id
-            """, (user_id,)
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
 def get_robot_editors(robot_id: int) -> list[dict[str, Any]]:
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute(

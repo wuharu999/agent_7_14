@@ -4,7 +4,7 @@ from typing import Dict, Any, List
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from worker.langgraph_qa.qa.state import QAState
-from worker.langgraph_qa.qa.schemas import PlannerOutput, PlanOutput
+from worker.langgraph_qa.qa.schemas import PlannerOutput
 from worker.langgraph_qa.qa.model import get_chat_model
 from worker.topic_policy import (
     canonicalize_product_names,

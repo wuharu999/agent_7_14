@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 
 
@@ -37,11 +37,6 @@ class ScopeConsistency(BaseModel):
     )
 
 
-class SearchQuery(BaseModel):
-    query: str = Field(description="Targeted lexical search query string without filler words.")
-    rationale: Optional[str] = Field(default=None, description="Purpose or angle of this search query.")
-
-
 class PlannerOutput(BaseModel):
     scope_analysis: ScopeAnalysis
     queried_entity_type: EntityType = "unknown"
@@ -78,22 +73,10 @@ class PlannerOutput(BaseModel):
     )
 
 
-PlanOutput = PlannerOutput  # Backward-compatible alias
-
-
 class ImageSelection(BaseModel):
     path: str = Field(description="Relative path of selected media file.")
     supports_claim: str = Field(description="Specific claim or topic supported by this image.")
     utility: str = Field(default="high", description="Utility level: high, medium, low.")
-
-
-SelectedImage = ImageSelection  # Backward-compatible alias
-
-
-class AnswerPlan(BaseModel):
-    primary_solution: str = Field(description="The primary supported solution or tool identified.")
-    direct_answer_plan: str = Field(description="Core answer message summary.")
-    supporting_points: List[str] = Field(default_factory=list, description="Key supporting evidence points.")
 
 
 class ReasonOutput(BaseModel):

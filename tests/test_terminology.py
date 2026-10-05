@@ -65,20 +65,14 @@ def test_source_publication_keeps_original_text_bytes(
     assert (final_directory / "guide.md").read_bytes() == original
 
 
-def test_system_prompt_requires_verbatim_product_names() -> None:
-    assert "Never translate, transliterate, localize" in qa_api.ANSWER_SYSTEM
-    assert "Thinkerstudio" in qa_api.ANSWER_SYSTEM
-    assert "Thinkercosmos" in qa_api.ANSWER_SYSTEM
-    assert "Never output a legacy TianGong 2.0 or TianGong 3.0 name" in (
-        qa_api.ANSWER_SYSTEM
-    )
-    assert "Never search, read, or rely on raw/original" in qa_api.ANSWER_SYSTEM
+def test_live_final_prompt_contains_identity_and_response_policies() -> None:
+    from worker.langgraph_qa.qa.nodes.final_answer import final_answer_node
+    from worker.topic_policy import CANONICAL_TERMINOLOGY_PROMPT, final_response_policy_text
 
-
-def test_system_prompt_rejects_political_and_unrelated_questions() -> None:
-    assert "political" in qa_api.ANSWER_SYSTEM
-    assert "unrelated questions" in qa_api.ANSWER_SYSTEM
-    assert "AI notice at the end" not in qa_api.ANSWER_SYSTEM
+    result = final_answer_node({"defer_final_answer": True, "language": "en"})
+    assert CANONICAL_TERMINOLOGY_PROMPT in result["answer_system"]
+    assert final_response_policy_text() in result["answer_system"]
+    assert "Never output a legacy TianGong 2.0 or TianGong 3.0 name" in result["answer_system"]
 
 
 def test_simplified_chinese_ai_notice_uses_required_product_wording() -> None:

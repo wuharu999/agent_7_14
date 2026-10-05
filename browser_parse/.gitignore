@@ -1,0 +1,50 @@
+node_modules/
+dist/
+# Local configuration and secrets (never publish credentials).
+.env
+.env.*
+!.env.example
+*.local
+*.tsbuildinfo
+coverage/
+.vscode/
+test-results/
+.playwright-mcp/
+robot-log-demo.png
+# User log inputs and generated evidence belong outside the source repository.
+*.log
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.mcap
+*.bag
+*.db3
+robot-log-evidence-*.json
+robot-log-brief-*.json
+robot-log-context-*.json
+.venv/
+__pycache__/
+*.py[cod]
+data/
+knowledge/wiki/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+sandbox/.runtime/
+
+# Local deployment bundles and checksums.
+releases/
+
+.agents/
+
+# Packaged job skills are source, not local agent configuration.
+!sandbox/runtime/.agents/
+!sandbox/runtime/.agents/**
+# Keep generated files excluded after the skill-source exception.
+__pycache__/
+*.py[cod]
+
+# Metadata from the previously unpacked release.
+RELEASE_REVISION
+RELEASE_SHA256SUMS.json
